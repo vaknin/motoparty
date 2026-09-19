@@ -1,0 +1,222 @@
+{
+ "_doc": "Feed samples in order to a fresh estimator; after each, the estimate must equal expectOffset. Sample = [t0,t1,t2,t3]. Then with the final estimate, hostToLocal/localToHost must match. Discarded (negative-RTT) samples do not occupy a window slot; the last block pins that.",
+ "steps": [
+  {
+   "sample": [
+    1000,
+    5010,
+    5011,
+    1020
+   ],
+   "expectOffset": 4000.5
+  },
+  {
+   "sample": [
+    2000,
+    6005,
+    6006,
+    2012
+   ],
+   "expectOffset": 3999.5
+  },
+  {
+   "sample": [
+    3000,
+    7050,
+    7051,
+    3100
+   ],
+   "expectOffset": 3999.5
+  },
+  {
+   "sample": [
+    4000,
+    7990,
+    7991,
+    3985
+   ],
+   "expectOffset": 3999.5
+  },
+  {
+   "sample": [
+    5000,
+    9004,
+    9005,
+    5012
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    6000,
+    10026,
+    10026,
+    6050
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    7000,
+    11026,
+    11026,
+    7050
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    8000,
+    12026,
+    12026,
+    8050
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    9000,
+    13026,
+    13026,
+    9050
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    10000,
+    14026,
+    14026,
+    10050
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    11000,
+    15026,
+    15026,
+    11050
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    12000,
+    16026,
+    16026,
+    12050
+   ],
+   "expectOffset": 3998.5
+  },
+  {
+   "sample": [
+    13000,
+    17026,
+    17026,
+    13050
+   ],
+   "expectOffset": 4001
+  },
+  {
+   "sample": [
+    20000,
+    24005,
+    24005,
+    20006
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    21000,
+    24990,
+    24991,
+    20985
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    22000,
+    26026,
+    26026,
+    22050
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    23000,
+    27026,
+    27026,
+    23050
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    24000,
+    28026,
+    28026,
+    24050
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    25000,
+    29026,
+    29026,
+    25050
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    26000,
+    30026,
+    30026,
+    26050
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    27000,
+    31026,
+    31026,
+    27050
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    28000,
+    32026,
+    32026,
+    28050
+   ],
+   "expectOffset": 4002
+  },
+  {
+   "sample": [
+    29000,
+    33026,
+    33026,
+    29050
+   ],
+   "expectOffset": 4001
+  }
+ ],
+ "conversions": [
+  {
+   "host": 10001,
+   "local": 6000
+  },
+  {
+   "host": 4001,
+   "local": 0
+  }
+ ]
+}

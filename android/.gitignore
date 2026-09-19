@@ -1,0 +1,7 @@
+# Complements ../.gitignore (build outputs, local.properties).
+app/.cxx/
+.externalNativeBuild/
+.idea/
+*.iml
+# libopus source is fetched by tools/fetch_opus.sh, not committed (see README.md).
+app/src/main/cpp/opus/

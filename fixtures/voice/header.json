@@ -1,0 +1,40 @@
+{
+ "_doc": "Header is 8 bytes big-endian: magic 0x4D, kind, seq u16, ts u32, then payload.",
+ "valid": [
+  {
+   "kind": 1,
+   "seq": 1,
+   "ts": 320,
+   "payloadHex": "fc01",
+   "hex": "4d01000100000140fc01"
+  },
+  {
+   "kind": 2,
+   "seq": 65535,
+   "ts": 4294967295,
+   "payloadHex": "",
+   "hex": "4d02ffffffffffff"
+  },
+  {
+   "kind": 1,
+   "seq": 258,
+   "ts": 16909060,
+   "payloadHex": "00",
+   "hex": "4d0101020102030400"
+  }
+ ],
+ "invalid": [
+  {
+   "why": "bad magic",
+   "hex": "4e01000100000140"
+  },
+  {
+   "why": "too short",
+   "hex": "4d0100010000"
+  },
+  {
+   "why": "unknown kind",
+   "hex": "4d03000100000140"
+  }
+ ]
+}

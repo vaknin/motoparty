@@ -1,0 +1,65 @@
+{
+ "_doc": "u32 big-endian length + UTF-8 JSON. 'valid' frames decode to the given JSON text (compare as parsed objects); 'invalid' headers must be rejected before reading the body.",
+ "valid": [
+  {
+   "json": "{\"t\":\"bye\"}",
+   "hex": "0000000b7b2274223a22627965227d"
+  },
+  {
+   "json": "{\"t\":\"announce\",\"text\":\"שלום\"}",
+   "hex": "000000227b2274223a22616e6e6f756e6365222c2274657874223a22d7a9d79cd795d79d227d"
+  }
+ ],
+ "invalid": [
+  {
+   "why": "length above 64 KiB",
+   "hex": "00010001"
+  }
+ ],
+ "unknown": [
+  {
+   "_doc": "must decode without error and be ignored by the dispatcher",
+   "json": "{\"t\":\"future.thing\",\"x\":1}"
+  },
+  {
+   "_doc": "unknown fields ignored",
+   "json": "{\"t\":\"ping\",\"id\":1,\"t0\":2,\"extra\":[1,2]}"
+  }
+ ],
+ "malformed": [
+  {
+   "_doc": "known type, missing required field: drop the message, keep the connection",
+   "json": "{\"t\":\"state\",\"talk\":false}"
+  },
+  {
+   "_doc": "known type, mistyped field: drop, keep",
+   "json": "{\"t\":\"ping\",\"id\":\"7\",\"t0\":1}"
+  },
+  {
+   "_doc": "known type, null value: drop, keep",
+   "json": "{\"t\":\"music.ready\",\"id\":null}"
+  },
+  {
+   "_doc": "missing t: drop, keep",
+   "json": "{\"id\":1}"
+  },
+  {
+   "_doc": "known type, value outside the enum (volume actions were removed from music.control): drop, keep",
+   "json": "{\"t\":\"music.control\",\"action\":\"volumeUp\"}"
+  },
+  {
+   "_doc": "unknown talk.close reason: drop, keep",
+   "json": "{\"t\":\"talk.close\",\"by\":\"host\",\"reason\":\"bored\"}"
+  }
+ ],
+ "fatal": [
+  {
+   "_doc": "not JSON: close",
+   "hex": "000000036e6f74"
+  },
+  {
+   "_doc": "JSON but not an object: close",
+   "hex": "000000025b5d"
+  }
+ ]
+}

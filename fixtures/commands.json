@@ -1,0 +1,213 @@
+{
+ "_doc": "Parser vectors. See PROTOCOL.md 'Commands' for the normalisation rules (per code point; U+2019 maps to an apostrophe).",
+ "cases": [
+  {
+   "text": "play album dark side of the moon",
+   "expect": {
+    "action": "play",
+    "kind": "album",
+    "query": "dark side of the moon"
+   }
+  },
+  {
+   "text": "Play Bohemian Rhapsody",
+   "expect": {
+    "action": "play",
+    "kind": "song",
+    "query": "bohemian rhapsody"
+   }
+  },
+  {
+   "text": "play song Bohemian Rhapsody.",
+   "expect": {
+    "action": "play",
+    "kind": "song",
+    "query": "bohemian rhapsody"
+   }
+  },
+  {
+   "text": "hey play artist Queen please",
+   "expect": {
+    "action": "play",
+    "kind": "artist",
+    "query": "queen"
+   }
+  },
+  {
+   "text": "Play the album Abbey Road",
+   "expect": {
+    "action": "play",
+    "kind": "album",
+    "query": "abbey road"
+   }
+  },
+  {
+   "text": "play playlist road trip",
+   "expect": {
+    "action": "play",
+    "kind": "playlist",
+    "query": "road trip"
+   }
+  },
+  {
+   "text": "Play Back in Black",
+   "expect": {
+    "action": "play",
+    "kind": "song",
+    "query": "back in black"
+   }
+  },
+  {
+   "text": "play   some   Metallica!",
+   "expect": {
+    "action": "play",
+    "kind": "song",
+    "query": "some metallica"
+   }
+  },
+  {
+   "text": "please play album Thriller",
+   "expect": {
+    "action": "play",
+    "kind": "album",
+    "query": "thriller"
+   }
+  },
+  {
+   "text": "play",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "play song",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "play album please",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "pause",
+   "expect": {
+    "action": "pause"
+   }
+  },
+  {
+   "text": "Stop.",
+   "expect": {
+    "action": "pause"
+   }
+  },
+  {
+   "text": "resume",
+   "expect": {
+    "action": "resume"
+   }
+  },
+  {
+   "text": "continue",
+   "expect": {
+    "action": "resume"
+   }
+  },
+  {
+   "text": "next",
+   "expect": {
+    "action": "next"
+   }
+  },
+  {
+   "text": "Skip",
+   "expect": {
+    "action": "next"
+   }
+  },
+  {
+   "text": "please next",
+   "expect": {
+    "action": "next"
+   }
+  },
+  {
+   "text": "previous",
+   "expect": {
+    "action": "previous"
+   }
+  },
+  {
+   "text": "back",
+   "expect": {
+    "action": "previous"
+   }
+  },
+  {
+   "text": "volume up",
+   "expect": {
+    "action": "volumeUp"
+   }
+  },
+  {
+   "text": "Louder!",
+   "expect": {
+    "action": "volumeUp"
+   }
+  },
+  {
+   "text": "volume down",
+   "expect": {
+    "action": "volumeDown"
+   }
+  },
+  {
+   "text": "quieter please",
+   "expect": {
+    "action": "volumeDown"
+   }
+  },
+  {
+   "text": "what's the weather",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "next song",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "play Guns N’ Roses",
+   "expect": {
+    "action": "play",
+    "kind": "song",
+    "query": "guns n' roses"
+   }
+  },
+  {
+   "text": "what’s the weather",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "play artist Beyoncé",
+   "expect": {
+    "action": "play",
+    "kind": "artist",
+    "query": "beyoncé"
+   }
+  }
+ ]
+}

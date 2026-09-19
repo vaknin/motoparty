@@ -1,0 +1,23 @@
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+*.apk
+*.aab
+
+# iOS / SwiftPM / xtool
+ios/.build/
+ios/.swiftpm/
+ios/xtool/
+*.ipa
+
+# Python
+__pycache__/
+.venv/
+*.pyc
+.pytest_cache/
+
+# Scratch recordings
+*.wav

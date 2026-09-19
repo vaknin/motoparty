@@ -1,0 +1,8 @@
+version: 1
+# xtool prefixes this with a team-specific ID when signing with a free Apple
+# ID (e.g. XTL-1234.com.vaknin.motoparty), so it never clashes across accounts.
+bundleID: com.vaknin.motoparty
+product: Motoparty
+# Merged over xtool's generated Info.plist (background audio, mic, local
+# network, Bonjour, speech, ATS local networking).
+infoPath: Info.plist

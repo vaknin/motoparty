@@ -1,0 +1,140 @@
+{
+ "_doc": "Every message must decode, re-encode, and decode again to an equal JSON object. Key order is not significant.",
+ "messages": [
+  {
+   "t": "hello",
+   "proto": 1,
+   "role": "host",
+   "name": "Pixel 8",
+   "voicePort": 47801,
+   "httpPort": 47802
+  },
+  {
+   "t": "hello",
+   "proto": 1,
+   "role": "client",
+   "name": "iPhone"
+  },
+  {
+   "t": "ping",
+   "id": 7,
+   "t0": 123456
+  },
+  {
+   "t": "pong",
+   "id": 7,
+   "t0": 123456,
+   "t1": 9876543,
+   "t2": 9876544
+  },
+  {
+   "t": "talk.open",
+   "by": "client"
+  },
+  {
+   "t": "talk.close",
+   "by": "host",
+   "reason": "silence"
+  },
+  {
+   "t": "talk.close",
+   "by": "host",
+   "reason": "unavailable"
+  },
+  {
+   "t": "talk.close",
+   "by": "client",
+   "reason": "unavailable"
+  },
+  {
+   "t": "music.load",
+   "id": "dQw4w9WgXcQ",
+   "path": "/track/dQw4w9WgXcQ.m4a",
+   "title": "Never Gonna Give You Up",
+   "artist": "Rick Astley",
+   "album": "Whenever You Need Somebody",
+   "durationMs": 213000
+  },
+  {
+   "t": "music.load",
+   "id": "abc-_123",
+   "path": "/track/abc-_123.m4a",
+   "title": "שיר",
+   "artist": "אמן",
+   "durationMs": 1000
+  },
+  {
+   "t": "music.ready",
+   "id": "dQw4w9WgXcQ"
+  },
+  {
+   "t": "music.error",
+   "id": "dQw4w9WgXcQ",
+   "message": "HTTP 404"
+  },
+  {
+   "t": "music.play",
+   "id": "dQw4w9WgXcQ",
+   "positionMs": 0,
+   "atHostTimeMs": 9877000
+  },
+  {
+   "t": "music.pause",
+   "id": "dQw4w9WgXcQ",
+   "positionMs": 61234
+  },
+  {
+   "t": "music.stop"
+  },
+  {
+   "t": "music.control",
+   "action": "previous"
+  },
+  {
+   "t": "command.text",
+   "text": "play album dark side of the moon",
+   "lang": "en-US"
+  },
+  {
+   "t": "announce",
+   "text": "Playing Money by Pink Floyd",
+   "earcon": "ok"
+  },
+  {
+   "t": "announce",
+   "text": "Link lost"
+  },
+  {
+   "t": "state",
+   "talk": false,
+   "queue": []
+  },
+  {
+   "t": "state",
+   "talk": true,
+   "music": {
+    "id": "dQw4w9WgXcQ",
+    "title": "Never Gonna Give You Up",
+    "artist": "Rick Astley",
+    "playing": false,
+    "positionMs": 1234,
+    "atHostTimeMs": 987654,
+    "durationMs": 213000
+   },
+   "queue": [
+    {
+     "id": "x1",
+     "title": "A",
+     "artist": "B"
+    }
+   ]
+  },
+  {
+   "t": "bye",
+   "reason": "user"
+  },
+  {
+   "t": "bye"
+  }
+ ]
+}
