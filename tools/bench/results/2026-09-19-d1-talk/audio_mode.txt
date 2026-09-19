@@ -1,0 +1,4 @@
+    Mode owner token: null
+  Computed Preferred communication device: null
+  Applied Preferred communication device: null
+  Active communication device: AudioDeviceAttributes: role:output type:bt_a2dp addr:XX:XX:XX:XX:EC:2F name:AirPods Pro profiles:[{ENCODING_PCM_8BIT, sampling rates=[48000], channel masks=0x0C, encapsulation type=0}] descriptors:[]

@@ -169,7 +169,9 @@ served. The client downloads the whole file before replying `music.ready`.
 4. Host broadcasts `talk.close` and `state{talk:false}` (except after the host's own
    `"unavailable"` answer in step 1: talk never opened and `state.talk` stayed false; a
    client's `"unavailable"` comes after the host's `talk.open`, so it is broadcast as usual).
-   Both switch back to media mode. If music was playing before
+   A microphone that fails *after* talk opened ends talk the same way: the host broadcasts
+   `talk.close{by:"host", reason:"unavailable"}` + `state{talk:false}`, the client sends it as
+   a close request. Both switch back to media mode. If music was playing before
    talk, the host sends `music.play` with `atHostTimeMs = now + resumeLeadMs` (setting,
    default 1500 ms, covering the headset profile switch).
 

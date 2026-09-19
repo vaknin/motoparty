@@ -40,7 +40,10 @@ class MusicController(
     private var startJob: Job? = null
     private val readyWaiters = HashMap<String, CompletableDeferred<Unit>>()
     private val clientReady = HashSet<String>()
-    private var pausedForTalk = false
+
+    /** True while talk (or a track that arrived during it) is holding a resume. */
+    var pausedForTalk = false
+        private set
     private var duckedForTalk = false
     private var talkPausing = false
 
@@ -156,7 +159,9 @@ class MusicController(
         if (!pausedForTalk) return
         pausedForTalk = false
         val a = sync.anchor ?: return
-        playFrom(a.id, a.positionMs, resumeLeadMs)
+        // Cold: the headset is on its way back from HFP to A2DP, so this start is late in a way
+        // an ordinary one is not (SyncController.coldStartLatencyMs).
+        playFrom(a.id, a.positionMs, resumeLeadMs, cold = true)
     }
 
     // ---- state ----
@@ -205,7 +210,7 @@ class MusicController(
         }
     }
 
-    private fun playFrom(id: String, positionMs: Long, leadMs: Long) {
+    private fun playFrom(id: String, positionMs: Long, leadMs: Long, cold: Boolean = false) {
         if (talkPausing) {
             // A track finished loading mid-talk: park it until talk closes.
             sync.apply(Anchor(id, positionMs, hostNow(), playing = false))
@@ -214,7 +219,7 @@ class MusicController(
             return
         }
         val a = Anchor(id, positionMs, hostNow() + leadMs, playing = true)
-        sync.apply(a)
+        sync.apply(a, cold)
         send(MusicPlay(a.id, a.positionMs, a.atHostTimeMs))
         onChanged()
     }

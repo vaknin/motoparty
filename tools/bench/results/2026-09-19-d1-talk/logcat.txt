@@ -1,0 +1,13 @@
+--------- beginning of main
+         1789848974.454 15218 15218 I Motoparty: talk open (by client)
+         1789848975.281 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789848976.676 15218 15473 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1247ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+--------- beginning of system
+         1789848982.087 15218 15218 D InsetsController: hide(ime())
+         1789848982.087 15218 15218 I ImeTracker: com.kivan.motoparty:fbda515c: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789848994.454 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789848994.459 15218 15571 D AudioTrack: stop(20146): called with 307200 frames delivered
+         1789848994.516 15218 15342 I VoiceEngine: talk stats: tx 530 sent of 945 captured (415 DTX), rx 958 received, 8 played, 0 lost, 950 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789848995.271 15218 15342 I AudioRouter: back to media mode
+         1789848998.504 15218 15261 I ControlServer: #1 closed: closed by peer
+         1789848998.521 15218 15218 I Motoparty: client gone: closed by peer

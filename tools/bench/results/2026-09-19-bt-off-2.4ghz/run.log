@@ -1,0 +1,18 @@
+21:25:24.677 joining hotspot
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/19)
+21:25:30.269 addr: wlp1s0           UP             10.148.67.219/24 
+21:25:30.279 link: 	freq: 2462.0 	signal: -34 dBm 	tx bitrate: 144.4 MBit/s MCS 15 short GI
+21:25:30.289 gateway (Pixel) = 10.148.67.218
+10 packets transmitted, 10 received, 0% packet loss, time 2706ms
+rtt min/avg/max/mdev = 4.027/7.215/14.061/3.947 ms
+21:25:33.257 internet: 404 0.226406s
+connected to 10.148.67.218:5555
+21:25:33.382 adb: ok
+21:25:33.612 app pid: 26261
+21:25:33.616 mdns browse:
+=;wlp1s0;IPv4;Pixel\0328;_motoparty._tcp;local;Android_FBR2HM5L.local;10.148.67.218;47800;"http=47802" "proto=1" "voice=47801"
+21:31:00.424 client exited
+21:31:00.685 restoring home Wi-Fi
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/20)
+already connected to 192.168.1.100:5555
+21:31:01.811 done: Aviv's

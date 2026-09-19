@@ -1,0 +1,250 @@
+peer side (s since the peer started):
+      6.6  << {"t": "music.load", "id": "BSTsnWoslP4", "path": "/track/BSTsnWoslP4.m4a", "title": "Bohemian Rhapsody", "artist": "Queen", "durationMs": 35
+      7.3  music: cached BSTsnWoslP4 (5736965 bytes in 693 ms) -> /home/kivan/.cache/motoparty-peer/BSTsnWoslP4.m4a
+      7.3  >> {"t": "music.ready", "id": "BSTsnWoslP4"}
+      7.3  << {"t": "music.play", "id": "BSTsnWoslP4", "positionMs": 0, "atHostTimeMs": 2343113909}
+      7.3  music: play BSTsnWoslP4 from 0 ms at host 2343113909 = local 64397742.5 (in 290 ms)
+     64.9  >> {"t": "talk.open", "by": "client"}
+     64.9  << {"t": "talk.open", "by": "client"}
+     64.9  TALK OPEN - sending 440 Hz tone
+     79.9  >> {"t": "talk.close", "by": "client", "reason": "trigger"}
+     79.9  << {"t": "talk.close", "by": "client", "reason": "trigger"}
+     79.9  TALK CLOSED
+     79.9  << {"t": "music.play", "id": "BSTsnWoslP4", "positionMs": 57272, "atHostTimeMs": 2343187707}
+     79.9  music: play BSTsnWoslP4 from 57272 ms at host 2343187707 = local 64471542.5 (in 1478 ms)
+    259.9  >> {"t": "music.control", "action": "pause"}
+    259.9  << {"t": "music.pause", "id": "BSTsnWoslP4", "positionMs": 235751}
+    259.9  music: pause (local player stopped)
+
+trace (s since the first line):
+      0.0  Motoparty: command: "play song bohemian rhapsody"
+      1.9  Motoparty: announce: Playing Bohemian Rhapsody by Queen
+      2.7  start warm: lead 300 ms, 300 ms to the anchor point
+      2.7  trace: pos 261 ms, expected -26 ms, err 287 ms, speed 1.0, phase start-warm, t 1, playing true, whenReady true, state 3
+      3.7  trace: pos 934 ms, expected 976 ms, err -42 ms, speed 1.0, phase start-warm, t 1002, playing true, whenReady true, state 3
+      4.7  drift -105 ms: speed 1.02625 for 3999 ms
+      4.7  trace: pos 1873 ms, expected 1994 ms, err -121 ms, speed 1.02625, phase nudge, t 2, playing true, whenReady true, state 3
+      5.7  trace: pos 2878 ms, expected 2995 ms, err -117 ms, speed 1.02625, phase nudge, t 1003, playing true, whenReady true, state 3
+      6.7  trace: pos 3683 ms, expected 3998 ms, err -315 ms, speed 1.02625, phase nudge, t 2005, playing true, whenReady true, state 3
+      7.7  trace: pos 4742 ms, expected 5002 ms, err -260 ms, speed 1.02625, phase nudge, t 3010, playing true, whenReady true, state 3
+      8.7  nudge done: drift -251 ms
+      8.7  trace: pos 5747 ms, expected 6010 ms, err -263 ms, speed 1.0, phase nudge, t 4018, playing true, whenReady true, state 3
+      9.8  trace: pos 6802 ms, expected 7013 ms, err -211 ms, speed 1.0, phase nudge, t 5021, playing true, whenReady true, state 3
+     10.7  drift -214 ms: speed 1.05 for 4280 ms
+     10.8  trace: pos 7796 ms, expected 8028 ms, err -232 ms, speed 1.05, phase nudge, t 1, playing true, whenReady true, state 3
+     11.8  trace: pos 8857 ms, expected 9031 ms, err -174 ms, speed 1.05, phase nudge, t 1003, playing true, whenReady true, state 3
+     12.8  trace: pos 9918 ms, expected 10035 ms, err -117 ms, speed 1.05, phase nudge, t 2007, playing true, whenReady true, state 3
+     13.8  trace: pos 11012 ms, expected 11039 ms, err -27 ms, speed 1.05, phase nudge, t 3012, playing true, whenReady true, state 3
+     14.8  trace: pos 12069 ms, expected 12042 ms, err 27 ms, speed 1.05, phase nudge, t 4015, playing true, whenReady true, state 3
+     15.0  nudge done: drift 114 ms
+     15.8  trace: pos 13132 ms, expected 13044 ms, err 88 ms, speed 1.0, phase nudge, t 5017, playing true, whenReady true, state 3
+     16.8  trace: pos 14137 ms, expected 14047 ms, err 90 ms, speed 1.0, phase nudge, t 6019, playing true, whenReady true, state 3
+     17.1  drift 159 ms: speed 0.96025 for 4000 ms
+     17.1  trace: pos 14483 ms, expected 14341 ms, err 142 ms, speed 0.96025, phase nudge, t 3, playing true, whenReady true, state 3
+     18.1  trace: pos 15517 ms, expected 15344 ms, err 173 ms, speed 0.96025, phase nudge, t 1007, playing true, whenReady true, state 3
+     19.1  trace: pos 16470 ms, expected 16347 ms, err 123 ms, speed 0.96025, phase nudge, t 2009, playing true, whenReady true, state 3
+     20.1  trace: pos 17233 ms, expected 17350 ms, err -117 ms, speed 0.96025, phase nudge, t 3013, playing true, whenReady true, state 3
+     21.1  nudge done: drift -76 ms
+     21.1  trace: pos 18266 ms, expected 18359 ms, err -93 ms, speed 1.0, phase nudge, t 4022, playing true, whenReady true, state 3
+     22.1  trace: pos 19241 ms, expected 19361 ms, err -120 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+     23.1  drift -134 ms: speed 1.0335 for 4000 ms
+     23.1  trace: pos 20221 ms, expected 20373 ms, err -152 ms, speed 1.0335, phase nudge, t 2, playing true, whenReady true, state 3
+     24.1  trace: pos 21315 ms, expected 21374 ms, err -59 ms, speed 1.0335, phase nudge, t 1003, playing true, whenReady true, state 3
+     25.1  trace: pos 22364 ms, expected 22379 ms, err -15 ms, speed 1.0335, phase nudge, t 2008, playing true, whenReady true, state 3
+     26.1  trace: pos 23405 ms, expected 23383 ms, err 22 ms, speed 1.0335, phase nudge, t 3012, playing true, whenReady true, state 3
+     27.1  nudge done: drift 109 ms
+     27.1  trace: pos 24487 ms, expected 24393 ms, err 94 ms, speed 1.0, phase nudge, t 4022, playing true, whenReady true, state 3
+     28.1  trace: pos 25511 ms, expected 25395 ms, err 116 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+     29.1  drift 94 ms: speed 0.9765 for 3999 ms
+     29.1  trace: pos 26483 ms, expected 26405 ms, err 78 ms, speed 0.9765, phase nudge, t 1, playing true, whenReady true, state 3
+     30.1  trace: pos 27520 ms, expected 27407 ms, err 113 ms, speed 0.9765, phase nudge, t 1003, playing true, whenReady true, state 3
+     31.1  trace: pos 28529 ms, expected 28411 ms, err 118 ms, speed 0.9765, phase nudge, t 2007, playing true, whenReady true, state 3
+     32.2  trace: pos 29517 ms, expected 29414 ms, err 103 ms, speed 0.9765, phase nudge, t 3010, playing true, whenReady true, state 3
+     33.1  nudge done: drift 92 ms
+     33.2  trace: pos 30500 ms, expected 30424 ms, err 76 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+     34.2  trace: pos 31501 ms, expected 31428 ms, err 73 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+     35.2  drift 79 ms (start latency 326 ms, cold 300 ms)
+     35.2  trace: pos 32502 ms, expected 32430 ms, err 72 ms, speed 1.0, phase nudge, t 6026, playing true, whenReady true, state 3
+     36.2  trace: pos 33504 ms, expected 33433 ms, err 71 ms, speed 1.0, phase nudge, t 7029, playing true, whenReady true, state 3
+     37.2  trace: pos 34293 ms, expected 34437 ms, err -144 ms, speed 1.0, phase nudge, t 8033, playing true, whenReady true, state 3
+     45.2  drift -149 ms: speed 1.03725 for 3999 ms
+     45.2  trace: pos 42278 ms, expected 42441 ms, err -163 ms, speed 1.03725, phase nudge, t 2, playing true, whenReady true, state 3
+     46.2  trace: pos 43301 ms, expected 43446 ms, err -145 ms, speed 1.03725, phase nudge, t 1006, playing true, whenReady true, state 3
+     47.2  trace: pos 44559 ms, expected 44450 ms, err 109 ms, speed 1.03725, phase nudge, t 2010, playing true, whenReady true, state 3
+     48.2  trace: pos 45404 ms, expected 45453 ms, err -49 ms, speed 1.03725, phase nudge, t 3013, playing true, whenReady true, state 3
+     49.2  nudge done: drift 209 ms
+     49.2  trace: pos 46651 ms, expected 46458 ms, err 193 ms, speed 1.0, phase nudge, t 4019, playing true, whenReady true, state 3
+     50.2  trace: pos 47695 ms, expected 47460 ms, err 235 ms, speed 1.0, phase nudge, t 5020, playing true, whenReady true, state 3
+     51.2  drift 240 ms: speed 0.95 for 4799 ms
+     51.2  trace: pos 48695 ms, expected 48468 ms, err 227 ms, speed 0.95, phase nudge, t 2, playing true, whenReady true, state 3
+     52.2  trace: pos 49688 ms, expected 49471 ms, err 217 ms, speed 0.95, phase nudge, t 1004, playing true, whenReady true, state 3
+     53.2  trace: pos 50639 ms, expected 50473 ms, err 166 ms, speed 0.95, phase nudge, t 2006, playing true, whenReady true, state 3
+     54.2  trace: pos 51388 ms, expected 51477 ms, err -89 ms, speed 0.95, phase nudge, t 3011, playing true, whenReady true, state 3
+     55.2  trace: pos 52378 ms, expected 52481 ms, err -103 ms, speed 0.95, phase nudge, t 4015, playing true, whenReady true, state 3
+     56.0  nudge done: drift 40 ms
+     56.2  trace: pos 53410 ms, expected 53485 ms, err -75 ms, speed 1.0, phase nudge, t 5019, playing true, whenReady true, state 3
+     57.2  trace: pos 54357 ms, expected 54489 ms, err -132 ms, speed 1.0, phase nudge, t 6023, playing true, whenReady true, state 3
+     58.0  drift -14 ms (start latency 326 ms, cold 300 ms)
+     58.2  trace: pos 55326 ms, expected 55493 ms, err -167 ms, speed 1.0, phase nudge, t 7026, playing true, whenReady true, state 3
+     59.2  trace: pos 56329 ms, expected 56496 ms, err -167 ms, speed 1.0, phase nudge, t 8029, playing true, whenReady true, state 3
+     60.1  Motoparty: talk open (by client)
+     75.1  Motoparty: talk closed (by client, trigger)
+     77.0  start cold: lead 300 ms, 299 ms to the anchor point
+     77.0  trace: pos 58012 ms, expected 57734 ms, err 278 ms, speed 1.0, phase start-cold, t 1, playing true, whenReady true, state 3
+     78.0  trace: pos 58707 ms, expected 58735 ms, err -28 ms, speed 1.0, phase start-cold, t 1002, playing true, whenReady true, state 3
+     79.0  drift -103 ms: speed 1.02575 for 3999 ms
+     79.0  trace: pos 59632 ms, expected 59753 ms, err -121 ms, speed 1.02575, phase nudge, t 4, playing true, whenReady true, state 3
+     80.0  trace: pos 60567 ms, expected 60755 ms, err -188 ms, speed 1.02575, phase nudge, t 1006, playing true, whenReady true, state 3
+     81.0  trace: pos 61515 ms, expected 61756 ms, err -241 ms, speed 1.02575, phase nudge, t 2008, playing true, whenReady true, state 3
+     82.0  trace: pos 62551 ms, expected 62758 ms, err -207 ms, speed 1.02575, phase nudge, t 3010, playing true, whenReady true, state 3
+     83.0  nudge done: drift -188 ms
+     83.0  trace: pos 63566 ms, expected 63768 ms, err -202 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+     84.0  trace: pos 64581 ms, expected 64770 ms, err -189 ms, speed 1.0, phase nudge, t 5021, playing true, whenReady true, state 3
+     85.0  drift -166 ms: speed 1.0415 for 4000 ms
+     85.0  trace: pos 65598 ms, expected 65779 ms, err -181 ms, speed 1.0415, phase nudge, t 2, playing true, whenReady true, state 3
+     86.0  trace: pos 66615 ms, expected 66780 ms, err -165 ms, speed 1.0415, phase nudge, t 1003, playing true, whenReady true, state 3
+     87.0  trace: pos 67662 ms, expected 67783 ms, err -121 ms, speed 1.0415, phase nudge, t 2005, playing true, whenReady true, state 3
+     88.1  trace: pos 68713 ms, expected 68785 ms, err -72 ms, speed 1.0415, phase nudge, t 3008, playing true, whenReady true, state 3
+     89.0  nudge done: drift -45 ms
+     89.1  trace: pos 69735 ms, expected 69798 ms, err -63 ms, speed 1.0, phase nudge, t 4021, playing true, whenReady true, state 3
+     90.1  trace: pos 70750 ms, expected 70800 ms, err -50 ms, speed 1.0, phase nudge, t 5022, playing true, whenReady true, state 3
+     91.1  drift -72 ms (start latency 326 ms, cold 325 ms)
+     91.1  trace: pos 71721 ms, expected 71802 ms, err -81 ms, speed 1.0, phase nudge, t 6025, playing true, whenReady true, state 3
+     92.1  trace: pos 72700 ms, expected 72804 ms, err -104 ms, speed 1.0, phase nudge, t 7027, playing true, whenReady true, state 3
+     93.1  trace: pos 73649 ms, expected 73807 ms, err -158 ms, speed 1.0, phase nudge, t 8029, playing true, whenReady true, state 3
+    101.1  drift -4 ms (start latency 326 ms, cold 325 ms)
+    111.1  drift -99 ms: speed 1.02475 for 4000 ms
+    111.1  trace: pos 91699 ms, expected 91814 ms, err -115 ms, speed 1.02475, phase nudge, t 2, playing true, whenReady true, state 3
+    112.1  trace: pos 92701 ms, expected 92817 ms, err -116 ms, speed 1.02475, phase nudge, t 1004, playing true, whenReady true, state 3
+    113.1  trace: pos 93737 ms, expected 93821 ms, err -84 ms, speed 1.02475, phase nudge, t 2008, playing true, whenReady true, state 3
+    114.1  trace: pos 94728 ms, expected 94825 ms, err -97 ms, speed 1.02475, phase nudge, t 3012, playing true, whenReady true, state 3
+    115.1  nudge done: drift -86 ms
+    115.1  trace: pos 95731 ms, expected 95839 ms, err -108 ms, speed 1.0, phase nudge, t 4027, playing true, whenReady true, state 3
+    116.1  trace: pos 96712 ms, expected 96842 ms, err -130 ms, speed 1.0, phase nudge, t 5029, playing true, whenReady true, state 3
+    117.1  drift 91 ms: speed 0.97725 for 3999 ms
+    117.1  trace: pos 97925 ms, expected 97848 ms, err 77 ms, speed 0.97725, phase nudge, t 1, playing true, whenReady true, state 3
+    118.1  trace: pos 98708 ms, expected 98851 ms, err -143 ms, speed 0.97725, phase nudge, t 1004, playing true, whenReady true, state 3
+    119.1  trace: pos 99700 ms, expected 99854 ms, err -154 ms, speed 0.97725, phase nudge, t 2007, playing true, whenReady true, state 3
+    120.1  trace: pos 100672 ms, expected 100858 ms, err -186 ms, speed 0.97725, phase nudge, t 3011, playing true, whenReady true, state 3
+    121.1  nudge done: drift -212 ms
+    121.1  trace: pos 101887 ms, expected 101867 ms, err 20 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+    122.1  trace: pos 102641 ms, expected 102871 ms, err -230 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+    123.1  drift 10 ms (start latency 326 ms, cold 325 ms)
+    123.1  trace: pos 103876 ms, expected 103876 ms, err 0 ms, speed 1.0, phase nudge, t 6029, playing true, whenReady true, state 3
+    124.1  trace: pos 104868 ms, expected 104880 ms, err -12 ms, speed 1.0, phase nudge, t 7033, playing true, whenReady true, state 3
+    125.1  trace: pos 105878 ms, expected 105883 ms, err -5 ms, speed 1.0, phase nudge, t 8036, playing true, whenReady true, state 3
+    133.1  drift -211 ms: speed 1.05 for 4220 ms
+    133.1  trace: pos 113658 ms, expected 113880 ms, err -222 ms, speed 1.05, phase nudge, t 0, playing true, whenReady true, state 3
+    134.1  trace: pos 114901 ms, expected 114881 ms, err 20 ms, speed 1.05, phase nudge, t 1001, playing true, whenReady true, state 3
+    135.1  trace: pos 115965 ms, expected 115884 ms, err 81 ms, speed 1.05, phase nudge, t 2004, playing true, whenReady true, state 3
+    136.2  trace: pos 117006 ms, expected 116887 ms, err 119 ms, speed 1.05, phase nudge, t 3007, playing true, whenReady true, state 3
+    137.2  trace: pos 118040 ms, expected 117890 ms, err 150 ms, speed 1.05, phase nudge, t 4009, playing true, whenReady true, state 3
+    137.4  nudge done: drift 197 ms
+    138.2  trace: pos 119051 ms, expected 118893 ms, err 158 ms, speed 1.0, phase nudge, t 5013, playing true, whenReady true, state 3
+    139.2  trace: pos 120031 ms, expected 119896 ms, err 135 ms, speed 1.0, phase nudge, t 6016, playing true, whenReady true, state 3
+    139.4  drift 241 ms: speed 0.95 for 4819 ms
+    139.4  trace: pos 120358 ms, expected 120130 ms, err 228 ms, speed 0.95, phase nudge, t 2, playing true, whenReady true, state 3
+    140.4  trace: pos 121343 ms, expected 121131 ms, err 212 ms, speed 0.95, phase nudge, t 1003, playing true, whenReady true, state 3
+    141.4  trace: pos 122075 ms, expected 122135 ms, err -60 ms, speed 0.95, phase nudge, t 2007, playing true, whenReady true, state 3
+    142.4  trace: pos 123053 ms, expected 123140 ms, err -87 ms, speed 0.95, phase nudge, t 3012, playing true, whenReady true, state 3
+    143.4  trace: pos 124061 ms, expected 124145 ms, err -84 ms, speed 0.95, phase nudge, t 4017, playing true, whenReady true, state 3
+    144.2  nudge done: drift 31 ms
+    144.4  trace: pos 125067 ms, expected 125151 ms, err -84 ms, speed 1.0, phase nudge, t 5022, playing true, whenReady true, state 3
+    145.4  trace: pos 126010 ms, expected 126154 ms, err -144 ms, speed 1.0, phase nudge, t 6026, playing true, whenReady true, state 3
+    146.2  drift -17 ms (start latency 326 ms, cold 325 ms)
+    146.4  trace: pos 127029 ms, expected 127159 ms, err -130 ms, speed 1.0, phase nudge, t 7031, playing true, whenReady true, state 3
+    147.4  trace: pos 127992 ms, expected 128163 ms, err -171 ms, speed 1.0, phase nudge, t 8035, playing true, whenReady true, state 3
+    148.4  trace: pos 128973 ms, expected 129168 ms, err -195 ms, speed 1.0, phase nudge, t 9040, playing true, whenReady true, state 3
+    156.2  drift -91 ms: speed 1.02275 for 3999 ms
+    156.2  trace: pos 136876 ms, expected 136979 ms, err -103 ms, speed 1.02275, phase nudge, t 2, playing true, whenReady true, state 3
+    157.2  trace: pos 137864 ms, expected 137980 ms, err -116 ms, speed 1.02275, phase nudge, t 1003, playing true, whenReady true, state 3
+    158.3  trace: pos 138856 ms, expected 138990 ms, err -134 ms, speed 1.02275, phase nudge, t 2013, playing true, whenReady true, state 3
+    159.3  trace: pos 139823 ms, expected 140004 ms, err -181 ms, speed 1.02275, phase nudge, t 3027, playing true, whenReady true, state 3
+    160.2  nudge done: drift 73 ms
+    160.3  trace: pos 141052 ms, expected 141010 ms, err 42 ms, speed 1.0, phase nudge, t 4033, playing true, whenReady true, state 3
+    161.3  trace: pos 142103 ms, expected 142023 ms, err 80 ms, speed 1.0, phase nudge, t 5045, playing true, whenReady true, state 3
+    162.3  drift 98 ms: speed 0.9755 for 3999 ms
+    162.3  trace: pos 143088 ms, expected 143005 ms, err 83 ms, speed 0.9755, phase nudge, t 2, playing true, whenReady true, state 3
+    163.3  trace: pos 144102 ms, expected 144006 ms, err 96 ms, speed 0.9755, phase nudge, t 1004, playing true, whenReady true, state 3
+    164.3  trace: pos 145062 ms, expected 145011 ms, err 51 ms, speed 0.9755, phase nudge, t 2008, playing true, whenReady true, state 3
+    165.3  trace: pos 146035 ms, expected 146013 ms, err 22 ms, speed 0.9755, phase nudge, t 3011, playing true, whenReady true, state 3
+    166.3  nudge done: drift -220 ms
+    166.3  trace: pos 147040 ms, expected 147022 ms, err 18 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+    167.3  trace: pos 148032 ms, expected 148025 ms, err 7 ms, speed 1.0, phase nudge, t 5022, playing true, whenReady true, state 3
+    168.3  drift 4 ms (start latency 326 ms, cold 325 ms)
+    168.3  trace: pos 149024 ms, expected 149027 ms, err -3 ms, speed 1.0, phase nudge, t 6025, playing true, whenReady true, state 3
+    169.3  trace: pos 150034 ms, expected 150029 ms, err 5 ms, speed 1.0, phase nudge, t 7027, playing true, whenReady true, state 3
+    170.3  trace: pos 151006 ms, expected 151032 ms, err -26 ms, speed 1.0, phase nudge, t 8030, playing true, whenReady true, state 3
+    178.3  drift -200 ms: speed 1.05 for 4000 ms
+    178.3  trace: pos 158823 ms, expected 159035 ms, err -212 ms, speed 1.05, phase nudge, t 1, playing true, whenReady true, state 3
+    179.3  trace: pos 160052 ms, expected 160038 ms, err 14 ms, speed 1.05, phase nudge, t 1004, playing true, whenReady true, state 3
+    180.3  trace: pos 161121 ms, expected 161040 ms, err 81 ms, speed 1.05, phase nudge, t 2006, playing true, whenReady true, state 3
+    181.3  trace: pos 162131 ms, expected 162042 ms, err 89 ms, speed 1.05, phase nudge, t 3008, playing true, whenReady true, state 3
+    182.3  nudge done: drift 176 ms
+    182.3  trace: pos 163213 ms, expected 163056 ms, err 157 ms, speed 1.0, phase nudge, t 4022, playing true, whenReady true, state 3
+    183.3  trace: pos 164218 ms, expected 164057 ms, err 161 ms, speed 1.0, phase nudge, t 5023, playing true, whenReady true, state 3
+    184.3  drift 130 ms: speed 0.9675 for 3999 ms
+    184.3  trace: pos 165181 ms, expected 165065 ms, err 116 ms, speed 0.9675, phase nudge, t 1, playing true, whenReady true, state 3
+    185.3  trace: pos 166217 ms, expected 166067 ms, err 150 ms, speed 0.9675, phase nudge, t 1003, playing true, whenReady true, state 3
+    186.3  trace: pos 167218 ms, expected 167070 ms, err 148 ms, speed 0.9675, phase nudge, t 2006, playing true, whenReady true, state 3
+    187.3  trace: pos 168218 ms, expected 168073 ms, err 145 ms, speed 0.9675, phase nudge, t 3010, playing true, whenReady true, state 3
+    188.3  nudge done: drift 106 ms
+    188.3  trace: pos 169176 ms, expected 169085 ms, err 91 ms, speed 1.0, phase nudge, t 4021, playing true, whenReady true, state 3
+    189.4  trace: pos 170139 ms, expected 170086 ms, err 53 ms, speed 1.0, phase nudge, t 5023, playing true, whenReady true, state 3
+    190.3  drift 18 ms (start latency 326 ms, cold 325 ms)
+    190.4  trace: pos 171097 ms, expected 171088 ms, err 9 ms, speed 1.0, phase nudge, t 6024, playing true, whenReady true, state 3
+    191.4  trace: pos 172046 ms, expected 172091 ms, err -45 ms, speed 1.0, phase nudge, t 7027, playing true, whenReady true, state 3
+    192.4  trace: pos 173020 ms, expected 173095 ms, err -75 ms, speed 1.0, phase nudge, t 8031, playing true, whenReady true, state 3
+    200.3  drift 45 ms (start latency 326 ms, cold 325 ms)
+    210.3  drift 46 ms (start latency 326 ms, cold 325 ms)
+    220.4  drift 4 ms (start latency 326 ms, cold 325 ms)
+    230.4  drift 87 ms: speed 0.97825 for 4000 ms
+    230.4  trace: pos 211177 ms, expected 211103 ms, err 74 ms, speed 0.97825, phase nudge, t 1, playing true, whenReady true, state 3
+    231.4  trace: pos 212175 ms, expected 212104 ms, err 71 ms, speed 0.97825, phase nudge, t 1002, playing true, whenReady true, state 3
+    232.4  trace: pos 213134 ms, expected 213106 ms, err 28 ms, speed 0.97825, phase nudge, t 2004, playing true, whenReady true, state 3
+    233.4  trace: pos 214133 ms, expected 214111 ms, err 22 ms, speed 0.97825, phase nudge, t 3009, playing true, whenReady true, state 3
+    234.4  nudge done: drift 8 ms
+    234.4  trace: pos 215113 ms, expected 215120 ms, err -7 ms, speed 1.0, phase nudge, t 4018, playing true, whenReady true, state 3
+    235.4  trace: pos 216121 ms, expected 216122 ms, err -1 ms, speed 1.0, phase nudge, t 5020, playing true, whenReady true, state 3
+    236.4  drift -39 ms (start latency 326 ms, cold 325 ms)
+    236.4  trace: pos 217079 ms, expected 217124 ms, err -45 ms, speed 1.0, phase nudge, t 6022, playing true, whenReady true, state 3
+    237.4  trace: pos 218092 ms, expected 218126 ms, err -34 ms, speed 1.0, phase nudge, t 7024, playing true, whenReady true, state 3
+    238.4  trace: pos 219059 ms, expected 219129 ms, err -70 ms, speed 1.0, phase nudge, t 8027, playing true, whenReady true, state 3
+    246.4  drift -22 ms (start latency 326 ms, cold 325 ms)
+
+nudges (drift before → speed × time → next drift reading):
+   -105 ms  speed 1.0263 × 3999 ms  →  -251 ms  (4.0 s later)
+   -214 ms  speed 1.0500 × 4280 ms  →  +114 ms  (4.3 s later)
+   +159 ms  speed 0.9603 × 4000 ms  →  -76 ms  (4.0 s later)
+   -134 ms  speed 1.0335 × 4000 ms  →  +109 ms  (4.0 s later)
+    +94 ms  speed 0.9765 × 3999 ms  →  +92 ms  (4.0 s later)
+   -149 ms  speed 1.0373 × 3999 ms  →  +209 ms  (4.0 s later)
+   +240 ms  speed 0.9500 × 4799 ms  →  +40 ms  (4.8 s later)
+   -103 ms  speed 1.0257 × 3999 ms  →  -188 ms  (4.0 s later)
+   -166 ms  speed 1.0415 × 4000 ms  →  -45 ms  (4.0 s later)
+    -99 ms  speed 1.0248 × 4000 ms  →  -86 ms  (4.0 s later)
+    +91 ms  speed 0.9772 × 3999 ms  →  -212 ms  (4.0 s later)
+   -211 ms  speed 1.0500 × 4220 ms  →  +197 ms  (4.2 s later)
+   +241 ms  speed 0.9500 × 4819 ms  →  +31 ms  (4.8 s later)
+    -91 ms  speed 1.0228 × 3999 ms  →  +73 ms  (4.0 s later)
+    +98 ms  speed 0.9755 × 3999 ms  →  -220 ms  (4.0 s later)
+   -200 ms  speed 1.0500 × 4000 ms  →  +176 ms  (4.0 s later)
+   +130 ms  speed 0.9675 × 3999 ms  →  +106 ms  (4.0 s later)
+    +87 ms  speed 0.9782 × 4000 ms  →  +8 ms  (4.0 s later)
+  speed-ups: land at -251, +114, +109, +209, -188, -45, -86, +197, +73, +176 ms (mean +31); size of nudge -105, -214, -134, -149, -103, -166, -99, -211, -91, -200
+  slow-downs: land at -76, +92, +40, -212, +31, -220, +106, +8 ms (mean -29); size of nudge +159, +94, +240, +91, +241, +98, +130, +87
+
+reading moved > 100 ms between two checks with no speed change in between: 6
+  +79 → -149 ms over 10.0 s (at 35.2 s)
+  -86 → +91 ms over 2.0 s (at 115.1 s)
+  -212 → +10 ms over 2.0 s (at 121.1 s)
+  +10 → -211 ms over 10.0 s (at 123.1 s)
+  -220 → +4 ms over 2.0 s (at 166.3 s)
+  +4 → -200 ms over 10.0 s (at 168.3 s)
+
+starts:
+  start warm: lead 300 ms, 300 ms to the anchor point
+  start cold: lead 300 ms, 299 ms to the anchor point
+
+errors in logcat: 1, crash buffer lines: 0
+  E kivan.motoparty: Failed to query component interface for required system resources: 6

@@ -1,0 +1,18 @@
+1789850115.912 23:35:15.911 connecting to 192.168.1.100:47800
+1789850115.913 23:35:15.912 commands: talk | say <text> | pause | resume | next | previous | vol+ | vol- (local) |
+1789850115.913           unavailable (toggle "my mic is dead") | stats | raw <json> (send unvalidated) | quit
+1789850115.923 23:35:15.923 connected to 192.168.1.100:47800
+1789850115.923 23:35:15.923 << {"t":"hello","proto":1,"role":"host","name":"Pixel 8","voicePort":47801,"httpPort":47802}
+1789850115.927 23:35:15.927 << {"t":"state","talk":false,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":false,"positionMs":235751,"atHostTimeMs":2343366186,"durationMs":355000},"queue":[]}
+1789850115.929 23:35:15.929 << {"t":"music.load","id":"BSTsnWoslP4","path":"/track/BSTsnWoslP4.m4a","title":"Bohemian Rhapsody","artist":"Queen","durationMs":355000}
+1789850115.934 23:35:15.933 << pong id=1 rtt=5ms offset=2278716180.5ms | estimate offset=2278716180.5ms (rtt 5ms)
+1789850116.464 23:35:16.463 music: cached BSTsnWoslP4 (5736965 bytes in 534 ms) -> /home/kivan/.cache/motoparty-peer/BSTsnWoslP4.m4a
+1789850116.464 23:35:16.464 >> {"t":"music.ready","id":"BSTsnWoslP4"}
+1789850117.938 23:35:17.937 << pong id=2 rtt=8ms offset=2278716180.0ms | estimate offset=2278716180.5ms (rtt 5ms)
+1789850119.943 23:35:19.943 << pong id=3 rtt=11ms offset=2278716180.5ms | estimate offset=2278716180.5ms (rtt 5ms)
+1789850121.944 23:35:21.943 << pong id=4 rtt=10ms offset=2278716181.0ms | estimate offset=2278716180.5ms (rtt 5ms)
+1789850123.957 23:35:23.957 << pong id=5 rtt=21ms offset=2278716175.5ms | estimate offset=2278716180.5ms (rtt 5ms)
+1789850125.938 23:35:25.937 << pong id=6 rtt=5ms offset=2278716180.5ms | estimate offset=2278716180.5ms (rtt 5ms)
+1789850126.336 23:35:26.335 >> {"t":"bye","reason":"user"}
+1789850126.336 23:35:26.335 voice (final): rx=0 ka=11 played=0 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=0ms target=40ms
+1789850126.336 23:35:26.335 bye

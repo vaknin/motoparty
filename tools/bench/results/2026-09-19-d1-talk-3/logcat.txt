@@ -1,0 +1,121 @@
+         1789850591.236 17762 17814 I ControlServer: #2 connected from /192.168.1.102:38782
+         1789850591.337 17762 17853 I ControlServer: #2 is the client: arch
+         1789850591.339 17762 17762 I Motoparty: client "arch" connected from 192.168.1.102
+         1789850596.245 17762 17762 I Motoparty: talk open (by client)
+         1789850596.276 17762 17884 D AudioSystem: onNewService: media.audio_policy service obtained 0xb400007593de3410
+         1789850596.279 17762 17884 D AudioSystem: getService: IAudioPolicyService retrieved: 0xb400007593de3410  cached: 0xb400007593de3410
+         1789850596.549 17762 17884 I AudioRouter: enterCall 300 ms (setMode 2, devices 297)
+         1789850596.551 17762 17884 I VoiceEngine: start 1 ms
+         1789850596.691 17762 17888 D nativeloader: Load /data/app/~~Lkx2d-iq41RVVNvWSA0JEQ==/com.kivan.motoparty-K35LM8jE_fny3eV4Dzm2NQ==/base.apk!/lib/arm64-v8a/libmotoparty_opus.so using class loader ns clns-9 (caller=/data/app/~~Lkx2d-iq41RVVNvWSA0JEQ==/com.kivan.motoparty-K35LM8jE_fny3eV4Dzm2NQ==/base.apk!classes7.dex): ok
+         1789850596.808 17762 17888 I VoiceEngine: playback up 255 ms (AudioTrack 79, play 139, first write 36)
+         1789850596.996 17762 17886 I VoiceEngine: capture up 445 ms (AudioRecord 77, effects+encoder 65, startRecording 99, first frame 202)
+         1789850604.167 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850604.177 17762 17886 I VoiceEngine: capture: read 359 frames in 7382 ms (369 expected), device 360 frames, slowest encode+send 6 ms, longest read wait 22 ms
+         1789850604.183 17762 17888 I VoiceEngine: playback: wrote 373 frames in 7412 ms (370 expected), 0 re-anchors
+         1789850604.183 17762 17888 D AudioTrack: stop(20241): called with 119360 frames delivered
+         1789850604.312 17762 17884 I VoiceEngine: talk stats: tx 202 sent of 359 captured (157 DTX), rx 380 received, 368 played, 0 lost, 5 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789850604.323 17762 17884 I VoiceEngine: stop 144 ms (join capture 142, join playback 0)
+         1789850604.380 17762 17884 I AudioRouter: back to media mode
+         1789850604.381 17762 17884 I AudioRouter: exitCall 56 ms (clearCommunicationDevice 54, setMode 1)
+         1789850608.171 17762 17762 I Motoparty: talk open (by client)
+         1789850608.200 17762 17884 I AudioRouter: enterCall 28 ms (setMode 1, devices 26)
+         1789850608.220 17762 17884 I VoiceEngine: start 19 ms
+         1789850608.533 17762 17908 I VoiceEngine: playback up 311 ms (AudioTrack 244, play 65, first write 1)
+         1789850608.742 17762 17907 I VoiceEngine: capture up 520 ms (AudioRecord 242, effects+encoder 30, startRecording 54, first frame 193)
+         1789850616.169 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850616.181 17762 17908 I VoiceEngine: playback: wrote 374 frames in 7649 ms (382 expected), 0 re-anchors
+         1789850616.181 17762 17908 D AudioTrack: stop(20248): called with 119680 frames delivered
+         1789850616.185 17762 17907 I VoiceEngine: capture: read 372 frames in 7636 ms (381 expected), device 373 frames, slowest encode+send 8 ms, longest read wait 26 ms
+         1789850616.333 17762 17884 I VoiceEngine: talk stats: tx 102 sent of 372 captured (270 DTX), rx 398 received, 374 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850616.333 17762 17884 I VoiceEngine: stop 163 ms (join capture 162, join playback 0)
+         1789850616.342 17762 17884 I AudioRouter: back to media mode
+         1789850616.342 17762 17884 I AudioRouter: exitCall 7 ms (clearCommunicationDevice 3, setMode 3)
+         1789850620.173 17762 17762 I Motoparty: talk open (by client)
+         1789850620.176 17762 17884 I AudioRouter: enterCall 2 ms (setMode 1, devices 1)
+         1789850620.177 17762 17884 I VoiceEngine: start 0 ms
+         1789850620.526 17762 17921 I VoiceEngine: playback up 346 ms (AudioTrack 277, play 68, first write 0)
+         1789850620.740 17762 17920 I VoiceEngine: capture up 561 ms (AudioRecord 277, effects+encoder 30, startRecording 51, first frame 203)
+         1789850628.180 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850628.183 17762 17920 I VoiceEngine: capture: read 372 frames in 7646 ms (382 expected), device 373 frames, slowest encode+send 5 ms, longest read wait 22 ms
+         1789850628.186 17762 17921 I VoiceEngine: playback: wrote 376 frames in 7661 ms (383 expected), 0 re-anchors
+         1789850628.186 17762 17921 D AudioTrack: stop(20254): called with 120320 frames delivered
+         1789850628.306 17762 17884 I VoiceEngine: talk stats: tx 101 sent of 372 captured (271 DTX), rx 399 received, 376 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850628.307 17762 17884 I VoiceEngine: stop 126 ms (join capture 125, join playback 0)
+         1789850628.344 17762 17884 I AudioRouter: back to media mode
+         1789850628.344 17762 17884 I AudioRouter: exitCall 36 ms (clearCommunicationDevice 32, setMode 4)
+         1789850632.183 17762 17762 I Motoparty: talk open (by client)
+         1789850632.189 17762 17884 I AudioRouter: enterCall 5 ms (setMode 2, devices 2)
+         1789850632.191 17762 17884 I VoiceEngine: start 2 ms
+         1789850632.553 17762 17933 I VoiceEngine: playback up 352 ms (AudioTrack 280, play 70, first write 1)
+         1789850632.771 17762 17932 I VoiceEngine: capture up 579 ms (AudioRecord 285, effects+encoder 29, startRecording 59, first frame 205)
+         1789850640.185 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850640.191 17762 17932 I VoiceEngine: capture: read 371 frames in 7622 ms (381 expected), device 372 frames, slowest encode+send 3 ms, longest read wait 21 ms
+         1789850640.206 17762 17933 I VoiceEngine: playback: wrote 375 frames in 7655 ms (382 expected), 0 re-anchors
+         1789850640.206 17762 17933 D AudioTrack: stop(20260): called with 120000 frames delivered
+         1789850640.345 17762 17884 I VoiceEngine: talk stats: tx 36 sent of 371 captured (335 DTX), rx 398 received, 375 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850640.346 17762 17884 I VoiceEngine: stop 159 ms (join capture 154, join playback 0)
+         1789850640.369 17762 17884 I AudioRouter: back to media mode
+         1789850640.370 17762 17884 I AudioRouter: exitCall 23 ms (clearCommunicationDevice 21, setMode 2)
+         1789850644.186 17762 17762 I Motoparty: talk open (by client)
+         1789850644.216 17762 17884 I AudioRouter: enterCall 29 ms (setMode 21, devices 5)
+         1789850644.223 17762 17884 I VoiceEngine: start 5 ms
+         1789850644.548 17762 17947 I VoiceEngine: playback up 323 ms (AudioTrack 257, play 64, first write 0)
+         1789850644.764 17762 17946 I VoiceEngine: capture up 539 ms (AudioRecord 257, effects+encoder 28, startRecording 61, first frame 192)
+         1789850652.183 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850652.185 17762 17946 I VoiceEngine: capture: read 372 frames in 7614 ms (380 expected), device 372 frames, slowest encode+send 5 ms, longest read wait 21 ms
+         1789850652.192 17762 17947 I VoiceEngine: playback: wrote 374 frames in 7645 ms (382 expected), 0 re-anchors
+         1789850652.193 17762 17947 D AudioTrack: stop(20266): called with 119680 frames delivered
+         1789850652.289 17762 17884 I VoiceEngine: talk stats: tx 88 sent of 372 captured (284 DTX), rx 397 received, 374 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850652.291 17762 17884 I VoiceEngine: stop 106 ms (join capture 104, join playback 0)
+         1789850652.337 17762 17884 I AudioRouter: back to media mode
+         1789850652.338 17762 17884 I AudioRouter: exitCall 46 ms (clearCommunicationDevice 40, setMode 6)
+         1789850656.188 17762 17762 I Motoparty: talk open (by client)
+         1789850656.212 17762 17884 I AudioRouter: enterCall 23 ms (setMode 5, devices 17)
+         1789850656.220 17762 17884 I VoiceEngine: start 8 ms
+         1789850656.522 17762 17959 I VoiceEngine: playback up 300 ms (AudioTrack 232, play 66, first write 0)
+         1789850656.740 17762 17958 I VoiceEngine: capture up 498 ms (AudioRecord 212, effects+encoder 20, startRecording 56, first frame 208)
+         1789850664.185 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850664.185 17762 17958 I VoiceEngine: capture: read 373 frames in 7654 ms (382 expected), device 373 frames, slowest encode+send 4 ms, longest read wait 25 ms
+         1789850664.195 17762 17959 I VoiceEngine: playback: wrote 376 frames in 7673 ms (383 expected), 0 re-anchors
+         1789850664.195 17762 17959 D AudioTrack: stop(20272): called with 120320 frames delivered
+         1789850664.321 17762 17884 I VoiceEngine: talk stats: tx 195 sent of 373 captured (178 DTX), rx 399 received, 376 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850664.323 17762 17884 I VoiceEngine: stop 136 ms (join capture 134, join playback 1)
+         1789850664.378 17762 17884 I AudioRouter: back to media mode
+         1789850664.379 17762 17884 I AudioRouter: exitCall 55 ms (clearCommunicationDevice 47, setMode 7)
+         1789850668.192 17762 17762 I Motoparty: talk open (by client)
+         1789850668.213 17762 17884 I AudioRouter: enterCall 19 ms (setMode 3, devices 16)
+         1789850668.215 17762 17884 I VoiceEngine: start 1 ms
+         1789850668.491 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850668.555 17762 17973 I VoiceEngine: playback: wrote 0 frames in 0 ms (0 expected), 0 re-anchors
+         1789850668.555 17762 17973 D AudioTrack: stop(20278): called with 0 frames delivered
+         1789850668.579 17762 17972 I VoiceEngine: capture: read 0 frames in 0 ms (0 expected), device -1 frames, slowest encode+send 0 ms, longest read wait 0 ms
+         1789850668.778 17762 17762 I Motoparty: talk open (by client)
+         1789850668.852 17762 17884 I VoiceEngine: talk stats: tx 0 sent of 0 captured (0 DTX), rx 13 received, 0 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850668.852 17762 17884 I VoiceEngine: stop 356 ms (join capture 355, join playback 0)
+         1789850668.852 17762 17884 I TalkAudio: re-open during teardown: call route kept (session 8)
+         1789850668.854 17762 17884 I VoiceEngine: start 1 ms
+         1789850668.984 17762 17982 I VoiceEngine: playback up 129 ms (AudioTrack 61, play 67, first write 0)
+         1789850669.106 17762 17981 I VoiceEngine: capture up 251 ms (AudioRecord 57, effects+encoder 26, startRecording 69, first frame 97)
+         1789850672.797 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850672.804 17762 17981 I VoiceEngine: capture: read 185 frames in 3796 ms (189 expected), device 186 frames, slowest encode+send 4 ms, longest read wait 20 ms
+         1789850672.809 17762 17982 I VoiceEngine: playback: wrote 196 frames in 3825 ms (191 expected), 0 re-anchors
+         1789850672.809 17762 17982 D AudioTrack: stop(20282): called with 62720 frames delivered
+         1789850672.949 17762 17884 I VoiceEngine: talk stats: tx 185 sent of 185 captured (0 DTX), rx 196 received, 196 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850672.950 17762 17884 I VoiceEngine: stop 152 ms (join capture 148, join playback 2)
+         1789850672.968 17762 17884 I AudioRouter: back to media mode
+         1789850672.968 17762 17884 I AudioRouter: exitCall 17 ms (clearCommunicationDevice 14, setMode 3)
+         1789850676.810 17762 17762 I Motoparty: talk open (by client)
+         1789850676.815 17762 17884 I AudioRouter: enterCall 4 ms (setMode 3, devices 1)
+         1789850676.816 17762 17884 I VoiceEngine: start 0 ms
+         1789850677.162 17762 17995 I VoiceEngine: playback up 342 ms (AudioTrack 268, play 72, first write 1)
+         1789850677.378 17762 17994 I VoiceEngine: capture up 560 ms (AudioRecord 266, effects+encoder 33, startRecording 69, first frame 191)
+         1789850696.798 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789850696.799 17762 17994 I VoiceEngine: capture: read 971 frames in 19612 ms (980 expected), device 972 frames, slowest encode+send 6 ms, longest read wait 24 ms
+         1789850696.802 17762 17995 I VoiceEngine: playback: wrote 974 frames in 19641 ms (982 expected), 0 re-anchors
+         1789850696.802 17762 17995 D AudioTrack: stop(20288): called with 311680 frames delivered
+         1789850696.965 17762 17884 I VoiceEngine: talk stats: tx 483 sent of 971 captured (488 DTX), rx 999 received, 974 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789850696.970 17762 17884 I VoiceEngine: stop 166 ms (join capture 164, join playback 0)
+         1789850696.978 17762 17884 I AudioRouter: back to media mode
+         1789850696.978 17762 17884 I AudioRouter: exitCall 8 ms (clearCommunicationDevice 6, setMode 1)
+         1789850700.782 17762 17853 I ControlServer: #2 closed: closed by peer
+         1789850700.791 17762 17762 I Motoparty: client gone: closed by peer

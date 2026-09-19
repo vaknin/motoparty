@@ -1,0 +1,159 @@
+--------- beginning of main
+09-19 22:06:29.380 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:06:29.380 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:06:29.380 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:06:29.380 30037 30201 D CCodecConfig: }
+09-19 22:06:31.387 30037 30037 I SyncController: drift 48 ms (start latency 416 ms, cold 442 ms)
+09-19 22:06:32.551 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4730/4754 (recycle/alloc) - 32/4737 (fetch/transfer)
+09-19 22:06:37.810 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4954/4978 (recycle/alloc) - 32/4961 (fetch/transfer)
+09-19 22:06:41.392 30037 30037 I SyncController: drift -91 ms: speed 1.02275 for 3999 ms
+09-19 22:06:41.399 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:06:41.399 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 45103.3
+09-19 22:06:41.399 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45103.3
+09-19 22:06:41.399 30037 30201 D CCodecConfig: }
+09-19 22:06:43.089 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5185/5209 (recycle/alloc) - 32/5192 (fetch/transfer)
+09-19 22:06:45.451 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:06:45.451 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:06:45.451 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:06:45.451 30037 30201 D CCodecConfig: }
+09-19 22:06:47.422 30037 30037 I SyncController: drift 221 ms: speed 0.95 for 4419 ms
+09-19 22:06:47.425 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:06:47.425 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 41895
+09-19 22:06:47.425 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 41895
+09-19 22:06:47.425 30037 30201 D CCodecConfig: }
+09-19 22:06:48.402 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5416/5440 (recycle/alloc) - 32/5423 (fetch/transfer)
+09-19 22:06:51.901 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:06:51.901 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:06:51.901 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:06:51.901 30037 30201 D CCodecConfig: }
+09-19 22:06:53.865 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5640/5664 (recycle/alloc) - 32/5647 (fetch/transfer)
+09-19 22:06:53.872 30037 30037 I SyncController: drift -6 ms (start latency 416 ms, cold 442 ms)
+09-19 22:06:59.026 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5864/5888 (recycle/alloc) - 32/5871 (fetch/transfer)
+09-19 22:07:03.877 30037 30037 I SyncController: drift -189 ms: speed 1.04725 for 3999 ms
+09-19 22:07:03.902 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:03.902 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 46183.7
+09-19 22:07:03.902 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 46183.7
+09-19 22:07:03.902 30037 30201 D CCodecConfig: }
+09-19 22:07:04.264 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6092/6116 (recycle/alloc) - 32/6099 (fetch/transfer)
+09-19 22:07:07.895 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:07.895 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:07:07.895 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:07:07.895 30037 30201 D CCodecConfig: }
+09-19 22:07:09.427 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6318/6342 (recycle/alloc) - 32/6325 (fetch/transfer)
+09-19 22:07:09.907 30037 30037 I SyncController: drift 147 ms: speed 0.96325 for 3999 ms
+09-19 22:07:09.911 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:09.911 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 42479.3
+09-19 22:07:09.911 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 42479.3
+09-19 22:07:09.911 30037 30201 D CCodecConfig: }
+09-19 22:07:13.922 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:13.922 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:07:13.922 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:07:13.922 30037 30201 D CCodecConfig: }
+09-19 22:07:14.830 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6546/6570 (recycle/alloc) - 32/6553 (fetch/transfer)
+09-19 22:07:15.932 30037 30037 I SyncController: drift 17 ms (start latency 416 ms, cold 442 ms)
+09-19 22:07:20.065 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6769/6793 (recycle/alloc) - 32/6776 (fetch/transfer)
+09-19 22:07:25.277 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6997/7021 (recycle/alloc) - 32/7004 (fetch/transfer)
+09-19 22:07:25.934 30037 30037 I SyncController: drift 31 ms (start latency 416 ms, cold 442 ms)
+09-19 22:07:30.442 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7217/7241 (recycle/alloc) - 32/7224 (fetch/transfer)
+09-19 22:07:35.637 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7443/7467 (recycle/alloc) - 32/7450 (fetch/transfer)
+09-19 22:07:35.939 30037 30037 I SyncController: drift -185 ms: speed 1.04625 for 4000 ms
+09-19 22:07:35.944 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:35.944 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 46139.6
+09-19 22:07:35.944 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 46139.6
+09-19 22:07:35.944 30037 30201 D CCodecConfig: }
+09-19 22:07:39.960 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:39.960 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:07:39.960 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:07:39.960 30037 30201 D CCodecConfig: }
+09-19 22:07:40.790 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7672/7696 (recycle/alloc) - 32/7679 (fetch/transfer)
+09-19 22:07:41.966 30037 30037 I SyncController: drift 149 ms: speed 0.96275 for 4000 ms
+09-19 22:07:41.969 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:41.969 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 42457.3
+09-19 22:07:41.969 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 42457.3
+09-19 22:07:41.969 30037 30201 D CCodecConfig: }
+09-19 22:07:45.990 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:07:45.990 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:07:45.990 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:07:45.990 30037 30201 D CCodecConfig: }
+09-19 22:07:46.244 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7900/7924 (recycle/alloc) - 32/7907 (fetch/transfer)
+09-19 22:07:47.995 30037 30037 I SyncController: drift 32 ms (start latency 416 ms, cold 442 ms)
+09-19 22:07:51.420 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8121/8145 (recycle/alloc) - 32/8128 (fetch/transfer)
+09-19 22:07:56.604 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8349/8373 (recycle/alloc) - 32/8356 (fetch/transfer)
+09-19 22:07:57.998 30037 30037 I SyncController: drift 25 ms (start latency 416 ms, cold 442 ms)
+09-19 22:08:01.794 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8572/8596 (recycle/alloc) - 32/8579 (fetch/transfer)
+09-19 22:08:06.972 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8791/8815 (recycle/alloc) - 32/8798 (fetch/transfer)
+09-19 22:08:08.002 30037 30037 I SyncController: drift 76 ms (start latency 416 ms, cold 442 ms)
+09-19 22:08:12.108 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9013/9037 (recycle/alloc) - 32/9020 (fetch/transfer)
+09-19 22:08:17.258 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9237/9261 (recycle/alloc) - 32/9244 (fetch/transfer)
+09-19 22:08:18.004 30037 30037 I SyncController: drift 37 ms (start latency 416 ms, cold 442 ms)
+09-19 22:08:22.391 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9459/9483 (recycle/alloc) - 32/9466 (fetch/transfer)
+09-19 22:08:25.555 30037 30153 D MediaCodec: keep callback message for reclaim
+09-19 22:08:25.559 30037 30201 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+09-19 22:08:25.560 30037 30201 D CCodecConfig: c2 config diff is   c2::i32 coding.drc.compression-mode.value = 2
+09-19 22:08:25.570 30037 30037 I Motoparty: talk open (by client)
+09-19 22:08:25.583 30037 30241 I AudioRouter: communication device AirPods Pro (type 7): true
+09-19 22:08:28.195 30037 30334 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1627ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+09-19 22:08:31.605 30037 30205 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 0(0 size) used buffers - 9628/9652 (recycle/alloc) - 32/9635 (fetch/transfer)
+09-19 22:08:31.605 30037 30205 D AidlBufferPoolAcc: evictor expired: 1, evicted: 1
+09-19 22:08:48.591 30037 30079 I kivan.motoparty: Waiting for a blocking GC ProfileSaver
+09-19 22:08:48.722 30037 30079 I kivan.motoparty: WaitForGcToComplete blocked ProfileSaver on Background for 131.534ms
+09-19 22:08:55.551 30037 30037 I Motoparty: talk closed (by client, trigger)
+09-19 22:08:55.556 30037 32526 D AudioTrack: stop(19992): called with 467200 frames delivered
+09-19 22:08:55.630 30037 30241 I AudioRouter: back to media mode
+09-19 22:08:56.896 30037 30037 I SyncController: start cold: lead 442 ms, 137 ms to the anchor point
+09-19 22:08:57.280 30037 30153 D AudioTrack: getTimestamp_l(19990): stale timestamp time corrected, currentTimeNanos: 1281323700458157 < limitNs: 1281352031684327 < mStartNs: 1281352032684327
+09-19 22:08:57.303 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 1(8192 size) total buffers - 1(8192 size) used buffers - 9628/9653 (recycle/alloc) - 32/9635 (fetch/transfer)
+09-19 22:08:57.326 30037 30201 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+09-19 22:08:57.345 30037 30058 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+09-19 22:08:57.356 30037 30201 D CCodecConfig: c2 config diff is   c2::float coding.drc.reference-level.value = -24
+09-19 22:08:57.358 30037 30201 D CCodecBuffers: [c2.android.aac.decoder#54:1D-Output] popFromStashAndRegister: at 1000139469206us, output format changed to AMessage(what = 0x00000000) = {
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-drc-album-mode = 0
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-drc-boost-level = 127
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-drc-cut-level = 127
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-drc-effect-type = 3
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-drc-output-loudness = -1
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-encoded-target-level = -1
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-max-output-channel_count = 8
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t aac-target-ref-level = 96
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t buffer-batch-max-output-size = 0
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t buffer-batch-threshold-output-size = 0
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t channel-count = 2
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t channel-mask = 12
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t max-output-channel-count = 8
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   string mime = "audio/raw"
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t sample-rate = 44100
+09-19 22:08:57.358 30037 30201 D CCodecBuffers:   int32_t android._config-pcm-encoding = 2
+09-19 22:08:57.358 30037 30201 D CCodecBuffers: }
+09-19 22:08:58.135 30037 30201 D CCodecConfig: c2 config diff is   c2::float coding.drc.reference-level.value = -31
+09-19 22:08:58.137 30037 30201 D CCodecBuffers: [c2.android.aac.decoder#54:1D-Output] popFromStashAndRegister: at 1000140142585us, output format changed to AMessage(what = 0x00000000) = {
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-drc-album-mode = 0
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-drc-boost-level = 127
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-drc-cut-level = 127
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-drc-effect-type = 3
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-drc-output-loudness = -1
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-encoded-target-level = -1
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-max-output-channel_count = 8
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t aac-target-ref-level = 124
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t buffer-batch-max-output-size = 0
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t buffer-batch-threshold-output-size = 0
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t channel-count = 2
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t channel-mask = 12
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t max-output-channel-count = 8
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   string mime = "audio/raw"
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t sample-rate = 44100
+09-19 22:08:58.137 30037 30201 D CCodecBuffers:   int32_t android._config-pcm-encoding = 2
+09-19 22:08:58.137 30037 30201 D CCodecBuffers: }
+09-19 22:08:58.909 30037 30037 I SyncController: drift -317 ms: speed 1.05 for 6340 ms
+09-19 22:08:58.913 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:08:58.913 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 46305
+09-19 22:08:58.913 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 46305
+09-19 22:08:58.913 30037 30201 D CCodecConfig: }
+09-19 22:09:02.624 30037 30201 D AidlBufferPool: bufferpool2 0xb400007603dbd368 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9855/9884 (recycle/alloc) - 37/9866 (fetch/transfer)
+09-19 22:09:05.284 30037 30201 D CCodecConfig: no recognized params in: Dict {
+09-19 22:09:05.284 30037 30201 D CCodecConfig:   c2::float algo.rate.value = 44100
+09-19 22:09:05.284 30037 30201 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+09-19 22:09:05.284 30037 30201 D CCodecConfig: }
+09-19 22:09:05.550 30037 30153 D MediaCodec: keep callback message for reclaim
+09-19 22:09:05.558 30037 30201 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+09-19 22:09:07.537 30037 30178 I ControlServer: #5 closed: closed by peer
+09-19 22:09:07.539 30037 30037 I Motoparty: client gone: closed by peer

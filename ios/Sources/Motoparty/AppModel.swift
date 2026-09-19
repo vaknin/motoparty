@@ -78,6 +78,10 @@ final class AppModel: ObservableObject {
     /// We have told the host we cannot open the mic for this talk; cleared by
     /// its `talk.close` or by the next TALK press.
     private var micUnavailable = false
+    /// The host opened talk and we are waiting for the record-permission
+    /// prompt. Cleared by the host's `talk.close` / `state{talk:false}`, so a
+    /// late answer cannot open (or refuse) a talk that is already over.
+    private var talkOpenPending = false
     private var statsTimer: Timer?
 
     // MARK: - Lifecycle
@@ -175,6 +179,7 @@ final class AppModel: ObservableObject {
         hostAddress = nil
         if talkOpen { closeTalkLocally() }
         talkRequested = false
+        talkOpenPending = false
         micUnavailable = false
         if listening { transcriber.cancel(); listening = false; restoreMediaRoute() }
         // Music keeps playing locally along the last anchor (the host does the same).
@@ -209,6 +214,7 @@ final class AppModel: ObservableObject {
             openTalkLocally()
         case .talkClose(let close):
             micUnavailable = false
+            talkOpenPending = false
             if talkOpen {
                 closeTalkLocally()
             } else {
@@ -251,14 +257,16 @@ final class AppModel: ObservableObject {
     private func apply(_ state: HostState) {
         hostState = state
         // Talk state is authoritative on the host; heal missed messages.
+        if !state.talk { talkOpenPending = false }
         if state.talk != talkOpen { state.talk ? openTalkLocally() : closeTalkLocally() }
 
         guard let music = state.music else {
             if currentPlay != nil || player.currentId != nil {
                 currentPlay = nil
-                musicPlaying = false
                 player.stop()
             }
+            musicPlaying = false
+            nowPlaying = nil
             updateNowPlaying()
             return
         }
@@ -363,9 +371,16 @@ final class AppModel: ObservableObject {
             break
         case .undetermined:
             // Never asked (or asked while the app was starting): ask now and
-            // come back. A refusal is a "cannot", like any other.
+            // come back. A refusal is a "cannot", like any other. The host's
+            // state{talk:true} follows its talk.open: ask only once.
+            guard !talkOpenPending else { return }
+            talkOpenPending = true
             session.requestRecordPermission { [weak self] granted in
                 guard let self else { return }
+                // The host closed talk (or the link dropped) while the prompt
+                // was up: there is nothing left to open or to refuse.
+                guard self.talkOpenPending else { return }
+                self.talkOpenPending = false
                 guard granted else { return self.talkUnavailable("microphone permission denied", weAsked: weAsked) }
                 self.talkRequested = weAsked
                 self.openTalkLocally()
@@ -414,10 +429,10 @@ final class AppModel: ObservableObject {
         voiceEngine.stop()
         restoreMediaRoute()
         updateNowPlaying()
-        // The host resumes music with music.play; until then rejoin the last
-        // anchor — unless nothing ever paused it, so there is no re-seek for
-        // a talk that never started.
-        if currentPlay != nil, !player.isPlaying { player.resume() }
+        // Music stays held: the host paused its own music when it opened this
+        // talk, so the last anchor no longer describes its timeline. It sends
+        // music.play (now + resumeLeadMs) once it has closed talk, exactly as
+        // after any other talk (PROTOCOL.md "Talk flow" step 4).
     }
 
     /// Host decided talk is over: back to A2DP. The host resumes music with
@@ -489,8 +504,10 @@ final class AppModel: ObservableObject {
             earcons.play("error")
             announcer.speak("Didn't catch that", language: "en-US")
         }
-        // Rejoin the host's music timeline.
-        if currentPlay != nil { player.resume() } else { startMusicIfPossible() }
+        // Rejoin the host's music timeline: the current anchor, which may be
+        // a newer music.play (another track, a seek) that arrived while
+        // listening and was held — not the player's last anchor.
+        startMusicIfPossible()
     }
 
     // MARK: - Buttons
@@ -532,8 +549,15 @@ final class AppModel: ObservableObject {
     }
 
     private func interruptionEnded(_ shouldResume: Bool) {
-        session.reactivate()
-        keepAlive.start()
+        // interruptionBegan ended talk and the voice command, so unless one
+        // has started since, the session belongs in media mode — not in the
+        // route last activated (a voice command's HFP route, or .talk when
+        // switching back failed during the call).
+        if talkOpen || listening {
+            session.reactivate()
+            return
+        }
+        restoreMediaRoute()
         if shouldResume, currentPlay != nil { player.resume() }
     }
 
@@ -554,7 +578,15 @@ final class AppModel: ObservableObject {
         Log.audio.error("media services were reset; rebuilding audio")
         voiceEngine.stop()
         keepAlive.rebuild()
-        if talkOpen { closeTalkLocally() } else { restoreMediaRoute() }
+        if talkOpen {
+            // The host is the authority on talk: tell it, as after an
+            // interruption, instead of leaving it in a talk whose mic here
+            // is gone until its 10 s silence timeout.
+            requestTalkClose()
+            closeTalkLocally()
+        } else {
+            restoreMediaRoute()
+        }
         if currentPlay != nil { player.resume() }
     }
 

@@ -1,0 +1,586 @@
+         1789849385.642 15218 15256 I ControlServer: #3 connected from /192.168.1.102:60872
+         1789849385.655 15218 15861 I ControlServer: #3 is the client: arch
+         1789849385.656 15218 15218 I Motoparty: client "arch" connected from 192.168.1.102
+         1789849390.515 15218 15218 I Motoparty: command: "play song bohemian rhapsody"
+         1789849392.442 15218 15218 I Motoparty: announce: Playing Bohemian Rhapsody by Queen
+         1789849392.551 15218 15253 I DMCodecAdapterFactory: Creating an asynchronous MediaCodec adapter for track type audio
+         1789849392.557 15218 15253 I MediaCodec: Retry enabled for HDCP failure
+         1789849392.764 15218 15253 I ApexCodecsLazy: ApexCodecs loaded
+         1789849392.768 15218 15253 I Codec2Client: Available Codec2 services: "default" "default1" "default9" "software" "__ApexCodecs__"
+         1789849392.793 15218 15253 W kivan.motoparty: Failed to query component store for system resources: 6
+         1789849392.808 15218 16308 D CCodec  : allocate(c2.android.aac.decoder)
+         1789849392.815 15218 16308 I CCodec  : setting up 'default' as default (vendor) store
+         1789849392.909 15218 16308 I CCodec  : Created component [c2.android.aac.decoder] for [c2.android.aac.decoder]
+         1789849392.912 15218 16308 D CCodecConfig: read media type: audio/mp4a-latm
+         1789849392.921 15218 16308 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+         1789849392.922 15218 16308 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+         1789849392.922 15218 16308 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+         1789849392.922 15218 16308 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+         1789849392.922 15218 16308 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+         1789849392.923 15218 16308 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+         1789849392.923 15218 16308 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+         1789849392.942 15218 16308 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789849392.942 15218 16308 D CCodecConfig: c2 config diff is Dict {
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 coded.aac-packaging.value = 0
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 coded.pl.level = 0
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 coded.pl.profile = 8192
+         1789849392.942 15218 16308 D CCodecConfig:   c2::i32 coding.drc.album-mode.value = 0
+         1789849392.942 15218 16308 D CCodecConfig:   c2::float coding.drc.attenuation-factor.value = 1
+         1789849392.942 15218 16308 D CCodecConfig:   c2::float coding.drc.boost-factor.value = 1
+         1789849392.942 15218 16308 D CCodecConfig:   c2::i32 coding.drc.compression-mode.value = 3
+         1789849392.942 15218 16308 D CCodecConfig:   c2::i32 coding.drc.effect-type.value = 3
+         1789849392.942 15218 16308 D CCodecConfig:   c2::float coding.drc.encoded-level.value = 0.25
+         1789849392.942 15218 16308 D CCodecConfig:   c2::float coding.drc.reference-level.value = -16
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 8192
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 input.delay.value = 0
+         1789849392.942 15218 16308 D CCodecConfig:   string input.media-type.value = "audio/mp4a-latm"
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 output.delay.value = 2
+         1789849392.942 15218 16308 D CCodecConfig:   c2::float output.drc.output-loudness.value = 0.25
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 output.large-frame.max-size = 0
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 output.large-frame.threshold-size = 0
+         1789849392.942 15218 16308 D CCodecConfig:   string output.media-type.value = "audio/raw"
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 raw.channel-mask.value = 0
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 raw.max-channel-count.value = 8
+         1789849392.942 15218 16308 D CCodecConfig:   c2::u32 raw.sample-rate.value = 44100
+         1789849392.942 15218 16308 D CCodecConfig: }
+         1789849392.962 15218 16308 I MediaCodec: MediaCodec will operate in async mode
+         1789849392.964 15218 15253 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+         1789849392.967 15218 16308 D CCodec  : [c2.android.aac.decoder] buffers are bound to CCodec for this session
+         1789849392.968 15218 16308 D CCodecConfig: no c2 equivalents for log-session-id
+         1789849392.968 15218 16308 D CCodecConfig: no c2 equivalents for importance
+         1789849392.968 15218 16308 D CCodecConfig: no c2 equivalents for flags
+         1789849392.971 15218 16308 D CCodecConfig: c2 config diff is   c2::u32 raw.channel-count.value = 2
+         1789849392.972 15218 16308 D CCodec  : encoding statistics level = 0
+         1789849392.972 15218 16308 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-album-mode = 0
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-boost-level = 127
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-cut-level = 127
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-effect-type = 3
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-encoded-target-level = -1
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-max-output-channel_count = 8
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-target-ref-level = 64
+         1789849392.972 15218 16308 D CCodec  :   int32_t bitrate = 64000
+         1789849392.972 15218 16308 D CCodec  :   int32_t channel-count = 2
+         1789849392.972 15218 16308 D CCodec  :   int32_t channel-mask = 0
+         1789849392.972 15218 16308 D CCodec  :   int32_t level = 0
+         1789849392.972 15218 16308 D CCodec  :   int32_t max-input-size = 8192
+         1789849392.972 15218 16308 D CCodec  :   int32_t max-output-channel-count = 8
+         1789849392.972 15218 16308 D CCodec  :   string mime = "audio/mp4a-latm"
+         1789849392.972 15218 16308 D CCodec  :   int32_t profile = 2
+         1789849392.972 15218 16308 D CCodec  :   int32_t sample-rate = 44100
+         1789849392.972 15218 16308 D CCodec  : }
+         1789849392.972 15218 16308 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-album-mode = 0
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-boost-level = 127
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-cut-level = 127
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-effect-type = 3
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-drc-output-loudness = -1
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-encoded-target-level = -1
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-max-output-channel_count = 8
+         1789849392.972 15218 16308 D CCodec  :   int32_t aac-target-ref-level = 64
+         1789849392.972 15218 16308 D CCodec  :   int32_t buffer-batch-max-output-size = 0
+         1789849392.972 15218 16308 D CCodec  :   int32_t buffer-batch-threshold-output-size = 0
+         1789849392.972 15218 16308 D CCodec  :   int32_t channel-count = 2
+         1789849392.972 15218 16308 D CCodec  :   int32_t channel-mask = 0
+         1789849392.972 15218 16308 D CCodec  :   int32_t max-output-channel-count = 8
+         1789849392.972 15218 16308 D CCodec  :   string mime = "audio/raw"
+         1789849392.972 15218 16308 D CCodec  :   int32_t sample-rate = 44100
+         1789849392.972 15218 16308 D CCodec  :   int32_t android._config-pcm-encoding = 2
+         1789849392.972 15218 16308 D CCodec  : }
+         1789849392.972 15218 16308 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789849392.972 15218 16308 E kivan.motoparty: Failed to query component interface for required system resources: 6
+         1789849392.973 15218 15253 D MediaCodec: keep callback message for reclaim
+         1789849393.001 15218 16308 D C2Store : debug.c2.use_dmabufheaps set, forcing DMABUF Heaps
+         1789849393.001 15218 16308 D C2Store : Using DMABUF Heaps
+         1789849393.004 15218 16308 D CCodecBufferChannel: [c2.android.aac.decoder#453] Created input block pool with allocatorID 16 => poolID 17 - OK (0)
+         1789849393.007 15218 16308 I CCodecBufferChannel: [c2.android.aac.decoder#453] Created output block pool with allocatorID 16 => poolID 8702 - OK
+         1789849393.007 15218 16308 D CCodecBufferChannel: [c2.android.aac.decoder#453] Configured output block pool ids 8702 => OK
+         1789849393.021 15218 16308 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789849393.070 15218 15365 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789849393.073 15218 16308 D CCodecConfig: c2 config diff is   c2::u32 raw.channel-mask.value = 12
+         1789849393.074 15218 16308 D CCodecBuffers: [c2.android.aac.decoder#453:1D-Output] popFromStashAndRegister: at 999999986939us, output format changed to AMessage(what = 0x00000000) = {
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-drc-album-mode = 0
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-drc-boost-level = 127
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-drc-cut-level = 127
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-drc-effect-type = 3
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-drc-output-loudness = -1
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-encoded-target-level = -1
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-max-output-channel_count = 8
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t aac-target-ref-level = 64
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t buffer-batch-max-output-size = 0
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t buffer-batch-threshold-output-size = 0
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t channel-count = 2
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t channel-mask = 12
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t max-output-channel-count = 8
+         1789849393.074 15218 16308 D CCodecBuffers:   string mime = "audio/raw"
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t sample-rate = 44100
+         1789849393.074 15218 16308 D CCodecBuffers:   int32_t android._config-pcm-encoding = 2
+         1789849393.074 15218 16308 D CCodecBuffers: }
+         1789849393.076 15218 16308 D CCodecBufferChannel: [c2.android.aac.decoder#453] Discard frames from previous generation.
+         1789849393.078 15218 16308 D CCodecBufferChannel: [c2.android.aac.decoder#453] Discard frames from previous generation.
+         1789849393.078 15218 15232 D PipelineWatcher: onInputBufferReleased: frameIndex not found (7); ignored
+         1789849393.078 15218 15232 D CCodecBufferChannel: [c2.android.aac.decoder#453] Ignoring stale input buffer done callback: last flush index = 8, frameIndex = 7
+         1789849393.078 15218 15253 D MediaCodec: keep callback message for reclaim
+         1789849393.079 15218 16308 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789849393.079 15218 16308 D CCodecConfig: c2 config diff is   c2::i32 coding.drc.compression-mode.value = 2
+         1789849393.079 15218 16308 D CCodecConfig:   c2::float coding.drc.reference-level.value = -31
+         1789849393.100 15218 16308 D CCodecBuffers: [c2.android.aac.decoder#453:1D-Output] popFromStashAndRegister: at 1000000265578us, output format changed to AMessage(what = 0x00000000) = {
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-drc-album-mode = 0
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-drc-boost-level = 127
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-drc-cut-level = 127
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-drc-effect-type = 3
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-drc-output-loudness = -1
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-encoded-target-level = -1
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-max-output-channel_count = 8
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t aac-target-ref-level = 124
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t buffer-batch-max-output-size = 0
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t buffer-batch-threshold-output-size = 0
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t channel-count = 2
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t channel-mask = 12
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t max-output-channel-count = 8
+         1789849393.100 15218 16308 D CCodecBuffers:   string mime = "audio/raw"
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t sample-rate = 44100
+         1789849393.100 15218 16308 D CCodecBuffers:   int32_t android._config-pcm-encoding = 2
+         1789849393.100 15218 16308 D CCodecBuffers: }
+         1789849393.122 15218 15253 I kivan.motoparty: hiddenapi: Accessing hidden method Landroid/media/AudioTrack;->getLatency()I (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/media3/exoplayer/audio/AudioTrackPositionTracker; (domain=app, TargetSdkVersion=37) using reflection: allowed
+         1789849393.215 15218 15218 I SyncController: start warm: lead 300 ms, 300 ms to the anchor point
+         1789849393.228 15218 15218 I SyncController: trace: pos 261 ms, expected -26 ms, err 287 ms, speed 1.0, phase start-warm, t 1, playing true, whenReady true, state 3
+         1789849393.435 15218 15253 D AudioTrack: getTimestamp_l(20224): stale timestamp time corrected, currentTimeNanos: 1285399350635196 < limitNs: 1285808349844258 < mStartNs: 1285808350844258
+         1789849394.231 15218 15218 I SyncController: trace: pos 934 ms, expected 976 ms, err -42 ms, speed 1.0, phase start-warm, t 1002, playing true, whenReady true, state 3
+         1789849395.235 15218 15218 I SyncController: drift -105 ms: speed 1.02625 for 3999 ms
+         1789849395.239 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849395.239 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 45257.6
+         1789849395.239 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45257.6
+         1789849395.239 15218 16308 D CCodecConfig: }
+         1789849395.248 15218 15218 I SyncController: trace: pos 1873 ms, expected 1994 ms, err -121 ms, speed 1.02625, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849396.250 15218 15218 I SyncController: trace: pos 2878 ms, expected 2995 ms, err -117 ms, speed 1.02625, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849397.253 15218 15218 I SyncController: trace: pos 3683 ms, expected 3998 ms, err -315 ms, speed 1.02625, phase nudge, t 2005, playing true, whenReady true, state 3
+         1789849398.257 15218 15218 I SyncController: trace: pos 4742 ms, expected 5002 ms, err -260 ms, speed 1.02625, phase nudge, t 3010, playing true, whenReady true, state 3
+         1789849398.331 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 249/254 (recycle/alloc) - 5/250 (fetch/transfer)
+         1789849399.252 15218 15218 I SyncController: nudge done: drift -251 ms
+         1789849399.256 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849399.256 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849399.256 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849399.256 15218 16308 D CCodecConfig: }
+         1789849399.264 15218 15218 I SyncController: trace: pos 5747 ms, expected 6010 ms, err -263 ms, speed 1.0, phase nudge, t 4018, playing true, whenReady true, state 3
+         1789849400.268 15218 15218 I SyncController: trace: pos 6802 ms, expected 7013 ms, err -211 ms, speed 1.0, phase nudge, t 5021, playing true, whenReady true, state 3
+         1789849401.264 15218 15218 I SyncController: drift -214 ms: speed 1.05 for 4280 ms
+         1789849401.270 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849401.270 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 46305
+         1789849401.270 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 46305
+         1789849401.270 15218 16308 D CCodecConfig: }
+         1789849401.282 15218 15218 I SyncController: trace: pos 7796 ms, expected 8028 ms, err -232 ms, speed 1.05, phase nudge, t 1, playing true, whenReady true, state 3
+         1789849402.285 15218 15218 I SyncController: trace: pos 8857 ms, expected 9031 ms, err -174 ms, speed 1.05, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849403.290 15218 15218 I SyncController: trace: pos 9918 ms, expected 10035 ms, err -117 ms, speed 1.05, phase nudge, t 2007, playing true, whenReady true, state 3
+         1789849403.751 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 487/492 (recycle/alloc) - 5/488 (fetch/transfer)
+         1789849404.294 15218 15218 I SyncController: trace: pos 11012 ms, expected 11039 ms, err -27 ms, speed 1.05, phase nudge, t 3012, playing true, whenReady true, state 3
+         1789849405.297 15218 15218 I SyncController: trace: pos 12069 ms, expected 12042 ms, err 27 ms, speed 1.05, phase nudge, t 4015, playing true, whenReady true, state 3
+         1789849405.565 15218 15218 I SyncController: nudge done: drift 114 ms
+         1789849405.568 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849405.568 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849405.568 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849405.568 15218 16308 D CCodecConfig: }
+         1789849406.299 15218 15218 I SyncController: trace: pos 13132 ms, expected 13044 ms, err 88 ms, speed 1.0, phase nudge, t 5017, playing true, whenReady true, state 3
+         1789849407.302 15218 15218 I SyncController: trace: pos 14137 ms, expected 14047 ms, err 90 ms, speed 1.0, phase nudge, t 6019, playing true, whenReady true, state 3
+         1789849407.578 15218 15218 I SyncController: drift 159 ms: speed 0.96025 for 4000 ms
+         1789849407.587 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849407.587 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 42347
+         1789849407.587 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 42347
+         1789849407.587 15218 16308 D CCodecConfig: }
+         1789849407.595 15218 15218 I SyncController: trace: pos 14483 ms, expected 14341 ms, err 142 ms, speed 0.96025, phase nudge, t 3, playing true, whenReady true, state 3
+         1789849408.599 15218 15218 I SyncController: trace: pos 15517 ms, expected 15344 ms, err 173 ms, speed 0.96025, phase nudge, t 1007, playing true, whenReady true, state 3
+         1789849409.228 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 725/730 (recycle/alloc) - 5/726 (fetch/transfer)
+         1789849409.602 15218 15218 I SyncController: trace: pos 16470 ms, expected 16347 ms, err 123 ms, speed 0.96025, phase nudge, t 2009, playing true, whenReady true, state 3
+         1789849410.605 15218 15218 I SyncController: trace: pos 17233 ms, expected 17350 ms, err -117 ms, speed 0.96025, phase nudge, t 3013, playing true, whenReady true, state 3
+         1789849411.597 15218 15218 I SyncController: nudge done: drift -76 ms
+         1789849411.600 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849411.600 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849411.600 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849411.600 15218 16308 D CCodecConfig: }
+         1789849411.613 15218 15218 I SyncController: trace: pos 18266 ms, expected 18359 ms, err -93 ms, speed 1.0, phase nudge, t 4022, playing true, whenReady true, state 3
+         1789849412.616 15218 15218 I SyncController: trace: pos 19241 ms, expected 19361 ms, err -120 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+         1789849413.610 15218 15218 I SyncController: drift -134 ms: speed 1.0335 for 4000 ms
+         1789849413.615 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849413.615 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 45577.3
+         1789849413.615 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45577.3
+         1789849413.615 15218 16308 D CCodecConfig: }
+         1789849413.627 15218 15218 I SyncController: trace: pos 20221 ms, expected 20373 ms, err -152 ms, speed 1.0335, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849414.629 15218 15218 I SyncController: trace: pos 21315 ms, expected 21374 ms, err -59 ms, speed 1.0335, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849414.789 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 962/967 (recycle/alloc) - 5/963 (fetch/transfer)
+         1789849415.634 15218 15218 I SyncController: trace: pos 22364 ms, expected 22379 ms, err -15 ms, speed 1.0335, phase nudge, t 2008, playing true, whenReady true, state 3
+         1789849416.639 15218 15218 I SyncController: trace: pos 23405 ms, expected 23383 ms, err 22 ms, speed 1.0335, phase nudge, t 3012, playing true, whenReady true, state 3
+         1789849417.632 15218 15218 I SyncController: nudge done: drift 109 ms
+         1789849417.637 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849417.637 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849417.637 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849417.637 15218 16308 D CCodecConfig: }
+         1789849417.647 15218 15218 I SyncController: trace: pos 24487 ms, expected 24393 ms, err 94 ms, speed 1.0, phase nudge, t 4022, playing true, whenReady true, state 3
+         1789849418.650 15218 15218 I SyncController: trace: pos 25511 ms, expected 25395 ms, err 116 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+         1789849419.644 15218 15218 I SyncController: drift 94 ms: speed 0.9765 for 3999 ms
+         1789849419.649 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849419.649 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 43063.6
+         1789849419.649 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 43063.6
+         1789849419.649 15218 16308 D CCodecConfig: }
+         1789849419.659 15218 15218 I SyncController: trace: pos 26483 ms, expected 26405 ms, err 78 ms, speed 0.9765, phase nudge, t 1, playing true, whenReady true, state 3
+         1789849420.179 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 1198/1203 (recycle/alloc) - 5/1199 (fetch/transfer)
+         1789849420.662 15218 15218 I SyncController: trace: pos 27520 ms, expected 27407 ms, err 113 ms, speed 0.9765, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849421.665 15218 15218 I SyncController: trace: pos 28529 ms, expected 28411 ms, err 118 ms, speed 0.9765, phase nudge, t 2007, playing true, whenReady true, state 3
+         1789849422.668 15218 15218 I SyncController: trace: pos 29517 ms, expected 29414 ms, err 103 ms, speed 0.9765, phase nudge, t 3010, playing true, whenReady true, state 3
+         1789849423.662 15218 15218 I SyncController: nudge done: drift 92 ms
+         1789849423.679 15218 15218 I SyncController: trace: pos 30500 ms, expected 30424 ms, err 76 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+         1789849423.701 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849423.701 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849423.701 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849423.701 15218 16308 D CCodecConfig: }
+         1789849424.683 15218 15218 I SyncController: trace: pos 31501 ms, expected 31428 ms, err 73 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+         1789849425.651 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 1428/1433 (recycle/alloc) - 5/1429 (fetch/transfer)
+         1789849425.677 15218 15218 I SyncController: drift 79 ms (start latency 326 ms, cold 300 ms)
+         1789849425.685 15218 15218 I SyncController: trace: pos 32502 ms, expected 32430 ms, err 72 ms, speed 1.0, phase nudge, t 6026, playing true, whenReady true, state 3
+         1789849426.688 15218 15218 I SyncController: trace: pos 33504 ms, expected 33433 ms, err 71 ms, speed 1.0, phase nudge, t 7029, playing true, whenReady true, state 3
+         1789849427.692 15218 15218 I SyncController: trace: pos 34293 ms, expected 34437 ms, err -144 ms, speed 1.0, phase nudge, t 8033, playing true, whenReady true, state 3
+         1789849431.008 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 1660/1665 (recycle/alloc) - 5/1661 (fetch/transfer)
+         1789849435.682 15218 15218 I SyncController: drift -149 ms: speed 1.03725 for 3999 ms
+         1789849435.688 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849435.688 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 45742.7
+         1789849435.688 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45742.7
+         1789849435.688 15218 16308 D CCodecConfig: }
+         1789849435.696 15218 15218 I SyncController: trace: pos 42278 ms, expected 42441 ms, err -163 ms, speed 1.03725, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849436.387 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 1895/1900 (recycle/alloc) - 5/1896 (fetch/transfer)
+         1789849436.701 15218 15218 I SyncController: trace: pos 43301 ms, expected 43446 ms, err -145 ms, speed 1.03725, phase nudge, t 1006, playing true, whenReady true, state 3
+         1789849437.704 15218 15218 I SyncController: trace: pos 44559 ms, expected 44450 ms, err 109 ms, speed 1.03725, phase nudge, t 2010, playing true, whenReady true, state 3
+         1789849438.708 15218 15218 I SyncController: trace: pos 45404 ms, expected 45453 ms, err -49 ms, speed 1.03725, phase nudge, t 3013, playing true, whenReady true, state 3
+         1789849439.696 15218 15218 I SyncController: nudge done: drift 209 ms
+         1789849439.712 15218 15218 I SyncController: trace: pos 46651 ms, expected 46458 ms, err 193 ms, speed 1.0, phase nudge, t 4019, playing true, whenReady true, state 3
+         1789849439.748 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849439.748 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849439.748 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849439.748 15218 16308 D CCodecConfig: }
+         1789849440.714 15218 15218 I SyncController: trace: pos 47695 ms, expected 47460 ms, err 235 ms, speed 1.0, phase nudge, t 5020, playing true, whenReady true, state 3
+         1789849441.639 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 2124/2129 (recycle/alloc) - 5/2125 (fetch/transfer)
+         1789849441.709 15218 15218 I SyncController: drift 240 ms: speed 0.95 for 4799 ms
+         1789849441.722 15218 15218 I SyncController: trace: pos 48695 ms, expected 48468 ms, err 227 ms, speed 0.95, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849441.724 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849441.724 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 41895
+         1789849441.724 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 41895
+         1789849441.724 15218 16308 D CCodecConfig: }
+         1789849442.725 15218 15218 I SyncController: trace: pos 49688 ms, expected 49471 ms, err 217 ms, speed 0.95, phase nudge, t 1004, playing true, whenReady true, state 3
+         1789849443.728 15218 15218 I SyncController: trace: pos 50639 ms, expected 50473 ms, err 166 ms, speed 0.95, phase nudge, t 2006, playing true, whenReady true, state 3
+         1789849444.733 15218 15218 I SyncController: trace: pos 51388 ms, expected 51477 ms, err -89 ms, speed 0.95, phase nudge, t 3011, playing true, whenReady true, state 3
+         1789849445.736 15218 15218 I SyncController: trace: pos 52378 ms, expected 52481 ms, err -103 ms, speed 0.95, phase nudge, t 4015, playing true, whenReady true, state 3
+         1789849446.523 15218 15218 I SyncController: nudge done: drift 40 ms
+         1789849446.555 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849446.555 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849446.555 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849446.555 15218 16308 D CCodecConfig: }
+         1789849446.740 15218 15218 I SyncController: trace: pos 53410 ms, expected 53485 ms, err -75 ms, speed 1.0, phase nudge, t 5019, playing true, whenReady true, state 3
+         1789849447.204 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 2354/2359 (recycle/alloc) - 5/2355 (fetch/transfer)
+         1789849447.744 15218 15218 I SyncController: trace: pos 54357 ms, expected 54489 ms, err -132 ms, speed 1.0, phase nudge, t 6023, playing true, whenReady true, state 3
+         1789849448.537 15218 15218 I SyncController: drift -14 ms (start latency 326 ms, cold 300 ms)
+         1789849448.748 15218 15218 I SyncController: trace: pos 55326 ms, expected 55493 ms, err -167 ms, speed 1.0, phase nudge, t 7026, playing true, whenReady true, state 3
+         1789849449.751 15218 15218 I SyncController: trace: pos 56329 ms, expected 56496 ms, err -167 ms, speed 1.0, phase nudge, t 8029, playing true, whenReady true, state 3
+         1789849450.577 15218 15253 D MediaCodec: keep callback message for reclaim
+         1789849450.578 15218 16308 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789849450.580 15218 15218 I Motoparty: talk open (by client)
+         1789849450.586 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849453.247 15218 15233 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1757ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789849456.045 15218 16311 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 0(0 size) used buffers - 2541/2546 (recycle/alloc) - 5/2542 (fetch/transfer)
+         1789849456.045 15218 16311 D AidlBufferPoolAcc: evictor expired: 1, evicted: 1
+         1789849465.572 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849465.582 15218 16341 D AudioTrack: stop(20229): called with 229120 frames delivered
+         1789849465.671 15218 15342 I VoiceEngine: talk stats: tx 578 sent of 695 captured (117 DTX), rx 747 received, 716 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789849466.411 15218 15342 I AudioRouter: back to media mode
+         1789849467.259 15218 15253 D MediaCodec: keep callback message for reclaim
+         1789849467.262 15218 16308 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789849467.267 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 1(8192 size) total buffers - 1(8192 size) used buffers - 2541/2547 (recycle/alloc) - 5/2542 (fetch/transfer)
+         1789849467.301 15218 16308 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789849467.322 15218 15365 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789849467.330 15218 16308 D CCodecConfig: c2 config diff is   c2::float coding.drc.reference-level.value = -24
+         1789849467.331 15218 16308 D CCodecBuffers: [c2.android.aac.decoder#453:1D-Output] popFromStashAndRegister: at 1000058013605us, output format changed to AMessage(what = 0x00000000) = {
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-drc-album-mode = 0
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-drc-boost-level = 127
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-drc-cut-level = 127
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-drc-effect-type = 3
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-drc-output-loudness = -1
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-encoded-target-level = -1
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-max-output-channel_count = 8
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t aac-target-ref-level = 96
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t buffer-batch-max-output-size = 0
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t buffer-batch-threshold-output-size = 0
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t channel-count = 2
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t channel-mask = 12
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t max-output-channel-count = 8
+         1789849467.331 15218 16308 D CCodecBuffers:   string mime = "audio/raw"
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t sample-rate = 44100
+         1789849467.331 15218 16308 D CCodecBuffers:   int32_t android._config-pcm-encoding = 2
+         1789849467.331 15218 16308 D CCodecBuffers: }
+         1789849467.493 15218 15218 I SyncController: start cold: lead 300 ms, 299 ms to the anchor point
+         1789849467.514 15218 15218 I SyncController: trace: pos 58012 ms, expected 57734 ms, err 278 ms, speed 1.0, phase start-cold, t 1, playing true, whenReady true, state 3
+         1789849467.835 15218 15253 D AudioTrack: getTimestamp_l(20233): stale timestamp time corrected, currentTimeNanos: 1285868732403451 < limitNs: 1285882721241104 < mStartNs: 1285882722241104
+         1789849468.413 15218 16308 D CCodecConfig: c2 config diff is   c2::float coding.drc.reference-level.value = -31
+         1789849468.415 15218 16308 D CCodecBuffers: [c2.android.aac.decoder#453:1D-Output] popFromStashAndRegister: at 1000059151383us, output format changed to AMessage(what = 0x00000000) = {
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-drc-album-mode = 0
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-drc-boost-level = 127
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-drc-cut-level = 127
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-drc-effect-type = 3
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-drc-output-loudness = -1
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-encoded-target-level = -1
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-max-output-channel_count = 8
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t aac-target-ref-level = 124
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t buffer-batch-max-output-size = 0
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t buffer-batch-threshold-output-size = 0
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t channel-count = 2
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t channel-mask = 12
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t max-output-channel-count = 8
+         1789849468.415 15218 16308 D CCodecBuffers:   string mime = "audio/raw"
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t sample-rate = 44100
+         1789849468.415 15218 16308 D CCodecBuffers:   int32_t android._config-pcm-encoding = 2
+         1789849468.415 15218 16308 D CCodecBuffers: }
+         1789849468.517 15218 15218 I SyncController: trace: pos 58707 ms, expected 58735 ms, err -28 ms, speed 1.0, phase start-cold, t 1002, playing true, whenReady true, state 3
+         1789849469.516 15218 15218 I SyncController: drift -103 ms: speed 1.02575 for 3999 ms
+         1789849469.520 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849469.520 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 45235.6
+         1789849469.520 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45235.6
+         1789849469.520 15218 16308 D CCodecConfig: }
+         1789849469.533 15218 15218 I SyncController: trace: pos 59632 ms, expected 59753 ms, err -121 ms, speed 1.02575, phase nudge, t 4, playing true, whenReady true, state 3
+         1789849470.535 15218 15218 I SyncController: trace: pos 60567 ms, expected 60755 ms, err -188 ms, speed 1.02575, phase nudge, t 1006, playing true, whenReady true, state 3
+         1789849471.537 15218 15218 I SyncController: trace: pos 61515 ms, expected 61756 ms, err -241 ms, speed 1.02575, phase nudge, t 2008, playing true, whenReady true, state 3
+         1789849472.468 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 2768/2778 (recycle/alloc) - 10/2772 (fetch/transfer)
+         1789849472.539 15218 15218 I SyncController: trace: pos 62551 ms, expected 62758 ms, err -207 ms, speed 1.02575, phase nudge, t 3010, playing true, whenReady true, state 3
+         1789849473.535 15218 15218 I SyncController: nudge done: drift -188 ms
+         1789849473.538 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849473.538 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849473.538 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849473.538 15218 16308 D CCodecConfig: }
+         1789849473.548 15218 15218 I SyncController: trace: pos 63566 ms, expected 63768 ms, err -202 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+         1789849474.551 15218 15218 I SyncController: trace: pos 64581 ms, expected 64770 ms, err -189 ms, speed 1.0, phase nudge, t 5021, playing true, whenReady true, state 3
+         1789849475.544 15218 15218 I SyncController: drift -166 ms: speed 1.0415 for 4000 ms
+         1789849475.547 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849475.547 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 45930.1
+         1789849475.547 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45930.1
+         1789849475.547 15218 16308 D CCodecConfig: }
+         1789849475.559 15218 15218 I SyncController: trace: pos 65598 ms, expected 65779 ms, err -181 ms, speed 1.0415, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849476.561 15218 15218 I SyncController: trace: pos 66615 ms, expected 66780 ms, err -165 ms, speed 1.0415, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849477.563 15218 15218 I SyncController: trace: pos 67662 ms, expected 67783 ms, err -121 ms, speed 1.0415, phase nudge, t 2005, playing true, whenReady true, state 3
+         1789849477.813 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3003/3013 (recycle/alloc) - 10/3007 (fetch/transfer)
+         1789849478.566 15218 15218 I SyncController: trace: pos 68713 ms, expected 68785 ms, err -72 ms, speed 1.0415, phase nudge, t 3008, playing true, whenReady true, state 3
+         1789849479.560 15218 15218 I SyncController: nudge done: drift -45 ms
+         1789849479.564 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849479.564 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849479.564 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849479.564 15218 16308 D CCodecConfig: }
+         1789849479.578 15218 15218 I SyncController: trace: pos 69735 ms, expected 69798 ms, err -63 ms, speed 1.0, phase nudge, t 4021, playing true, whenReady true, state 3
+         1789849480.581 15218 15218 I SyncController: trace: pos 70750 ms, expected 70800 ms, err -50 ms, speed 1.0, phase nudge, t 5022, playing true, whenReady true, state 3
+         1789849481.573 15218 15218 I SyncController: drift -72 ms (start latency 326 ms, cold 325 ms)
+         1789849481.583 15218 15218 I SyncController: trace: pos 71721 ms, expected 71802 ms, err -81 ms, speed 1.0, phase nudge, t 6025, playing true, whenReady true, state 3
+         1789849482.585 15218 15218 I SyncController: trace: pos 72700 ms, expected 72804 ms, err -104 ms, speed 1.0, phase nudge, t 7027, playing true, whenReady true, state 3
+         1789849483.042 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3228/3238 (recycle/alloc) - 10/3232 (fetch/transfer)
+         1789849483.588 15218 15218 I SyncController: trace: pos 73649 ms, expected 73807 ms, err -158 ms, speed 1.0, phase nudge, t 8029, playing true, whenReady true, state 3
+         1789849488.247 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3452/3462 (recycle/alloc) - 10/3456 (fetch/transfer)
+         1789849491.576 15218 15218 I SyncController: drift -4 ms (start latency 326 ms, cold 325 ms)
+         1789849493.492 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3680/3690 (recycle/alloc) - 10/3684 (fetch/transfer)
+         1789849498.801 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3909/3919 (recycle/alloc) - 10/3913 (fetch/transfer)
+         1789849501.579 15218 15218 I SyncController: drift -99 ms: speed 1.02475 for 4000 ms
+         1789849501.583 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849501.583 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 45191.5
+         1789849501.583 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45191.5
+         1789849501.583 15218 16308 D CCodecConfig: }
+         1789849501.594 15218 15218 I SyncController: trace: pos 91699 ms, expected 91814 ms, err -115 ms, speed 1.02475, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849502.598 15218 15218 I SyncController: trace: pos 92701 ms, expected 92817 ms, err -116 ms, speed 1.02475, phase nudge, t 1004, playing true, whenReady true, state 3
+         1789849503.602 15218 15218 I SyncController: trace: pos 93737 ms, expected 93821 ms, err -84 ms, speed 1.02475, phase nudge, t 2008, playing true, whenReady true, state 3
+         1789849504.049 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4139/4149 (recycle/alloc) - 10/4143 (fetch/transfer)
+         1789849504.606 15218 15218 I SyncController: trace: pos 94728 ms, expected 94825 ms, err -97 ms, speed 1.02475, phase nudge, t 3012, playing true, whenReady true, state 3
+         1789849505.597 15218 15218 I SyncController: nudge done: drift -86 ms
+         1789849505.604 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849505.604 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849505.604 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849505.604 15218 16308 D CCodecConfig: }
+         1789849505.619 15218 15218 I SyncController: trace: pos 95731 ms, expected 95839 ms, err -108 ms, speed 1.0, phase nudge, t 4027, playing true, whenReady true, state 3
+         1789849506.623 15218 15218 I SyncController: trace: pos 96712 ms, expected 96842 ms, err -130 ms, speed 1.0, phase nudge, t 5029, playing true, whenReady true, state 3
+         1789849507.615 15218 15218 I SyncController: drift 91 ms: speed 0.97725 for 3999 ms
+         1789849507.628 15218 15218 I SyncController: trace: pos 97925 ms, expected 97848 ms, err 77 ms, speed 0.97725, phase nudge, t 1, playing true, whenReady true, state 3
+         1789849507.631 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849507.631 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 43096.7
+         1789849507.631 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 43096.7
+         1789849507.631 15218 16308 D CCodecConfig: }
+         1789849508.631 15218 15218 I SyncController: trace: pos 98708 ms, expected 98851 ms, err -143 ms, speed 0.97725, phase nudge, t 1004, playing true, whenReady true, state 3
+         1789849509.331 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4366/4376 (recycle/alloc) - 10/4370 (fetch/transfer)
+         1789849509.635 15218 15218 I SyncController: trace: pos 99700 ms, expected 99854 ms, err -154 ms, speed 0.97725, phase nudge, t 2007, playing true, whenReady true, state 3
+         1789849510.638 15218 15218 I SyncController: trace: pos 100672 ms, expected 100858 ms, err -186 ms, speed 0.97725, phase nudge, t 3011, playing true, whenReady true, state 3
+         1789849511.629 15218 15218 I SyncController: nudge done: drift -212 ms
+         1789849511.635 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849511.635 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849511.635 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849511.635 15218 16308 D CCodecConfig: }
+         1789849511.647 15218 15218 I SyncController: trace: pos 101887 ms, expected 101867 ms, err 20 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+         1789849512.653 15218 15218 I SyncController: trace: pos 102641 ms, expected 102871 ms, err -230 ms, speed 1.0, phase nudge, t 5024, playing true, whenReady true, state 3
+         1789849513.647 15218 15218 I SyncController: drift 10 ms (start latency 326 ms, cold 325 ms)
+         1789849513.657 15218 15218 I SyncController: trace: pos 103876 ms, expected 103876 ms, err 0 ms, speed 1.0, phase nudge, t 6029, playing true, whenReady true, state 3
+         1789849514.609 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4590/4600 (recycle/alloc) - 10/4594 (fetch/transfer)
+         1789849514.660 15218 15218 I SyncController: trace: pos 104868 ms, expected 104880 ms, err -12 ms, speed 1.0, phase nudge, t 7033, playing true, whenReady true, state 3
+         1789849515.664 15218 15218 I SyncController: trace: pos 105878 ms, expected 105883 ms, err -5 ms, speed 1.0, phase nudge, t 8036, playing true, whenReady true, state 3
+         1789849518.572 15218 16321 D PipelineWatcher: onInputBufferReleased: frameIndex not found (4776); ignored
+         1789849519.756 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4808/4818 (recycle/alloc) - 10/4812 (fetch/transfer)
+         1789849523.649 15218 15218 I SyncController: drift -211 ms: speed 1.05 for 4220 ms
+         1789849523.653 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849523.653 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 46305
+         1789849523.653 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 46305
+         1789849523.653 15218 16308 D CCodecConfig: }
+         1789849523.660 15218 15218 I SyncController: trace: pos 113658 ms, expected 113880 ms, err -222 ms, speed 1.05, phase nudge, t 0, playing true, whenReady true, state 3
+         1789849524.662 15218 15218 I SyncController: trace: pos 114901 ms, expected 114881 ms, err 20 ms, speed 1.05, phase nudge, t 1001, playing true, whenReady true, state 3
+         1789849524.977 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5041/5051 (recycle/alloc) - 10/5045 (fetch/transfer)
+         1789849525.665 15218 15218 I SyncController: trace: pos 115965 ms, expected 115884 ms, err 81 ms, speed 1.05, phase nudge, t 2004, playing true, whenReady true, state 3
+         1789849526.667 15218 15218 I SyncController: trace: pos 117006 ms, expected 116887 ms, err 119 ms, speed 1.05, phase nudge, t 3007, playing true, whenReady true, state 3
+         1789849527.671 15218 15218 I SyncController: trace: pos 118040 ms, expected 117890 ms, err 150 ms, speed 1.05, phase nudge, t 4009, playing true, whenReady true, state 3
+         1789849527.882 15218 15218 I SyncController: nudge done: drift 197 ms
+         1789849527.961 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849527.961 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849527.961 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849527.961 15218 16308 D CCodecConfig: }
+         1789849528.674 15218 15218 I SyncController: trace: pos 119051 ms, expected 118893 ms, err 158 ms, speed 1.0, phase nudge, t 5013, playing true, whenReady true, state 3
+         1789849529.677 15218 15218 I SyncController: trace: pos 120031 ms, expected 119896 ms, err 135 ms, speed 1.0, phase nudge, t 6016, playing true, whenReady true, state 3
+         1789849529.897 15218 15218 I SyncController: drift 241 ms: speed 0.95 for 4819 ms
+         1789849529.908 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849529.908 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 41895
+         1789849529.908 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 41895
+         1789849529.908 15218 16308 D CCodecConfig: }
+         1789849529.910 15218 15218 I SyncController: trace: pos 120358 ms, expected 120130 ms, err 228 ms, speed 0.95, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849530.202 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5269/5279 (recycle/alloc) - 10/5273 (fetch/transfer)
+         1789849530.912 15218 15218 I SyncController: trace: pos 121343 ms, expected 121131 ms, err 212 ms, speed 0.95, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849531.917 15218 15218 I SyncController: trace: pos 122075 ms, expected 122135 ms, err -60 ms, speed 0.95, phase nudge, t 2007, playing true, whenReady true, state 3
+         1789849532.922 15218 15218 I SyncController: trace: pos 123053 ms, expected 123140 ms, err -87 ms, speed 0.95, phase nudge, t 3012, playing true, whenReady true, state 3
+         1789849533.927 15218 15218 I SyncController: trace: pos 124061 ms, expected 124145 ms, err -84 ms, speed 0.95, phase nudge, t 4017, playing true, whenReady true, state 3
+         1789849534.731 15218 15218 I SyncController: nudge done: drift 31 ms
+         1789849534.749 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849534.749 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849534.749 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849534.749 15218 16308 D CCodecConfig: }
+         1789849534.932 15218 15218 I SyncController: trace: pos 125067 ms, expected 125151 ms, err -84 ms, speed 1.0, phase nudge, t 5022, playing true, whenReady true, state 3
+         1789849535.715 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5498/5508 (recycle/alloc) - 10/5502 (fetch/transfer)
+         1789849535.936 15218 15218 I SyncController: trace: pos 126010 ms, expected 126154 ms, err -144 ms, speed 1.0, phase nudge, t 6026, playing true, whenReady true, state 3
+         1789849536.746 15218 15218 I SyncController: drift -17 ms (start latency 326 ms, cold 325 ms)
+         1789849536.940 15218 15218 I SyncController: trace: pos 127029 ms, expected 127159 ms, err -130 ms, speed 1.0, phase nudge, t 7031, playing true, whenReady true, state 3
+         1789849537.945 15218 15218 I SyncController: trace: pos 127992 ms, expected 128163 ms, err -171 ms, speed 1.0, phase nudge, t 8035, playing true, whenReady true, state 3
+         1789849538.951 15218 15218 I SyncController: trace: pos 128973 ms, expected 129168 ms, err -195 ms, speed 1.0, phase nudge, t 9040, playing true, whenReady true, state 3
+         1789849540.963 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5724/5734 (recycle/alloc) - 10/5728 (fetch/transfer)
+         1789849546.257 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5951/5961 (recycle/alloc) - 10/5955 (fetch/transfer)
+         1789849546.747 15218 15218 I SyncController: drift -91 ms: speed 1.02275 for 3999 ms
+         1789849546.751 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849546.751 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 45103.3
+         1789849546.751 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45103.3
+         1789849546.751 15218 16308 D CCodecConfig: }
+         1789849546.759 15218 15218 I SyncController: trace: pos 136876 ms, expected 136979 ms, err -103 ms, speed 1.02275, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849547.761 15218 15218 I SyncController: trace: pos 137864 ms, expected 137980 ms, err -116 ms, speed 1.02275, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849548.770 15218 15218 I SyncController: trace: pos 138856 ms, expected 138990 ms, err -134 ms, speed 1.02275, phase nudge, t 2013, playing true, whenReady true, state 3
+         1789849549.785 15218 15218 I SyncController: trace: pos 139823 ms, expected 140004 ms, err -181 ms, speed 1.02275, phase nudge, t 3027, playing true, whenReady true, state 3
+         1789849550.759 15218 15218 I SyncController: nudge done: drift 73 ms
+         1789849550.790 15218 15218 I SyncController: trace: pos 141052 ms, expected 141010 ms, err 42 ms, speed 1.0, phase nudge, t 4033, playing true, whenReady true, state 3
+         1789849550.806 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849550.806 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849550.806 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849550.806 15218 16308 D CCodecConfig: }
+         1789849551.389 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6176/6186 (recycle/alloc) - 10/6180 (fetch/transfer)
+         1789849551.803 15218 15218 I SyncController: trace: pos 142103 ms, expected 142023 ms, err 80 ms, speed 1.0, phase nudge, t 5045, playing true, whenReady true, state 3
+         1789849552.771 15218 15218 I SyncController: drift 98 ms: speed 0.9755 for 3999 ms
+         1789849552.785 15218 15218 I SyncController: trace: pos 143088 ms, expected 143005 ms, err 83 ms, speed 0.9755, phase nudge, t 2, playing true, whenReady true, state 3
+         1789849552.791 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849552.791 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 43019.6
+         1789849552.791 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 43019.6
+         1789849552.791 15218 16308 D CCodecConfig: }
+         1789849553.787 15218 15218 I SyncController: trace: pos 144102 ms, expected 144006 ms, err 96 ms, speed 0.9755, phase nudge, t 1004, playing true, whenReady true, state 3
+         1789849554.792 15218 15218 I SyncController: trace: pos 145062 ms, expected 145011 ms, err 51 ms, speed 0.9755, phase nudge, t 2008, playing true, whenReady true, state 3
+         1789849555.794 15218 15218 I SyncController: trace: pos 146035 ms, expected 146013 ms, err 22 ms, speed 0.9755, phase nudge, t 3011, playing true, whenReady true, state 3
+         1789849556.787 15218 15218 I SyncController: nudge done: drift -220 ms
+         1789849556.792 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849556.792 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849556.792 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849556.792 15218 16308 D CCodecConfig: }
+         1789849556.802 15218 15218 I SyncController: trace: pos 147040 ms, expected 147022 ms, err 18 ms, speed 1.0, phase nudge, t 4020, playing true, whenReady true, state 3
+         1789849556.808 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6407/6417 (recycle/alloc) - 10/6411 (fetch/transfer)
+         1789849557.806 15218 15218 I SyncController: trace: pos 148032 ms, expected 148025 ms, err 7 ms, speed 1.0, phase nudge, t 5022, playing true, whenReady true, state 3
+         1789849558.800 15218 15218 I SyncController: drift 4 ms (start latency 326 ms, cold 325 ms)
+         1789849558.807 15218 15218 I SyncController: trace: pos 149024 ms, expected 149027 ms, err -3 ms, speed 1.0, phase nudge, t 6025, playing true, whenReady true, state 3
+         1789849559.810 15218 15218 I SyncController: trace: pos 150034 ms, expected 150029 ms, err 5 ms, speed 1.0, phase nudge, t 7027, playing true, whenReady true, state 3
+         1789849560.813 15218 15218 I SyncController: trace: pos 151006 ms, expected 151032 ms, err -26 ms, speed 1.0, phase nudge, t 8030, playing true, whenReady true, state 3
+         1789849561.994 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6628/6638 (recycle/alloc) - 10/6632 (fetch/transfer)
+         1789849567.215 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6855/6865 (recycle/alloc) - 10/6859 (fetch/transfer)
+         1789849568.803 15218 15218 I SyncController: drift -200 ms: speed 1.05 for 4000 ms
+         1789849568.808 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849568.808 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 46305
+         1789849568.808 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 46305
+         1789849568.808 15218 16308 D CCodecConfig: }
+         1789849568.816 15218 15218 I SyncController: trace: pos 158823 ms, expected 159035 ms, err -212 ms, speed 1.05, phase nudge, t 1, playing true, whenReady true, state 3
+         1789849569.819 15218 15218 I SyncController: trace: pos 160052 ms, expected 160038 ms, err 14 ms, speed 1.05, phase nudge, t 1004, playing true, whenReady true, state 3
+         1789849570.821 15218 15218 I SyncController: trace: pos 161121 ms, expected 161040 ms, err 81 ms, speed 1.05, phase nudge, t 2006, playing true, whenReady true, state 3
+         1789849571.822 15218 15218 I SyncController: trace: pos 162131 ms, expected 162042 ms, err 89 ms, speed 1.05, phase nudge, t 3008, playing true, whenReady true, state 3
+         1789849572.406 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7088/7098 (recycle/alloc) - 10/7092 (fetch/transfer)
+         1789849572.817 15218 15218 I SyncController: nudge done: drift 176 ms
+         1789849572.820 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849572.820 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849572.820 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849572.820 15218 16308 D CCodecConfig: }
+         1789849572.836 15218 15218 I SyncController: trace: pos 163213 ms, expected 163056 ms, err 157 ms, speed 1.0, phase nudge, t 4022, playing true, whenReady true, state 3
+         1789849573.838 15218 15218 I SyncController: trace: pos 164218 ms, expected 164057 ms, err 161 ms, speed 1.0, phase nudge, t 5023, playing true, whenReady true, state 3
+         1789849574.832 15218 15218 I SyncController: drift 130 ms: speed 0.9675 for 3999 ms
+         1789849574.836 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849574.836 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 42666.8
+         1789849574.836 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 42666.8
+         1789849574.836 15218 16308 D CCodecConfig: }
+         1789849574.844 15218 15218 I SyncController: trace: pos 165181 ms, expected 165065 ms, err 116 ms, speed 0.9675, phase nudge, t 1, playing true, whenReady true, state 3
+         1789849575.848 15218 15218 I SyncController: trace: pos 166217 ms, expected 166067 ms, err 150 ms, speed 0.9675, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789849576.851 15218 15218 I SyncController: trace: pos 167218 ms, expected 167070 ms, err 148 ms, speed 0.9675, phase nudge, t 2006, playing true, whenReady true, state 3
+         1789849577.754 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7314/7324 (recycle/alloc) - 10/7318 (fetch/transfer)
+         1789849577.853 15218 15218 I SyncController: trace: pos 168218 ms, expected 168073 ms, err 145 ms, speed 0.9675, phase nudge, t 3010, playing true, whenReady true, state 3
+         1789849578.845 15218 15218 I SyncController: nudge done: drift 106 ms
+         1789849578.850 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849578.850 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849578.850 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849578.850 15218 16308 D CCodecConfig: }
+         1789849578.865 15218 15218 I SyncController: trace: pos 169176 ms, expected 169085 ms, err 91 ms, speed 1.0, phase nudge, t 4021, playing true, whenReady true, state 3
+         1789849579.867 15218 15218 I SyncController: trace: pos 170139 ms, expected 170086 ms, err 53 ms, speed 1.0, phase nudge, t 5023, playing true, whenReady true, state 3
+         1789849580.859 15218 15218 I SyncController: drift 18 ms (start latency 326 ms, cold 325 ms)
+         1789849580.868 15218 15218 I SyncController: trace: pos 171097 ms, expected 171088 ms, err 9 ms, speed 1.0, phase nudge, t 6024, playing true, whenReady true, state 3
+         1789849581.871 15218 15218 I SyncController: trace: pos 172046 ms, expected 172091 ms, err -45 ms, speed 1.0, phase nudge, t 7027, playing true, whenReady true, state 3
+         1789849582.876 15218 15218 I SyncController: trace: pos 173020 ms, expected 173095 ms, err -75 ms, speed 1.0, phase nudge, t 8031, playing true, whenReady true, state 3
+         1789849582.975 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7537/7547 (recycle/alloc) - 10/7541 (fetch/transfer)
+         1789849588.078 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7754/7764 (recycle/alloc) - 10/7758 (fetch/transfer)
+         1789849590.862 15218 15218 I SyncController: drift 45 ms (start latency 326 ms, cold 325 ms)
+         1789849593.285 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7981/7991 (recycle/alloc) - 10/7985 (fetch/transfer)
+         1789849598.448 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8203/8213 (recycle/alloc) - 10/8207 (fetch/transfer)
+         1789849600.865 15218 15218 I SyncController: drift 46 ms (start latency 326 ms, cold 325 ms)
+         1789849603.646 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8424/8434 (recycle/alloc) - 10/8428 (fetch/transfer)
+         1789849608.779 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8647/8657 (recycle/alloc) - 10/8651 (fetch/transfer)
+         1789849610.868 15218 15218 I SyncController: drift 4 ms (start latency 326 ms, cold 325 ms)
+         1789849613.964 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8871/8881 (recycle/alloc) - 10/8875 (fetch/transfer)
+         1789849619.169 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9095/9105 (recycle/alloc) - 10/9099 (fetch/transfer)
+         1789849620.870 15218 15218 I SyncController: drift 87 ms: speed 0.97825 for 4000 ms
+         1789849620.875 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849620.875 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 43140.8
+         1789849620.875 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 43140.8
+         1789849620.875 15218 16308 D CCodecConfig: }
+         1789849620.883 15218 15218 I SyncController: trace: pos 211177 ms, expected 211103 ms, err 74 ms, speed 0.97825, phase nudge, t 1, playing true, whenReady true, state 3
+         1789849621.884 15218 15218 I SyncController: trace: pos 212175 ms, expected 212104 ms, err 71 ms, speed 0.97825, phase nudge, t 1002, playing true, whenReady true, state 3
+         1789849622.887 15218 15218 I SyncController: trace: pos 213134 ms, expected 213106 ms, err 28 ms, speed 0.97825, phase nudge, t 2004, playing true, whenReady true, state 3
+         1789849623.892 15218 15218 I SyncController: trace: pos 214133 ms, expected 214111 ms, err 22 ms, speed 0.97825, phase nudge, t 3009, playing true, whenReady true, state 3
+         1789849624.536 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9325/9335 (recycle/alloc) - 10/9329 (fetch/transfer)
+         1789849624.885 15218 15218 I SyncController: nudge done: drift 8 ms
+         1789849624.901 15218 15218 I SyncController: trace: pos 215113 ms, expected 215120 ms, err -7 ms, speed 1.0, phase nudge, t 4018, playing true, whenReady true, state 3
+         1789849624.906 15218 16308 D CCodecConfig: no recognized params in: Dict {
+         1789849624.906 15218 16308 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789849624.906 15218 16308 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789849624.906 15218 16308 D CCodecConfig: }
+         1789849625.903 15218 15218 I SyncController: trace: pos 216121 ms, expected 216122 ms, err -1 ms, speed 1.0, phase nudge, t 5020, playing true, whenReady true, state 3
+         1789849626.898 15218 15218 I SyncController: drift -39 ms (start latency 326 ms, cold 325 ms)
+         1789849626.905 15218 15218 I SyncController: trace: pos 217079 ms, expected 217124 ms, err -45 ms, speed 1.0, phase nudge, t 6022, playing true, whenReady true, state 3
+         1789849627.907 15218 15218 I SyncController: trace: pos 218092 ms, expected 218126 ms, err -34 ms, speed 1.0, phase nudge, t 7024, playing true, whenReady true, state 3
+         1789849628.910 15218 15218 I SyncController: trace: pos 219059 ms, expected 219129 ms, err -70 ms, speed 1.0, phase nudge, t 8027, playing true, whenReady true, state 3
+         1789849629.745 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9547/9557 (recycle/alloc) - 10/9551 (fetch/transfer)
+         1789849634.964 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9772/9782 (recycle/alloc) - 10/9776 (fetch/transfer)
+         1789849636.901 15218 15218 I SyncController: drift -22 ms (start latency 326 ms, cold 325 ms)
+         1789849640.053 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9991/10001 (recycle/alloc) - 10/9995 (fetch/transfer)
+         1789849645.283 15218 16308 D AidlBufferPool: bufferpool2 0xb400007603db8e08 : 5(40960 size) total buffers - 1(8192 size) used buffers - 10217/10227 (recycle/alloc) - 10/10221 (fetch/transfer)
+         1789849645.564 15218 15253 D MediaCodec: keep callback message for reclaim
+         1789849645.572 15218 16308 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789849647.535 15218 15861 I ControlServer: #3 closed: closed by peer
+         1789849647.541 15218 15218 I Motoparty: client gone: closed by peer

@@ -1,0 +1,21 @@
+22:02:38.505 joining hotspot profile 'Aviv's Hotspot 1'
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/25)
+22:02:43.573 addr: wlp1s0           UP             10.148.67.219/24 
+22:02:43.581 link: 	freq: 2462.0 	signal: -33 dBm 	tx bitrate: 144.4 MBit/s MCS 15 short GI
+22:02:43.591 gateway (Pixel) = 10.148.67.218
+10 packets transmitted, 10 received, 0% packet loss, time 2708ms
+rtt min/avg/max/mdev = 5.695/9.901/19.756/5.106 ms
+22:02:46.547 internet: 404 0.216830s
+error: no such device '10.148.67.218:5555'
+
+connected to 10.148.67.218:5555
+22:02:50.731 adb: ok
+22:02:51.136 app pid: 30037
+22:02:51.564 bluetooth_on=1 a2dp:   mActiveDevice: XX:XX:XX:XX:EC:2F
+22:02:51.851 mdns browse:
+=;wlp1s0;IPv4;Pixel\0328;_motoparty._tcp;local;Android_FBR2HM5L.local;10.148.67.218;47800;"http=47802" "proto=1" "voice=47801"
+22:09:07.637 client exited
+22:09:08.322 restoring home Wi-Fi
+Connection successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/26)
+already connected to 192.168.1.100:5555
+22:09:09.212 done: Aviv's

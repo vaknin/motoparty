@@ -1,0 +1,64 @@
+         1789849099.801 15218 15256 I ControlServer: #2 connected from /192.168.1.102:43358
+         1789849099.811 15218 15263 I ControlServer: #2 is the client: arch
+         1789849099.812 15218 15218 I Motoparty: client "arch" connected from 192.168.1.102
+         1789849104.801 15218 15218 I Motoparty: talk open (by client)
+         1789849104.986 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849112.704 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849112.706 15218 15867 D AudioTrack: stop(20156): called with 116480 frames delivered
+         1789849112.757 15218 15342 I VoiceEngine: talk stats: tx 117 sent of 371 captured (254 DTX), rx 386 received, 353 played, 0 lost, 11 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789849112.760 15218 15342 I AudioRouter: back to media mode
+         1789849116.707 15218 15218 I Motoparty: talk open (by client)
+         1789849116.974 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849124.711 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849124.714 15218 15896 D AudioTrack: stop(20164): called with 111680 frames delivered
+         1789849124.754 15218 15342 I VoiceEngine: talk stats: tx 138 sent of 372 captured (234 DTX), rx 386 received, 339 played, 0 lost, 10 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789849125.494 15218 15342 I AudioRouter: back to media mode
+         1789849128.710 15218 15218 I Motoparty: talk open (by client)
+         1789849129.138 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849130.570 15218 15473 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1288ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789849136.712 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849136.728 15218 15945 D AudioTrack: stop(20172): called with 110400 frames delivered
+         1789849136.776 15218 15342 I VoiceEngine: talk stats: tx 48 sent of 363 captured (315 DTX), rx 379 received, 324 played, 0 lost, 21 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789849137.373 15218 15342 I AudioRouter: back to media mode
+         1789849140.712 15218 15218 I Motoparty: talk open (by client)
+         1789849141.078 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849142.596 15218 15365 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1421ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789849148.713 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849148.724 15218 15968 D AudioTrack: stop(20180): called with 112000 frames delivered
+         1789849148.799 15218 15342 I VoiceEngine: talk stats: tx 317 sent of 317 captured (0 DTX), rx 382 received, 326 played, 0 lost, 24 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789849149.344 15218 15342 I AudioRouter: back to media mode
+         1789849152.717 15218 15218 I Motoparty: talk open (by client)
+         1789849153.159 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849154.537 15218 15442 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1233ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789849160.717 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849160.734 15218 15993 D AudioTrack: stop(20188): called with 107520 frames delivered
+         1789849160.780 15218 15342 I VoiceEngine: talk stats: tx 58 sent of 364 captured (306 DTX), rx 378 received, 336 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789849161.561 15218 15342 I AudioRouter: back to media mode
+         1789849162.678 15218 15231 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1039ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789849164.715 15218 15218 I Motoparty: talk open (by client)
+         1789849165.218 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849172.716 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849172.721 15218 16012 D AudioTrack: stop(20196): called with 108800 frames delivered
+         1789849172.790 15218 15342 I VoiceEngine: talk stats: tx 61 sent of 361 captured (300 DTX), rx 374 received, 317 played, 0 lost, 23 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789849173.522 15218 15342 I AudioRouter: back to media mode
+         1789849176.720 15218 15218 I Motoparty: talk open (by client)
+         1789849177.010 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849177.184 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849177.305 15218 16036 D AudioTrack: stop(20204): called with 0 frames delivered
+         1789849177.379 15218 15218 I Motoparty: talk open (by client)
+         1789849177.689 15218 15342 I VoiceEngine: talk stats: tx 0 sent of 0 captured (0 DTX), rx 0 received, 0 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789849178.517 15218 15232 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1213ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789849178.763 15218 15342 I AudioRouter: back to media mode
+         1789849179.503 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849181.319 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849181.328 15218 16046 D AudioTrack: stop(20209): called with 14400 frames delivered
+         1789849181.373 15218 15342 I VoiceEngine: talk stats: tx 41 sent of 41 captured (0 DTX), rx 90 received, 45 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789849181.396 15218 15342 I AudioRouter: back to media mode
+         1789849185.365 15218 15218 I Motoparty: talk open (by client)
+         1789849185.580 15218 15342 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789849205.338 15218 15218 I Motoparty: talk closed (by client, trigger)
+         1789849205.339 15218 16063 D AudioTrack: stop(20215): called with 303360 frames delivered
+         1789849205.395 15218 15342 I VoiceEngine: talk stats: tx 288 sent of 973 captured (685 DTX), rx 988 received, 939 played, 0 lost, 9 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 40 ms
+         1789849205.398 15218 15342 I AudioRouter: back to media mode
+         1789849209.319 15218 15263 I ControlServer: #2 closed: closed by peer
+         1789849209.322 15218 15218 I Motoparty: client gone: closed by peer

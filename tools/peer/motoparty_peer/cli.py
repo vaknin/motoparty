@@ -17,7 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="role", required=True)
 
     c = sub.add_parser("client", help="act as the client (the iPhone) against a host")
-    c.add_argument("--host", help="host IP; skips Bonjour and the /24 sweep")
+    # --host skips discovery entirely, so --no-mdns alongside it is a mistake, not a no-op.
+    where = c.add_mutually_exclusive_group()
+    where.add_argument("--host", help="host IP; skips Bonjour and the /24 sweep")
+    where.add_argument("--no-mdns", action="store_true",
+                       help="skip the Bonjour browse and go straight to the /24 sweep")
     c.add_argument("--port", type=int, default=CONTROL_PORT, help="control port (default %(default)s)")
     c.add_argument("--name", help="name in our hello (default: hostname)")
     c.add_argument("--lang", default="en-US", help="BCP-47 tag for `say` (default %(default)s)")

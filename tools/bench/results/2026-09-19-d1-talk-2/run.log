@@ -1,0 +1,7 @@
+23:18:18.560 talk_cycles.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-19-d1-talk-2
+23:18:19.037 phone: mWakefulness=Awake, top: com.kivan.motoparty/.MainActivity
+23:18:19.136 app pid: 15218
+23:18:19.430 bluetooth:   09-19 22:26:58.747 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []   mActiveDevice: XX:XX:XX:XX:EC:2F
+23:18:19.631 running 6 cycles of 8s, a fast re-open, one 20s talk
+23:20:09.317 client exited
+23:20:11.420 cleanup: kill 301149 2>/dev/null

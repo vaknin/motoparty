@@ -1,0 +1,35 @@
+talk cycles in logcat: 1
+ # by     open→HFP close→media  dur s captured   exp  sent   DTX    rx lost late FEC PLC  capture / reason
+ 1 client      827         817   20.0      945  1000   530   415   958    0  950   0   3  capture alive, 44% DTX; client/trigger
+
+peer requests (host answer time, ms):
+  talk.open  -> by=client            77
+  talk.close -> by=client trigger    13
+  talk.open  -> by=client            37
+  talk.close -> by=client trigger    12
+  talk.open  -> by=client            12
+  talk.close -> by=client trigger    16
+  talk.open  -> by=client            22
+  talk.close -> by=client trigger    17
+  talk.open  -> by=client            41
+  talk.close -> by=client trigger    9
+  talk.open  -> by=client            16
+  talk.close -> by=client trigger    20
+  talk.open  -> by=client            170
+  talk.close -> by=client trigger    12
+  talk.open  -> by=client            340
+  talk.close -> by=client trigger    11
+  talk.open  -> by=client            21
+  talk.close -> by=client trigger    17
+open→HFP ms: median 827, max 827 (n=1)
+close→media ms: median 817, max 817 (n=1)
+
+errors in logcat: 0, crash buffer lines: 0
+
+final audio state:
+  Mode owner token: null
+    Computed Preferred communication device: null
+    Applied Preferred communication device: null
+    Active communication device: AudioDeviceAttributes: role:output type:bt_a2dp addr:XX:XX:XX:XX:EC:2F name:AirPods Pro profiles:[{ENCODING_PCM_8BIT, sampling rates=[48000], channel masks=0x0C, encapsulation type=0}] descriptors:[]
+
+VERDICT: CLEAN (0 incomplete cycles, 0 errors)

@@ -14,42 +14,49 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `core/Codec.kt` | done. JSON codec + u32 framing (64 KiB cap). `ProtocolException` = fatal (invalid JSON, non-object, oversize); `MalformedMessageException` = drop & keep (missing `t`, missing/mistyped/null required field, **and a value outside a listed set** — `checkEnums`/`ENUM_FIELDS`). `checkTypes` walks the descriptor because kotlinx accepts `"7"` for a Long |
 | `core/ClockEstimator.kt` | done (8-sample window, min RTT, ties most recent, negative RTT takes no slot, >500 ms jump clears window). Host doesn't use it; it's for parity/tests |
 | `core/VoicePacket.kt` | done |
-| `core/JitterBuffer.kt` | done per the latest spec: talk-spurt start plays `target` ms after arrival; underrun = packet after its slot, +20 ms at most once per spurt; -20 ms after 10 s; changes apply at next spurt; keepalive seqs never count as loss; seq-contiguous ts jump = silence; FEC/PLC; brief PLC then silence on an empty buffer |
+| `core/JitterBuffer.kt` | done per the latest spec: talk-spurt start plays `target` ms after arrival; underrun = packet after its slot, +20 ms at most once per spurt; -20 ms after 10 s; changes apply at next spurt; keepalive seqs never count as loss; seq-contiguous ts jump = silence; FEC/PLC; brief PLC then silence on an empty buffer. A packet that came too late to play also counts as "seen" for the silence-gap test (fixed 2026-09-19 night). Per-talk counters for `talk stats` (layer 2, section 3 item 3) |
 | `core/CommandParser.kt` | done per the latest spec (per code point, U+2019 -> `'`, keep L*/M*/N*) |
 | `link/TalkController.kt` | done (pure state machine, 10 s silence close, link loss) |
 | `link/ControlServer.kt` | done. One writer coroutine per connection (socket writes on main threw NetworkOnMainThreadException), pong answered on the reader thread, second hello replaces client (old one gets `bye`), 6 s liveness watchdog |
 | `link/VoiceSocket.kt` | done. UDP 47801, peer = source of last valid packet from the control client's IP, running 16 kHz `ts` clock from a random start (`currentTs()`), keepalive every 1 s idle carrying current ts, shared seq |
 | `link/Discovery.kt` | done (NSD `_motoparty._tcp`, TXT proto/voice/http) |
 | `audio/opus_jni.c` + `cpp/CMakeLists.txt` + `audio/Opus.kt` | done. libopus 1.5.2 static, VOIP/24 kbps/FEC 10 %/DTX/complexity 8 |
-| `audio/VoiceEngine.kt` | done. Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity |
-| `audio/AudioRouter.kt` | done (ref-counted MODE_IN_COMMUNICATION + setCommunicationDevice, prefers BLE headset > SCO > wired > USB) |
+| `core/TalkStats.kt` | done. Pure: the `talk stats` loss arithmetic and the exact line format (layer 2) |
+| `audio/VoiceEngine.kt` | done. Logs one `talk stats:` line per talk at `stop` (built by `TalkStats`). Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity. `start`/`stop` belong on the audio thread. Each `start(onFailed)` is a session (an `AtomicReference`, not a `running` flag): a loop that outlives `stop`'s 500 ms join cannot carry on under the next `start`, and only the first failure of a still-current session reports, to that session's `onFailed` |
+| `audio/AudioRouter.kt` | done (ref-counted MODE_IN_COMMUNICATION + setCommunicationDevice, prefers BLE headset > SCO > wired > USB). Audio-thread only; `selectedDevice` is published from there instead of queried from Main. `enterCall` counts itself before it can throw, so every caller pairs it with `exitCall` regardless; `exitCall` sets `MODE_NORMAL` in a `finally`; `exitAll` is the shutdown backstop |
+| `audio/AudioThread.kt` | done, reviewed, unit-tested (`AudioThreadTest`). The single serial thread every route change and voice start/stop runs on (section 4, "Talk no longer blocks Main"). Not yet run on the device |
 | `audio/Earcons.kt` | done (generated tones: LIVE, CLOSED, OK, ERROR, LISTEN) |
 | `music/Catalog.kt`, `OkHttpDownloader.kt` | done (NewPipeExtractor v0.26.5; YT Music songs/albums/playlists, artist = top 20 songs; falls back to plain YouTube search; resolves progressive M4A, itag 140 preferred) |
 | `music/TrackCache.kt` | done (1 GiB LRU by mtime, 1 MiB Range chunks, UA chosen by the URL's `c=` client, shared in-flight downloads, prefetch) |
 | `music/TrackServer.kt` | done (hand-rolled HTTP, GET/HEAD `/track/<id>.m4a`, single Range, 404 otherwise) |
 | `music/Player.kt` | done (ExoPlayer, no auto audio focus, MediaSession with `onMediaButtonEvent`, `speed`) |
-| `music/SyncController.kt` | done. Prepared start with a learned start-up latency lead, check 2 s after start then every 10 s, 80 ms–1 s corrected by speed nudge (≤5 %), >1 s re-seek. The lead is now learned with a damped 1/4 step (`LEARN_DIVISOR`), not a mean of two, which was ringing on A2DP. `PlayerControls` was split out of `Player` so all of this is unit-tested |
+| `music/SyncController.kt` | done. Prepared start with a learned start-up latency lead, check 2 s after start then every 10 s, 80 ms–1 s corrected by speed nudge (≤5 %), >1 s re-seek. The lead is now learned with a damped 1/4 step (`LEARN_DIVISOR`), not a mean of two, which was ringing on A2DP. `PlayerControls` was split out of `Player` so all of this is unit-tested. Two learned leads now: `startLatencyMs` (warm) and `coldStartLatencyMs` (a start into a route that was just rebuilt — the resume after talk or a voice command); `hold`/`release` are nesting. Layer 2 logging: `nudge done:` and the `trace:` lines (section 3 item 3); logging only. Since D2: every drift figure is a 9-sample/2 s median, and 80 ms..1 s is corrected only after a second, agreeing reading (section 3 item 3, "D2 bench") |
 | `music/MusicController.kt` | done (queue, load → ready ≤8 s / music.error → play at now+300, pause/resume, next/previous, talk pause + resume at now+resumeLeadMs, duck mode, mid-track join on client connect, prefetch + music.load of next) |
 | `voicecmd/Transcriber.kt` | done (on-device recognizer when available, falls back to default on language/client errors) |
 | `voicecmd/Announcer.kt` | done (TTS, USAGE_ASSISTANT, earcon first) |
-| `LinkHost.kt` | done: all wiring and protocol decisions, main thread, `guarded{}` around event loops |
+| `LinkHost.kt` | done: all wiring and protocol decisions, main thread, `guarded{}` around event loops. Talk and recognizer audio work goes through `AudioThread`; `talkSession` drops late callbacks of an earlier talk |
 | `LinkService.kt` | done (FGS types microphone\|mediaPlayback\|connectedDevice, drops microphone if SecurityException; wake + Wi-Fi low-latency locks; notification actions Talk/Command/Stop) |
-| `overlay/OverlayService.kt` | taps and drag now exercised on device. **Bug**: the saved x/y is not clamped to the display, so after a rotation to landscape the overlay sits off-screen (see section 2) |
+| `overlay/OverlayService.kt` + `overlay/OverlayPlacement.kt` | done. The position is stored as a fraction of the free travel and clamped on restore, on every layout, on rotation and during the drag itself; the landscape bug is fixed in code (device check still open). `OverlayPlacement` is pure and unit-tested |
 | `trigger/Trigger.kt` | done |
 | `ui/MainScreen.kt`, `MainActivity.kt` | done (status, permissions, TALK/COMMAND, now playing/queue, search, settings, log). Still not seen rendered: the one screenshot attempt caught another app in the foreground |
 | `Settings.kt`, `Hub.kt`, `MotopartyApp.kt` | done |
 | `tools/fetch_opus.sh` | done |
 
-Tests (`app/src/test/...`): `CodecTest` (14), `ClockEstimatorTest`, `VoicePacketTest` (3),
-`CommandParserTest` (2), `JitterBufferTest` (13), `TalkControllerTest` (7), `ControlServerTest`
-(7, real loopback sockets), `TrackServerTest` (5), `SyncControllerTest` (11),
-`CatalogNetworkTest` (2, skipped unless `-Pnetwork`). Every fixture section is consumed by a
+Tests (`app/src/test/...`), 111 in all by the last run (the list may lag), 2 skipped: `CodecTest` (14), `ClockEstimatorTest` (1),
+`VoicePacketTest` (3), `CommandParserTest` (2), `JitterBufferTest` (17), `TalkStatsTest` (4),
+`TalkControllerTest` (8), `ControlServerTest` (7, real loopback sockets), `TrackServerTest` (5),
+`SyncControllerTest` (23),
+`OverlayPlacementTest` (8), `AudioThreadTest` (6: order and one-at-a-time, failure to the shared
+handler on the caller's scope, per-post handler, failure delivered before the job completes,
+cancelled waiter does not cancel the work, post after shutdown), `CatalogNetworkTest` (2, skipped
+unless `-Pnetwork`). Every fixture section is consumed by a
 test (`messages`/`valid`/`invalid`/`unknown`/`malformed`/`fatal`/`steps`/`conversions`/`cases`);
 none is silently skipped.
 
 ## 2. Verified, and how
 
-- `./gradlew assembleDebug test` -> BUILD OK, 65 tests, 63 pass, 2 skipped (network), 0 fail.
+- `./gradlew assembleDebug test` -> BUILD OK, 111 tests, 109 pass, 2 skipped (network), 0 fail
+  (after the D2 filtered-drift fix, 2026-09-19).
 - `./gradlew :app:testDebugUnitTest -Pnetwork --tests '*CatalogNetworkTest*'` (laptop, live
   YouTube) -> pass: song/album/artist/playlist search; Bohemian Rhapsody resolved itag 140,
   5.7 MB downloaded in 2.2 s, `ftyp` box.
@@ -225,8 +232,144 @@ section 2. What is left:
    every state incl. locked/doze; only the recognition itself is unexercised. If the platform
    recognizer turns out to ignore the BT mic, the plan's sherpa-onnx fallback is still
    unimplemented.
-3. **Main-thread stall on talk open and close** — see "Talk blocks Main" in section 4. Needs a
-   decision, not just a tweak; it is what makes the music sync limp for ~20 s after every talk.
+3. **Verify the audio thread on the device** (code done and reviewed, section 4 "Talk no longer
+   blocks Main"). Bench it with `tools/peer`: (a) `talk.close` -> `AudioRouter: back to media mode`
+   should still take ~1–2.7 s, but Main must stay responsive (no `Choreographer: Skipped` frames,
+   the status line keeps ticking) and the host's resume should log `start cold` with a small first
+   drift instead of a re-seek; (b) toggle talk open/close/open as fast as the peer allows, several
+   times, and check `dumpsys audio` ends in `MODE_NORMAL` after the last close and in
+   `MODE_IN_COMMUNICATION` while the last open holds; (c) TALK during a voice command; (d) stop the
+   service mid-command and check `dumpsys audio` shows `MODE_NORMAL`.
+   **Layer 2: logging only, JVM-tested, not yet run on the device.** Three things to read in
+   logcat on the same bench run:
+   - **`VoiceEngine: talk stats: …`**, one line at every talk stop. Exact format (a bench parser
+     reads it; `TalkStatsTest.lineFormatIsWhatTheBenchParses` pins it):
+     `talk stats: tx N sent of N captured (N DTX), rx N received, N played, N lost, N late, N FEC,
+     N PLC, N keepalives, jitter target N ms`. The counters live in `core/JitterBuffer.kt`
+     (`received` incl. late ones, `keepalives`, `fecUsed`, `concealed`, `seqSpan`; `reset` zeroes
+     them, `underruns` keeps counting and `late` is its delta since `start`). The arithmetic is in
+     `core/TalkStats.kt`: `lost = max(0, seqSpan − received − keepalives)`; keepalive seqs are never
+     loss, a duplicate cannot make it negative. Reading it: `PLC` is every concealed frame, including
+     up to 3 at the end of each spurt when the sender goes quiet, so it is not a loss count; `lost`
+     is. Tests: `JitterBufferTest.perTalkCountersOverAScriptedTalk` (seq wrap 65535 -> 0, one loss
+     -> FEC, one PLC slot, a late packet, a keepalive, a new spurt), the reorder and wrap span
+     tests, `TalkStatsTest`.
+     **Two bugs the tests found, fixed:** (1) `seqSpan` started at the *first* seq seen, not the
+     lowest, so a talk whose first packets arrived swapped (or a keepalive just below the first
+     audio seq, across the wrap) hid a loss; it is now min..max. (2) A late packet that was the last
+     audio seq before a DTX gap made `onlyKeepalivesBefore` fail, so the gap was treated as loss:
+     the next spurt was PLC'd up to its old-timeline slot instead of starting fresh at the raised
+     target (that raise was lost too). Late seqs are now remembered like keepalives (`lateSeqs`).
+     This one is a small voice-path behaviour change; the other 13 jitter tests are unchanged.
+   - **`SyncController: nudge done: drift N ms`** after each rate nudge (1 s after the speed reset since D2). Note it contains
+     "drift N ms"; if the bench parser counts every "drift N ms" as a check, it must skip lines
+     starting `nudge done:` (not renamed, since earlier device logs use it).
+   - **`SyncController: trace: …`**, one line a second (a) from every rate nudge until 5 s after
+     it ends, (b) for 5 s after every start (warm or cold) and every >1 s re-seek. Exact format:
+     `trace: pos <player position> ms, expected <anchor timeline now + trim> ms, err <pos − expected> ms, speed <speed>, phase <start-warm|start-cold|seek|nudge>, t <ms since the trigger>, playing <exo.isPlaying>, whenReady <exo.playWhenReady>, state <exo.playbackState>`
+     e.g. `trace: pos 61234 ms, expected 61012 ms, err 222 ms, speed 1.0, phase nudge, t 9000,
+     playing true, whenReady true, state 3`. `pos` is ExoPlayer's raw `currentPosition` (nothing
+     corrects it; the trim is on `expected`). The word is `err`, never `drift`. The first line of
+     each window is the reading at the trigger itself; a new trigger restarts the cadence and keeps
+     the later end; `hold`/a new `apply` stop it. The last three keys come from
+     `PlayerControls.traceInfo` (empty in the test fake).
+     **What it is for**: on the 2026-09-19 device run every speed-UP nudge ended ~+150..+220 ms
+     ahead whatever its size and the reading also dropped 140–220 ms between checks with no speed
+     change; the hypothesis is that the position *reading* steps (A2DP delay report) rather than a
+     rate error. In the trace, a reading step shows as `err` jumping by ~200 ms between two
+     consecutive lines while `speed` is 1.0 (at speed s, `err` should move (s − 1) × 1000 ms per
+     line); a real overshoot shows as `err` ramping smoothly during the nudge and staying flat after.
+     `playing false` next to a jump means the output was not really running.
+     **No behaviour change, proven**: `traceLog` is a settable property (null = off); the trace only
+     reads. `SyncControllerTest` "the trace changes no speed, seek, play or pause decision" runs one
+     script (start, speed-up nudge, slow-down nudge, >1 s re-seek, hold, cold release) with the trace
+     on and off and asserts the fake player's full timestamped command list is identical; two more
+     tests pin the windows (6 lines 1 s apart after a warm and a cold start, nudge lines from the
+     nudge instant to 4–5 s after it ends) and the exact line text.
+   **To do on the device**: one ~3-minute music run with AirPods (include a talk open/close for a
+   cold start), then `adb logcat -s SyncController VoiceEngine` and read the `trace:` lines around
+   each `nudge done:`.
+   **D2 bench (2026-09-19, `tools/bench/results/2026-09-19-d2-music/`) -> offline fix, JVM-tested,
+   not yet on the device.** The trace answered the layer-2 question: on A2DP (AirPods) the raw
+   ExoPlayer position flips between two levels ~180–250 ms apart at speed 1.0, playing, state 3,
+   no seek (e.g. pos advanced 789 ms in 1004 ms). The nudge math was right; single raw readings
+   on the wrong level made nudges of their own, so 18 landings scattered ±200 ms both ways.
+   Likely Media3's AudioTrackPositionTracker switching between the AudioTimestamp and the
+   head-position − latency paths (deep-buffer track over A2DP) — not chased. Fix in
+   `SyncController` (coordinator's decision):
+   - Every drift figure is now a **filtered reading**: 9 samples of position − expected, 250 ms
+     apart (2 s), median. Used by the periodic check, the post-start/post-seek/post-nudge checks,
+     the re-seek decision, `lastDriftMs` (UI) and the start-lead learning (the first filtered
+     reading after a start teaches, as the single read did).
+   - **Confirmation**: 80 ms..1 s is acted on only when two consecutive filtered readings (the
+     second starts as the first ends, so ~2 s apart) are same sign and within 100 ms; the nudge
+     uses the second. A lone one logs `check: median err N ms (spread N ms, n 9), waiting for
+     confirmation` (plus ` (previous P ms not confirmed)` when it replaced an unconfirmed one) —
+     deliberately no "drift N ms" in it. **>1 s re-seeks on one filtered reading**, at any time:
+     a flip moves the median ~250 ms at most, so that error is real.
+   - Timings: sampling starts 2 s after play()/re-seek/speed reset (decision at +4 s); periodic
+     decisions stay 10 s apart (8 s wait + 2 s sampling); an unconfirmed reading adds 2 s.
+     `nudge done: drift N ms` (still one raw read, logging only) moved to 1 s after the speed
+     reset. Other log formats unchanged. Decision lines go through `SyncController.log`
+     (settable, tests capture it).
+   - Tests: `SyncControllerTest` 17 -> 23 (one-sample flips, a 1 s flip, a steady 150 ms offset
+     nudged only after confirmation, a flip around a nudge's end not causing an opposite nudge,
+     lead learned from the median, >1 s start re-seeks without confirmation). All 6 fail with
+     1 sample and no confirmation. Existing tests: only `firstCheckAfter` (+2 s) and the re-seek
+     test's post-seek wait (+2 s) changed, for the sampling time.
+   **Next device run** (`tools/bench/music_sync.sh`): `check: … waiting for confirmation` lines,
+   far fewer `drift N ms: speed …` nudges, and no nudge immediately followed by one of the
+   opposite sign; the trace `err` still flips (the reading is unchanged), the medians should not.
+   **D1 bench (2026-09-19, `tools/bench/results/2026-09-19-d1-talk{,-2}/`) -> offline fixes, JVM-tested,
+   not yet on the device** (105 tests, 0 fail, 2 skipped; was 94):
+   - **"8 played, 950 late" (run 1's 20 s talk) = jitter anchor stuck ahead of the stream.** Once
+     `nextTs` (advanced one frame per `pull`) got ahead of a steady stream by less than the 3 s
+     `RESYNC`, both advanced at 50 frames/s and every later packet was dropped as late until the
+     talk ended; DTX gaps did not help (the sender's ts runs through them). The peer sent a clean
+     50/s, so the host's output pulled a burst (the talk's `ioConfigChanged` re-route lands ~1.3 s
+     after the open) or a stall on the sender side put it there. Not a reset/session problem.
+     Fix (`core/JitterBuffer.kt`): packets that keep arriving late for `REANCHOR_AFTER_MS` = 100 ms
+     with nothing played in between start a new spurt (target kept, already raised once); a burst
+     that arrives at once is still dropped. `reanchors` counter. Tests: `JitterBufferTest`
+     `outputBurstAfterRouteSwitch…`, `senderThatLostFrames…` (both fail without the fix: 0 of 100
+     played), `aLateBurstAfterANetworkStall…` (old behaviour kept). `reset()` now also clears
+     `nextTs`, `emptyPulls`, `raisedThisSpurt`.
+   - **Fast open->close->open ran in full (2124 ms to HFP).** New `audio/TalkAudio.kt` replaces the
+     two posted blocks in `LinkHost.applyTalk`: open/close only record the wanted session and post
+     a `settle` that does the difference. A close + open queued behind an in-flight open do nothing
+     (`TalkAudio: re-open before teardown: call route kept (session N)`); a re-open that arrives while
+     the teardown is in `voice.stop` skips exitCall + enterCall and restarts the voice (`TalkAudio:
+     re-open during teardown: call route kept (session N)`). A1 guarantees kept and tested in
+     `TalkAudioTest` (collapse, mid-teardown re-open, 40 random sequences: final state = last request,
+     enters = exits, earcon per real teardown; failed enter reports its session and is balanced;
+     a carried-over voice fails under the new session; a dead carried voice is restarted).
+     Consequence for the bench: a collapsed close has **no** `talk stats`, `back to media mode` or
+     second `communication device` line (the voice engine keeps running, so the stats of both talks
+     land in the next close's line).
+   - **Timing lines** (new, one each; the old lines are unchanged and come first):
+     `AudioRouter: enterCall N ms (setMode N, devices N, setCommunicationDevice N)`,
+     `AudioRouter: exitCall N ms (clearCommunicationDevice N, setMode N)`,
+     `VoiceEngine: start N ms`, `VoiceEngine: stop N ms (join capture N, join playback N)[, still running: voice-capture]`,
+     `VoiceEngine: capture up N ms (AudioRecord N, effects+encoder N, startRecording N, first frame N)`,
+     `VoiceEngine: playback up N ms (AudioTrack N, play N, first write N)`,
+     `VoiceEngine: capture: read N frames in N ms (N expected), device N frames, slowest encode+send N ms, longest read wait N ms`,
+     `VoiceEngine: playback: wrote N frames in N ms (N expected), N re-anchors`. Format pinned by
+     `StepTimerTest`. What the logs already show: the ~1.2 s `ioConfigChanged` is not ours —
+     `logcat_all` has audioserver's `setDevicesRoleForStrategy` (what `setCommunicationDevice`
+     triggers, asynchronously) taking 1.0–1.25 s and every other audio binder call in the phone
+     queued behind it; `enterCall` itself returns before that. In the fast re-open, `voice.stop`
+     took ~500 ms (capture join timed out: the thread was stuck in audioserver) and exitCall ~1.07 s.
+   - **Earcon AudioTrack leak (likely cause of the rising open time, unconfirmed).** No earcon ever
+     logged `AudioTrack: stop(..)` (every release does), i.e. the LIVE/CLOSED tracks were never
+     released: the marker callback reaches Java via a weak ref and nothing held the track.
+     `Earcons` now holds each track until its marker (on the main looper) or a fallback release at
+     tone length + 1 s. Next run: one small `stop(..)` line per earcon, open times flat.
+   - **Capture ~83 %**: encode + send are inline, but cost well under 1 ms of the 20 ms frame, so
+     not clearly the cause; the missing frames match the route switch (0 % DTX talks look like the
+     record opened on the built-in mic before HFP). AudioRecord buffer raised 80 -> 200 ms as a
+     margin; the new `capture:` line (device frame position vs frames read) decides it: device ≈
+     read -> the input did not deliver (route), device > read -> the loop overran.
+
 4. **Finish bench-testing the `"unavailable"` flow.** The parts done on device are the volume
    rules (verified) and the codec drop of `volumeUp`/`volumeDown` (verified). The two
    `"unavailable"` paths are covered by `TalkControllerTest` and code review but were **not**
@@ -244,22 +387,52 @@ section 2. What is left:
 
 ## 4. Gotchas and decisions
 
-- **Talk blocks Main for ~2.7 s, on open *and* close** (measured: `talk.close` left the host at 20:31:05.675,
-  `AudioRouter: back to media mode` logged at 20:31:08.401). In `LinkHost.applyTalk`'s Close
-  branch, after the messages go out, `VoiceEngine.stop()` joins two audio threads (up to
-  500 ms each) and `AudioRouter.exitCall()` does `clearCommunicationDevice()` +
-  `am.mode = MODE_NORMAL`, all on Main. The client is unaffected — `talk.close`, `state` and
-  the resume `music.play` are all sent first, by design, and `ControlServer`'s read, write and
-  6 s liveness watchdog loops all run on `Dispatchers.IO`, so a Main stall cannot lose a frame
-  or trip a false link loss. The **host's own** player suffers: the
-  resume is a `scope.launch` on Main scheduled at `now + resumeLeadMs` (1500 ms default), so a
-  2.7 s stall makes the host start ~1.2 s late, which the next drift check turns into a
-  re-seek. Self-correcting, but audible on the host.
-  Not fixed on purpose: the obvious fix (run the teardown off Main) breaks the ordering that
-  `AudioRouter.depth` and `VoiceEngine.running` rely on if talk is re-triggered immediately.
-  Doing it properly means serialising all route changes onto one dedicated dispatcher — a real
-  change to the riskiest subsystem, and it cannot be regression-tested without a second person
-  to talk to. Ask the coordinator first.
+- **Talk no longer blocks Main** (layer 1). It used to, for ~2.7 s on open *and* close
+  (measured: `talk.close` left the host at 20:31:05.675, `AudioRouter: back to media mode` logged
+  at 20:31:08.401): `VoiceEngine.stop()` joined two threads and `AudioRouter.exitCall()` waited on
+  the Bluetooth stack, all on Main, so the host's own resume started ~1.2 s late and re-seeked.
+  The design now:
+  - **Talk collapses to the latest request** (`audio/TalkAudio.kt`, D1 fix, see section 3 item 3):
+    it still runs on the thread below, but a queued close + open no longer replay.
+  - **One serial thread** (`audio/AudioThread.kt`, a single-thread executor named
+    `motoparty-audio`) runs every `enterCall`/`exitCall` and `voice.start`/`stop`, plus the live
+    and closed earcons that must play after a switch. Posts run to completion one at a time in
+    submission order, so open -> close -> open cannot reorder and a close requested while an open
+    is in flight waits for it (no cancelling) and still ends in `MODE_NORMAL`. A queued block
+    always runs even if its waiter is cancelled, so enter/exit pairs never come apart. `post`
+    returns a `Job` that completes when the block has run or failed; a post after `shutdown` is
+    dropped and returns a completed job.
+  - **Main still decides and sends first**: `LinkHost.applyTalk` sends `talk.open`/`talk.close` +
+    `state` (and the resume `music.play`) before queueing the audio work.
+  - **Failures come back on Main**: a throwing block is reported through `scope.launch` on the
+    caller's scope (per-post `onError`, else the shared logger), *before* its job completes. The
+    talk-open block's `onError` and the session's `VoiceEngine` `onFailed` both go to
+    `LinkHost.onMicFailed`, which closes talk with `talk.close{by:"host",reason:"unavailable"}`
+    (broadcast, since `talk.open` already went out) and plays the error earcon if the Pixel
+    triggered. PROTOCOL.md "Talk flow" only describes the host's `unavailable` *instead of*
+    `talk.open` and the client's *after* it; a host `unavailable` after its own `talk.open` is
+    not spelled out (reported to the coordinator, not edited). A client that treats any
+    `talk.close` as a close handles it.
+  - **Stale callbacks**: `LinkHost.talkSession` is bumped on every open; the open's `onError`, its
+    voice `onFailed` and its live-earcon waiter carry the number and are ignored once a newer talk
+    opened. Without this, a late failure of talk *n* could close talk *n+1*.
+  - **Ref counting**: `AudioRouter.depth` is only touched on the audio thread (and
+    `@Synchronized`). Talk posts one enter per open and one exit per close (`TalkController` makes
+    them alternate); the recognizer posts one enter and exactly one exit (`routeBack` guard). The
+    announcer never enters call mode. `enterCall` does `depth++` as its first expression, so a
+    throw anywhere in it is already counted and the caller's exit balances it. `exitCall`'s
+    `MODE_NORMAL` is in a `finally`. `LinkHost.stop` ends with `voice.stop(); router.exitAll()`
+    on the audio thread, because a recognizer cancelled by `stop` posts its route-back after
+    `shutdown` and that post is dropped.
+  - **Music over the switch**: after talk (if music was paused for it) and after a voice command,
+    the local player is `sync.hold()`-ed and `sync.release(cold = true)` runs when the route-back
+    job completes. `SyncController.apply` then starts at `max(anchor, now + coldLead + prepare)`:
+    on time if A2DP is back before the anchor, mid-track on the same timeline if not. "Back" means
+    `exitCall` returned; any extra Bluetooth lag is what `coldStartLatencyMs` learns. A re-open
+    before the teardown finishes just pauses again (release re-applies the paused anchor).
+  - Device-only: the real Main stall is gone, the HFP<->A2DP timing, a mic that fails *after*
+    open (`AudioRecord did not start`) and TALK pressed during a voice command (the recognizer
+    and `VoiceEngine` briefly both want the mic).
 - Toolchain installed (user level): `sdkmanager "ndk;29.0.14206865" "cmake;3.31.6"`.
   `ndkVersion` and CMake `version` are pinned in `app/build.gradle.kts`.
 - libopus: NDK route works; no Concentus. Source is fetched by `tools/fetch_opus.sh`
@@ -280,7 +453,7 @@ section 2. What is left:
 - Android: never do socket I/O on the main thread (StrictMode throws; the first bench lost
   1.3 s to this). `LinkHost` runs on Main; `ControlServer.send` is queue-only.
   `DatagramSocket(null)+bind` failed on device ("port out of range:-1"); use `DatagramSocket(port)`.
-  `AudioRouter.enterCall/exitCall` block main for ~0.5–1.3 s, so messages are sent before them.
+  `AudioRouter.enterCall/exitCall` block for ~0.5–1.3 s: audio thread only, messages go out first.
 - On `Main.immediate`, completing a `CompletableDeferred` can run the waiting coroutine inline
   (caused a duplicate music.play; see `MusicController.onClientReady`).
 - A2DP: play()/seek restart costs ~350–700 ms before the position moves, so PROTOCOL's
@@ -319,7 +492,7 @@ section 2. What is left:
 
 ## 5. First three things to do
 
-1. `./gradlew assembleDebug test` (expect 65/63/2), `adb -s 192.168.1.100:5555 install -r
+1. `./gradlew assembleDebug test` (expect 111 tests, 2 skipped), `adb -s 192.168.1.100:5555 install -r
    app/build/outputs/apk/debug/app-debug.apk`, re-grant the four permissions + the
    `SYSTEM_ALERT_WINDOW` appop, and rerun the peer bench (`say play album …`, `talk`, `pause`)
    to confirm the baseline in section 2.

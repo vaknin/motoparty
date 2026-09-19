@@ -3,6 +3,9 @@ package com.kivan.motoparty.audio
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.PI
 import kotlin.math.min
 import kotlin.math.sin
@@ -18,6 +21,16 @@ object Earcons {
     }
 
     private const val RATE = 16_000
+
+    /**
+     * Tracks still playing. The strong reference matters: the marker callback reaches Java
+     * through a weak reference, so a track nobody holds could be collected before its marker and
+     * then was never released (no `AudioTrack: stop(..)` line for any earcon in the 2026-09-19
+     * bench, two per talk cycle). Unreleased tracks stay registered with the audio server and are
+     * a suspect for the open time rising cycle after cycle.
+     */
+    private val playing: MutableSet<AudioTrack> = ConcurrentHashMap.newKeySet()
+    private val main by lazy { Handler(Looper.getMainLooper()) }
 
     fun pcm(kind: Kind): ShortArray {
         val out = ArrayList<Short>()
@@ -57,11 +70,17 @@ object Earcons {
             .setBufferSizeInBytes(data.size * 2)
             .build()
         track.write(data, 0, data.size)
+        playing += track
+        val release = { if (playing.remove(track)) track.release() }
         track.setNotificationMarkerPosition(data.size)
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-            override fun onMarkerReached(t: AudioTrack) = t.release()
+            override fun onMarkerReached(t: AudioTrack) = release()
             override fun onPeriodicNotification(t: AudioTrack) {}
-        })
+        }, main)
         track.play()
+        // A track re-routed mid-tone may never reach its marker: release it regardless.
+        main.postDelayed({ release() }, data.size * 1000L / RATE + RELEASE_SLACK_MS)
     }
+
+    private const val RELEASE_SLACK_MS = 1_000L
 }

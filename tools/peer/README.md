@@ -38,6 +38,7 @@ reconnects on its own after link loss (6 s with nothing received) or a `bye`.
 | Option | |
 |---|---|
 | `--host IP`, `--port N` | connect directly (default port 47800) |
+| `--no-mdns` | skip the Bonjour browse and go straight to the /24 sweep (e.g. to test the sweep on the Pixel's hotspot); not allowed with `--host` |
 | `--tone` | send 440 Hz beeps instead of the mic (400 ms on / 100 ms off; see notes) |
 | `--no-audio` | no sound devices at all. Received voice still runs through the jitter buffer and decoder on a 20 ms clock, and the stats get logged |
 | `--play` | play music with mpv/ffplay at the scheduled moment (otherwise the schedule is only logged) |

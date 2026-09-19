@@ -1,0 +1,7 @@
+23:23:04.379 music_sync.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-19-d2-music
+23:23:04.936 phone: mWakefulness=Dozing, top: 
+23:23:05.019 app pid: 15218
+23:23:05.272 bluetooth:   09-19 22:26:58.747 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []   mActiveDevice: XX:XX:XX:XX:EC:2F
+23:23:05.467 music: 'play song bohemian rhapsody', 60s, talk 15s, 180s after
+23:27:27.525 client exited
+23:27:29.393 cleanup: kill 303011 2>/dev/null

@@ -96,6 +96,10 @@ class Player(
     override val positionMs: Long get() = exo.currentPosition
     override val isReady: Boolean get() = exo.playbackState == Media3Player.STATE_READY
 
+    /** For the sync trace: is sound really coming out (not just requested), and the ExoPlayer state. */
+    override val traceInfo: String
+        get() = ", playing ${exo.isPlaying}, whenReady ${exo.playWhenReady}, state ${exo.playbackState}"
+
     /** Playback speed (pitch preserved); used to nudge the timeline instead of seeking. */
     override var speed: Float
         get() = exo.playbackParameters.speed

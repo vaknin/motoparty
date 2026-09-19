@@ -1,0 +1,14 @@
+23:35:13.865 unavailable.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-19-d3-unavailable
+23:35:14.435 phone: mWakefulness=Dozing, top: 
+23:35:14.538 app pid: 15218
+23:35:14.936 bluetooth:   09-19 22:26:58.747 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []   09-19 23:31:49.694 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []
+23:35:15.538 (a) client mic unavailable, TALK pressed on the host
+23:35:21.330 keyguard showing (phone locked): overlay hidden, cannot press TALK
+23:35:21.333 (a) could not press TALK
+23:35:26.378 (b) host mic unavailable
+23:35:32.814 app restarted, pid 17314
+23:35:43.629 cleanup: sh1 pm grant com.kivan.motoparty android.permission.RECORD_AUDIO; restart_app; sh1 dumpsys package com.kivan.motoparty | grep -m1 RECORD_AUDIO >'/home/kivan/Work/motoparty/tools/bench/results/2026-09-19-d3-unavailable/permission.txt'
+23:35:48.715 app restarted, pid 17465
+23:35:48.715 app restarted, pid 17465
+23:35:49.115 cleanup: sh1 input keyevent KEYCODE_SLEEP
+23:35:49.256 cleanup: kill 308928 2>/dev/null

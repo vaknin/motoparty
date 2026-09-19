@@ -43,6 +43,14 @@ class TalkController(private val nowMs: () -> Long, private val silenceMs: Long 
 
     fun onLinkLost(): Action? = if (isOpen) close(Role.HOST, CloseReason.LINK) else null
 
+    /**
+     * This phone's own microphone or call route failed after talk was already open (the route
+     * change and the capture thread are asynchronous, so it can only be found out late). The
+     * mirror image of the client's `talk.close{reason:"unavailable"}`: an ordinary close, with the
+     * reason carried so the other side learns why.
+     */
+    fun onMicFailure(): Action? = if (isOpen) close(Role.HOST, CloseReason.UNAVAILABLE) else null
+
     /** Someone sent a non-DTX frame. */
     fun noteActivity() {
         lastActivityMs = nowMs()

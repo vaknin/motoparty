@@ -100,8 +100,10 @@ class Client:
             if a.host:
                 log(f"connecting to {a.host}:{a.port}")
                 return await discovery.handshake(a.host, a.port, self.name, 3.0, 3.0)
-            log("discovery: browsing _motoparty._tcp for 3 s")
-            found = await asyncio.to_thread(discovery.browse, discovery.BROWSE_SECONDS)
+            found = None
+            if not getattr(a, "no_mdns", False):
+                log("discovery: browsing _motoparty._tcp for 3 s")
+                found = await asyncio.to_thread(discovery.browse, discovery.BROWSE_SECONDS)
             if found:
                 log(f"discovery: bonjour found {found.name!r} at {found.address}:{found.port} txt={found.txt}")
                 conn = await discovery.handshake(found.address, found.port, self.name, 3.0, 3.0)
@@ -112,7 +114,8 @@ class Client:
                     log(f"warning: TXT proto={found.txt.get('proto')!r}, expected '1'")
                 return conn
             cands = discovery.sweep_candidates()
-            log(f"discovery: no bonjour result, sweeping {len(cands)} addresses on port {a.port}")
+            why = "--no-mdns" if getattr(a, "no_mdns", False) else "no bonjour result"
+            log(f"discovery: {why}, sweeping {len(cands)} addresses on port {a.port}")
             conn = await discovery.sweep(cands, a.port, self.name)
             if conn is None:
                 log("discovery: no host found")

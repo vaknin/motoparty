@@ -75,6 +75,20 @@ class TalkControllerTest {
         assertEquals(Role.CLIENT, talk.openedBy)
     }
 
+    /**
+     * The host's own mic can only fail asynchronously (the route change and the capture thread
+     * both run off the host thread), i.e. after `talk.open` already went out. It is then an
+     * ordinary close carrying the reason, the mirror of the client's "unavailable".
+     */
+    @Test
+    fun ownMicFailureClosesTalkAsUnavailable() {
+        assertNull("nothing open, nothing to close", talk.onMicFailure())
+        talk.onClientOpenRequest()
+        assertEquals(Action.Close("host", "unavailable"), talk.onMicFailure())
+        assertFalse(talk.isOpen)
+        assertNull("only once", talk.onMicFailure())
+    }
+
     @Test
     fun linkLossClosesOnlyWhenOpen() {
         assertNull(talk.onLinkLost())

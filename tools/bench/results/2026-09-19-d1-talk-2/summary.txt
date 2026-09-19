@@ -1,0 +1,43 @@
+talk cycles in logcat: 9
+ # by     open→HFP close→media  dur s captured   exp  sent   DTX    rx lost late FEC PLC  capture / reason
+ 1 client      185          56    7.9      371   395   117   254   386    0   11   0   3  capture alive, 68% DTX; client/trigger
+ 2 client      267         783    8.0      372   400   138   234   386    0   10   0   3  capture alive, 63% DTX; client/trigger
+ 3 client      428         661    8.0      363   400    48   315   379    0   21   0   3  capture alive, 87% DTX; client/trigger
+ 4 client      366         631    8.0      317   400   317     0   382    0   24   0   3  capture STALLED? (79% of expected), 0% DTX; client/trigger
+ 5 client      442         844    8.0      364   400    58   306   378    0    0   0   0  capture alive, 84% DTX; client/trigger
+ 6 client      503         806    8.0      361   400    61   300   374    0   23   0   3  capture alive, 83% DTX; client/trigger
+ 7 client        -           -    0.3                     (no talk stats line)  client/trigger
+ 8 client     2124          77    3.9       41   197    41     0    90    0    0   0   0  capture STALLED? (21% of expected), 0% DTX; client/trigger
+ 9 client      215          60   20.0      973   999   288   685   988    0    9   0   3  capture alive, 70% DTX; client/trigger
+
+peer requests (host answer time, ms):
+  talk.open  -> by=client            117
+  talk.close -> by=client trigger    18
+  talk.open  -> by=client            19
+  talk.close -> by=client trigger    16
+  talk.open  -> by=client            17
+  talk.close -> by=client trigger    16
+  talk.open  -> by=client            14
+  talk.close -> by=client trigger    17
+  talk.open  -> by=client            16
+  talk.close -> by=client trigger    17
+  talk.open  -> by=client            18
+  talk.close -> by=client trigger    15
+  talk.open  -> by=client            15
+  talk.close -> by=client trigger    11
+  talk.open  -> by=client            70
+  talk.close -> by=client trigger    9
+  talk.open  -> by=client            45
+  talk.close -> by=client trigger    16
+open→HFP ms: median 397, max 2124 (n=8)
+close→media ms: median 646, max 844 (n=8)
+
+errors in logcat: 0, crash buffer lines: 0
+
+final audio state:
+  Mode owner token: null
+    Computed Preferred communication device: null
+    Applied Preferred communication device: null
+    Active communication device: AudioDeviceAttributes: role:output type:bt_a2dp addr:XX:XX:XX:XX:EC:2F name:AirPods Pro profiles:[{ENCODING_PCM_8BIT, sampling rates=[48000], channel masks=0x0C, encapsulation type=0}] descriptors:[]
+
+VERDICT: LOOK AT THE ROWS ABOVE (1 incomplete cycles, 0 errors)

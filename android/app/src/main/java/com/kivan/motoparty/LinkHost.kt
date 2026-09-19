@@ -9,7 +9,9 @@ import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
 import android.view.KeyEvent
 import com.kivan.motoparty.audio.AudioRouter
+import com.kivan.motoparty.audio.AudioThread
 import com.kivan.motoparty.audio.Earcons
+import com.kivan.motoparty.audio.TalkAudio
 import com.kivan.motoparty.audio.VoiceEngine
 import com.kivan.motoparty.core.Announce
 import com.kivan.motoparty.core.Bye
@@ -60,6 +62,11 @@ import java.util.concurrent.TimeUnit
  * Wires the host together and is the single place where protocol decisions are made. Every
  * method runs on the main thread ([scope] is Main); sockets and audio have their own threads and
  * hand events over through channels.
+ *
+ * Audio routing and the voice engine are the one thing Main never does itself: they go through
+ * [audio], a single serial thread (see [AudioThread]), because the Bluetooth route change alone
+ * blocks for over a second. Protocol messages are still sent from Main *before* that work is
+ * queued, so the client never waits for this phone's headset.
  */
 class LinkHost(private val context: Context, private val scope: CoroutineScope) {
     private val settings = MotopartyApp.instance.settings
@@ -69,6 +76,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     private val talk: TalkController = TalkController(clock)
     private val router = AudioRouter(context)
+    /** Every route change and voice start/stop, in order, off Main. Failures come back on Main. */
+    private val audio = AudioThread(scope) { what, e -> Hub.log("$what failed: $e") }
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -82,6 +91,18 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         send = { ts, p -> voiceSocket.sendAudio(ts, p) },
         clockTs = { voiceSocket.currentTs() },
         onActivity = talk::noteActivity,
+    )
+    /** Route + voice engine for talk, collapsed to the latest open/close (see [TalkAudio]). */
+    private val talkAudio = TalkAudio(
+        audio,
+        enterCall = router::enterCall,
+        exitCall = router::exitCall,
+        voiceStart = { onFailed -> voice.start(onFailed) },
+        voiceStop = voice::stop,
+        voiceRunning = { voice.isRunning },
+        closedEarcon = { Earcons.play(Earcons.Kind.CLOSED, call = false) },
+        // From the audio thread or a voice thread: hop to Main, where talk state lives.
+        onFailed = { session, what, e -> scope.launch { onMicFailed(session, "$what: ${e.message}") } },
     )
     private val voiceSocket: VoiceSocket = VoiceSocket(clientIp = { control.clientAddress }, onPacket = { voice.onPacket(it) })
     private val trackServer = TrackServer(scope, cache::cached)
@@ -97,6 +118,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     )
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private var listenJob: Job? = null
+    /**
+     * Bumped on every talk open, on Main. Audio work finishes asynchronously, so a failure or the
+     * live earcon of an earlier talk can reach Main after the next one opened; they carry the
+     * number they were started with and are dropped when it is no longer current.
+     */
+    private var talkSession = 0
     private var clientName: String? = null
 
     fun start() {
@@ -137,7 +164,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         voiceSocket.stop()
         trackServer.stop()
         discovery.stop()
-        voice.stop()
+        // Behind whatever talk teardown is still queued, then the thread retires. exitAll: a
+        // cancelled recognizer's route-back arrives after shutdown and is dropped, so do it here.
+        audio.post("shutdown") {
+            voice.stop()
+            router.exitAll()
+        }
+        audio.shutdown()
         player.release()
         announcer.release()
         Hub.status.update { LinkStatus(log = it.log) }
@@ -231,32 +264,68 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
+    /**
+     * Our own microphone or call route failed. On Main, always: the audio thread reports it here.
+     *
+     * Before talk opens this is caught by [micAvailable]; afterwards the route change and the
+     * capture thread are asynchronous, so the same condition can only show up late. PROTOCOL.md
+     * "Talk flow" step 1 gives the reason for it — talk closes with
+     * `talk.close{by:"host",reason:"unavailable"}`, which is broadcast like any close because
+     * `talk.open` already went out, and the phone that asked plays the error earcon.
+     */
+    private fun onMicFailed(session: Int, why: String) {
+        if (!talk.isOpen || session != talkSession) return
+        Hub.log("microphone unavailable: $why")
+        val weAsked = talk.openedBy == Role.HOST
+        val action = talk.onMicFailure() ?: return
+        applyTalk(action)
+        if (weAsked) Earcons.play(Earcons.Kind.ERROR, call = false)
+    }
+
+    /**
+     * Turn a [TalkController] decision into wire messages (on Main, first) and audio work (queued
+     * on [audio], in order). Nothing here blocks Main, so the timers, the resume and the next
+     * protocol decision keep running while the headset switches profile.
+     */
     private fun applyTalk(action: TalkController.Action) {
         when (action) {
             is TalkController.Action.Open -> {
                 control.send(TalkOpen(action.by))
                 music.onTalkOpen(duck = settings.value.duckDuringTalk)
                 pushState()
-                // Switching the headset to HFP can block for a second; messages go out first.
-                router.enterCall()
-                voice.start()
+                val session = ++talkSession
+                // Switching the headset to HFP blocks for about a second; messages went out first.
+                // A failure here is this phone's "cannot open the microphone" case. enterCall
+                // counts itself before it can throw, so the close that follows balances it.
+                val opened = talkAudio.open(session)
                 Hub.log("talk open (by ${action.by})")
-                // Give the headset a moment to switch to HFP so the earcon is audible.
                 scope.launch {
+                    // Give the headset a moment past the switch so the earcon is audible.
+                    opened.join()
                     delay(LIVE_EARCON_DELAY_MS)
-                    if (talk.isOpen) Earcons.play(Earcons.Kind.LIVE, call = true)
+                    if (talk.isOpen && session == talkSession) {
+                        audio.post("live earcon") { Earcons.play(Earcons.Kind.LIVE, call = true) }
+                    }
                 }
             }
             is TalkController.Action.Close -> {
                 control.send(TalkClose(action.by, action.reason))
                 pushState()
-                // The resume is scheduled resumeLeadMs ahead, which covers the HFP -> A2DP switch
-                // below; sending it first keeps the client from waiting on our audio teardown.
+                // The client is told to resume at now + resumeLeadMs and is not kept waiting for
+                // our headset. Our own player is a different matter: A2DP does not exist again
+                // until exitCall has finished, and a play() into a route that is still being
+                // rebuilt is the "known-bad start" that costs ~20 s of drift correction. So hold
+                // the local player over the switch and rejoin the (unchanged) timeline after it —
+                // on time if the route is back before the anchor, mid-track if it is not.
+                val resuming = music.pausedForTalk
+                if (resuming) sync.hold()
                 music.onTalkClose(settings.value.resumeLeadMs.toLong())
-                voice.stop()
-                router.exitCall()
-                Earcons.play(Earcons.Kind.CLOSED, call = false)
+                val closed = talkAudio.close()
                 Hub.log("talk closed (by ${action.by}, ${action.reason})")
+                if (resuming) scope.launch {
+                    closed.join()
+                    sync.release(cold = true)
+                }
             }
         }
     }
@@ -316,13 +385,15 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         listenJob = scope.launch {
             Hub.status.update { it.copy(listening = true) }
             sync.hold()
-            router.enterCall()
-            var inCall = true
+            // Queued, never cancelled: the block always runs, so enter and exit stay paired even
+            // if this job is cancelled while waiting for the route.
+            val entered = audio.post("recognizer route") { router.enterCall() }
+            var routeBack: Job? = null
             fun leaveCall() {
-                if (inCall) router.exitCall()
-                inCall = false
+                if (routeBack == null) routeBack = audio.post("recognizer route back") { router.exitCall() }
             }
             try {
+                entered.join()
                 delay(SCO_SETTLE_MS)
                 Earcons.play(Earcons.Kind.LISTEN, call = true)
                 delay(250)
@@ -340,8 +411,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 }
             } finally {
                 leaveCall()
-                sync.release()
                 Hub.status.update { it.copy(listening = false) }
+                // In its own coroutine: this one may be cancelled, and the music must not restart
+                // before the route is back (cold, for the same reason as after talk).
+                val back = routeBack
+                scope.launch {
+                    back?.join()
+                    sync.release(cold = true)
+                }
             }
         }
     }

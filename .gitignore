@@ -21,3 +21,6 @@ __pycache__/
 
 # Scratch recordings
 *.wav
+
+# Bench: whole-phone raw logcat dumps (the filtered logcat.txt next to them is kept)
+tools/bench/results/*/logcat_all.txt
