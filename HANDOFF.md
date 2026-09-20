@@ -18,8 +18,9 @@ yourself before telling the user anything is done, and keep this file current.
 ## Do now (2026-09-20, end of the sixth session's offline part; supersedes the older "Do now" below)
 
 Everything offline is done and checked by the coordinator (Android 139 tests, peer 161, four
-`DRY=1` runs, the spike builds). **Nothing is committed** (last night's F3–F5 and today's F6, F7,
-bench, peer, spike, docs); ask the user. The build on the Pixel is still F3+F4+F5.
+`DRY=1` runs, the spike builds). **Committed as `ecfc144`** (last night's F3–F5 and today's F6, F7,
+bench, peer, spike, docs). **Not pushed: the repo has no git remote.** The build on the Pixel is
+still F3+F4+F5.
 
 When the user says the phone is free — gate first (install the current build), one ask at a time,
 say what will sound in the AirPods, F13 keep-awake, never a tap on the MUSIC zone:
@@ -52,7 +53,8 @@ Plan: `~/.claude/plans/pasted-content-id-45cf-you-are-functional-stonebraker.md`
   limit is Bluetooth's, not ours: AirPods do stereo music *or* a mic, never both, so every talk
   drops them to mono call quality, the call link is up 0.9–1.7 s after the press, and music is
   back within ±80 ms ~18 s after a talk. That cost is accepted. What softens it: the 20 s silence
-  close, the pre-roll buffer (design pending), and the single button (no second route switch for
+  close, the honest go-beep (F7; the pre-roll buffer was reviewed and dropped, see below), and the
+  single button (no second route switch for
   a command). Dropped for good: the USB-mic research and the USB-mic device spike; `RESEARCH.md`
   §6 "USB-C helmet mic" and "LE Audio earbuds" are won't-do. Not researched, because the answer
   made it moot: USB input in MODE_NORMAL vs A2DP, iOS input-only USB routing, charging + mic on
