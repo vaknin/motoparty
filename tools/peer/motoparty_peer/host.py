@@ -1,6 +1,6 @@
 """`motoparty-peer host`: a minimal fake Pixel, for testing the iOS client without the Pixel.
 
-Advertises over Bonjour, serves control/voice/HTTP, is the talk authority (incl. the 10 s
+Advertises over Bonjour, serves control/voice/HTTP, is the talk authority (incl. the 20 s
 silence close), echoes voice back to the client, serves one track and parses command.text.
 """
 

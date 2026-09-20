@@ -1,0 +1,17 @@
+1789860871.474 02:34:31.473 connecting to 192.168.1.100:47800
+1789860871.475 02:34:31.474 commands: talk | say <text> | pause | resume | next | previous | vol+ | vol- (local) |
+1789860871.475           unavailable (toggle "my mic is dead") | stats | raw <json> (send unvalidated) | quit
+1789860871.667 02:34:31.666 connected to 192.168.1.100:47800
+1789860871.667 02:34:31.666 << {"t":"hello","proto":1,"role":"host","name":"Pixel 8","voicePort":47801,"httpPort":47802}
+1789860871.673 02:34:31.672 << {"t":"state","talk":false,"queue":[]}
+1789860871.683 02:34:31.683 << pong id=1 rtt=10ms offset=2278842158.0ms | estimate offset=2278842158.0ms (rtt 10ms)
+1789860873.727 02:34:33.726 << pong id=2 rtt=52ms offset=2278842179.0ms | estimate offset=2278842158.0ms (rtt 10ms)
+1789860875.719 02:34:35.719 << pong id=3 rtt=45ms offset=2278842139.5ms | estimate offset=2278842158.0ms (rtt 10ms)
+1789860876.284 02:34:36.283 >> {"t":"talk.open","by":"client"}
+1789860876.311 02:34:36.311 << {"t":"talk.close","by":"host","reason":"unavailable"}
+1789860876.311 02:34:36.311    TALK REFUSED by host: microphone unavailable (talk never opened, state.talk stays false) [earcon error]
+1789860877.728 02:34:37.728 << pong id=4 rtt=54ms offset=2278842180.0ms | estimate offset=2278842158.0ms (rtt 10ms)
+1789860879.686 02:34:39.685 << pong id=5 rtt=10ms offset=2278842156.0ms | estimate offset=2278842156.0ms (rtt 10ms)
+1789860880.286 02:34:40.286 >> {"t":"bye","reason":"user"}
+1789860880.286 02:34:40.286 voice (final): rx=0 ka=9 played=0 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=0ms target=40ms
+1789860880.286 02:34:40.286 bye

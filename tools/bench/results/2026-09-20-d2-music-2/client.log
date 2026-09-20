@@ -1,0 +1,179 @@
+1789859684.815 02:14:44.814 connecting to 192.168.1.100:47800
+1789859684.815 02:14:44.815 commands: talk | say <text> | pause | resume | next | previous | vol+ | vol- (local) |
+1789859684.816           unavailable (toggle "my mic is dead") | stats | raw <json> (send unvalidated) | quit
+1789859684.875 02:14:44.874 connected to 192.168.1.100:47800
+1789859684.875 02:14:44.875 << {"t":"hello","proto":1,"role":"host","name":"Pixel 8","voicePort":47801,"httpPort":47802}
+1789859684.881 02:14:44.881 << {"t":"state","talk":false,"queue":[]}
+1789859684.889 02:14:44.889 << pong id=1 rtt=7ms offset=2278842436.5ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859686.926 02:14:46.925 << pong id=2 rtt=41ms offset=2278842452.5ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859688.895 02:14:48.894 << pong id=3 rtt=9ms offset=2278842436.5ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859689.713 02:14:49.713 >> {"t":"command.text","text":"play song bohemian rhapsody","lang":"en-US"}
+1789859690.908 02:14:50.908 << pong id=4 rtt=17ms offset=2278842432.5ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859691.289 02:14:51.289 << {"t":"state","talk":false,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":false,"positionMs":0,"atHostTimeMs":2353412478,"durationMs":355000},"queue":[]}
+1789859691.338 02:14:51.338 << {"t":"music.load","id":"BSTsnWoslP4","path":"/track/BSTsnWoslP4.m4a","title":"Bohemian Rhapsody","artist":"Queen","durationMs":355000}
+1789859691.340 02:14:51.339 << {"t":"announce","text":"Playing Bohemian Rhapsody by Queen","earcon":"ok"}
+1789859691.340 02:14:51.339 ANNOUNCE (would speak): 'Playing Bohemian Rhapsody by Queen' [earcon ok]
+1789859691.670 02:14:51.669 music: cached BSTsnWoslP4 (5736965 bytes in 331 ms) -> /home/kivan/.cache/motoparty-peer/BSTsnWoslP4.m4a
+1789859691.670 02:14:51.670 >> {"t":"music.ready","id":"BSTsnWoslP4"}
+1789859691.689 02:14:51.688 << {"t":"music.play","id":"BSTsnWoslP4","positionMs":0,"atHostTimeMs":2353413183}
+1789859691.689 02:14:51.688 music: play BSTsnWoslP4 from 0 ms at host 2353413183 = local 74570746.5 (in 296 ms)
+1789859691.689 02:14:51.688 << {"t":"state","talk":false,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":true,"positionMs":0,"atHostTimeMs":2353413183,"durationMs":355000},"queue":[]}
+1789859692.898 02:14:52.898 << pong id=5 rtt=12ms offset=2278842435.0ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859694.898 02:14:54.897 << pong id=6 rtt=11ms offset=2278842435.5ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859696.898 02:14:56.897 << pong id=7 rtt=8ms offset=2278842437.0ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859698.899 02:14:58.899 << pong id=8 rtt=9ms offset=2278842436.5ms | estimate offset=2278842436.5ms (rtt 7ms)
+1789859700.903 02:15:00.902 << pong id=9 rtt=10ms offset=2278842435.0ms | estimate offset=2278842437.0ms (rtt 8ms)
+1789859702.910 02:15:02.909 << pong id=10 rtt=13ms offset=2278842436.5ms | estimate offset=2278842437.0ms (rtt 8ms)
+1789859704.908 02:15:04.908 << pong id=11 rtt=13ms offset=2278842435.5ms | estimate offset=2278842437.0ms (rtt 8ms)
+1789859706.902 02:15:06.902 << pong id=12 rtt=6ms offset=2278842437.0ms | estimate offset=2278842437.0ms (rtt 6ms)
+1789859708.910 02:15:08.910 << pong id=13 rtt=13ms offset=2278842438.5ms | estimate offset=2278842437.0ms (rtt 6ms)
+1789859710.907 02:15:10.906 << pong id=14 rtt=9ms offset=2278842436.5ms | estimate offset=2278842437.0ms (rtt 6ms)
+1789859712.907 02:15:12.906 << pong id=15 rtt=8ms offset=2278842437.0ms | estimate offset=2278842437.0ms (rtt 6ms)
+1789859714.905 02:15:14.905 << pong id=16 rtt=6ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859716.906 02:15:16.906 << pong id=17 rtt=7ms offset=2278842437.5ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859718.915 02:15:18.914 << pong id=18 rtt=11ms offset=2278842435.5ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859720.919 02:15:20.918 << pong id=19 rtt=14ms offset=2278842437.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859722.917 02:15:22.917 << pong id=20 rtt=10ms offset=2278842437.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859724.917 02:15:24.916 << pong id=21 rtt=11ms offset=2278842437.5ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859726.917 02:15:26.917 << pong id=22 rtt=11ms offset=2278842436.5ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859728.919 02:15:28.918 << pong id=23 rtt=12ms offset=2278842436.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859730.921 02:15:30.920 << pong id=24 rtt=11ms offset=2278842435.5ms | estimate offset=2278842437.5ms (rtt 7ms)
+1789859732.920 02:15:32.920 << pong id=25 rtt=9ms offset=2278842437.5ms | estimate offset=2278842437.5ms (rtt 9ms)
+1789859734.923 02:15:34.922 << pong id=26 rtt=11ms offset=2278842436.5ms | estimate offset=2278842437.5ms (rtt 9ms)
+1789859736.922 02:15:36.921 << pong id=27 rtt=10ms offset=2278842437.0ms | estimate offset=2278842437.5ms (rtt 9ms)
+1789859738.923 02:15:38.923 << pong id=28 rtt=10ms offset=2278842437.0ms | estimate offset=2278842437.5ms (rtt 9ms)
+1789859740.927 02:15:40.927 << pong id=29 rtt=12ms offset=2278842437.0ms | estimate offset=2278842437.5ms (rtt 9ms)
+1789859742.923 02:15:42.922 << pong id=30 rtt=8ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859744.927 02:15:44.927 << pong id=31 rtt=11ms offset=2278842437.5ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859746.931 02:15:46.930 << pong id=32 rtt=10ms offset=2278842437.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859748.928 02:15:48.927 << pong id=33 rtt=8ms offset=2278842437.0ms | estimate offset=2278842437.0ms (rtt 8ms)
+1789859749.716 02:15:49.715 voice: rx=0 ka=65 played=0 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=0ms target=40ms
+1789859749.716 02:15:49.715 clock: offset=2278842437.0ms rtt=8ms
+1789859749.716 02:15:49.715 >> {"t":"talk.open","by":"client"}
+1789859749.741 02:15:49.740 << {"t":"talk.open","by":"client"}
+1789859749.741 02:15:49.740 TALK OPEN - sending 440 Hz tone
+1789859749.771 02:15:49.770 << {"t":"state","talk":true,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":false,"positionMs":57751,"atHostTimeMs":2353470934,"durationMs":355000},"queue":[]}
+1789859749.812 02:15:49.812 << {"t":"state","talk":true,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":false,"positionMs":57751,"atHostTimeMs":2353470934,"durationMs":355000},"queue":[]}
+1789859750.919 02:15:50.918 voice rx: rx=0 ka=66 played=0 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=0ms target=40ms | tx: audio=58 dtx_skipped=0 keepalive=65
+1789859750.929 02:15:50.929 << pong id=34 rtt=9ms offset=2278842436.5ms | estimate offset=2278842437.0ms (rtt 8ms)
+1789859752.920 02:15:52.919 voice rx: rx=97 ka=66 played=96 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=20ms target=40ms | tx: audio=158 dtx_skipped=0 keepalive=65
+1789859752.934 02:15:52.933 << pong id=35 rtt=10ms offset=2278842436.0ms | estimate offset=2278842437.0ms (rtt 8ms)
+1789859754.921 02:15:54.920 voice rx: rx=197 ka=66 played=195 fec=0 plc=0 late=1 dup=0 dtx=0 starved=1 underruns=1 trimmed=0 depth=40ms target=60ms | tx: audio=258 dtx_skipped=0 keepalive=65
+1789859754.935 02:15:54.935 << pong id=36 rtt=10ms offset=2278842437.0ms | estimate offset=2278842437.0ms (rtt 8ms)
+1789859756.923 02:15:56.922 voice rx: rx=297 ka=66 played=295 fec=0 plc=0 late=1 dup=0 dtx=0 starved=1 underruns=1 trimmed=0 depth=40ms target=60ms | tx: audio=359 dtx_skipped=0 keepalive=65
+1789859756.934 02:15:56.934 << pong id=37 rtt=8ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859758.924 02:15:58.923 voice rx: rx=398 ka=66 played=395 fec=0 plc=0 late=1 dup=0 dtx=0 starved=1 underruns=1 trimmed=0 depth=60ms target=60ms | tx: audio=459 dtx_skipped=0 keepalive=65
+1789859758.932 02:15:58.932 << pong id=38 rtt=6ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859760.924 02:16:00.923 voice rx: rx=495 ka=66 played=495 fec=0 plc=0 late=1 dup=0 dtx=0 starved=1 underruns=1 trimmed=0 depth=0ms target=60ms | tx: audio=559 dtx_skipped=0 keepalive=65
+1789859760.949 02:16:00.948 << pong id=39 rtt=20ms offset=2278842443.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859762.925 02:16:02.924 voice rx: rx=598 ka=66 played=595 fec=0 plc=0 late=1 dup=0 dtx=0 starved=1 underruns=1 trimmed=0 depth=60ms target=60ms | tx: audio=659 dtx_skipped=0 keepalive=65
+1789859762.944 02:16:02.944 << pong id=40 rtt=17ms offset=2278842433.5ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859764.718 02:16:04.717 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859764.778 02:16:04.777 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859764.778 02:16:04.777 TALK CLOSED
+1789859764.779 02:16:04.779 << {"t":"state","talk":false,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":false,"positionMs":57751,"atHostTimeMs":2353470934,"durationMs":355000},"queue":[]}
+1789859764.801 02:16:04.801 << {"t":"music.play","id":"BSTsnWoslP4","positionMs":57751,"atHostTimeMs":2353487491}
+1789859764.801 02:16:04.801 music: play BSTsnWoslP4 from 57751 ms at host 2353487491 = local 74645053.0 (in 1489 ms)
+1789859764.801 02:16:04.801 << {"t":"state","talk":false,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":true,"positionMs":57751,"atHostTimeMs":2353487491,"durationMs":355000},"queue":[]}
+1789859764.926 02:16:04.925 voice rx: rx=691 ka=66 played=691 fec=0 plc=0 late=1 dup=0 dtx=0 starved=4 underruns=1 trimmed=0 depth=0ms target=40ms | tx: audio=751 dtx_skipped=0 keepalive=65
+1789859764.972 02:16:04.972 << pong id=41 rtt=44ms offset=2278842451.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859766.926 02:16:06.926 voice rx: rx=691 ka=67 played=691 fec=0 plc=0 late=1 dup=0 dtx=0 starved=4 underruns=1 trimmed=0 depth=0ms target=40ms | tx: audio=751 dtx_skipped=0 keepalive=67
+1789859766.938 02:16:06.937 << pong id=42 rtt=9ms offset=2278842437.5ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859768.944 02:16:08.944 << pong id=43 rtt=14ms offset=2278842436.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859770.943 02:16:10.942 << pong id=44 rtt=10ms offset=2278842436.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859772.943 02:16:12.942 << pong id=45 rtt=8ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 6ms)
+1789859774.942 02:16:14.941 << pong id=46 rtt=8ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859776.947 02:16:16.946 << pong id=47 rtt=12ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859778.948 02:16:18.948 << pong id=48 rtt=10ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859780.951 02:16:20.950 << pong id=49 rtt=10ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859782.948 02:16:22.948 << pong id=50 rtt=7ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859784.953 02:16:24.953 << pong id=51 rtt=8ms offset=2278842438.0ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859786.957 02:16:26.957 << pong id=52 rtt=12ms offset=2278842439.0ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859788.952 02:16:28.952 << pong id=53 rtt=9ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859790.959 02:16:30.958 << pong id=54 rtt=13ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859792.955 02:16:32.955 << pong id=55 rtt=9ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859794.955 02:16:34.954 << pong id=56 rtt=9ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859796.988 02:16:36.988 << pong id=57 rtt=41ms offset=2278842454.5ms | estimate offset=2278842438.5ms (rtt 7ms)
+1789859798.956 02:16:38.955 << pong id=58 rtt=8ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859801.009 02:16:41.009 << pong id=59 rtt=59ms offset=2278842413.5ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859802.961 02:16:42.960 << pong id=60 rtt=10ms offset=2278842439.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859804.958 02:16:44.958 << pong id=61 rtt=8ms offset=2278842439.0ms | estimate offset=2278842439.0ms (rtt 8ms)
+1789859806.960 02:16:46.959 << pong id=62 rtt=8ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859808.965 02:16:48.964 << pong id=63 rtt=10ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859810.965 02:16:50.965 << pong id=64 rtt=9ms offset=2278842439.5ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859812.967 02:16:52.966 << pong id=65 rtt=11ms offset=2278842436.5ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859814.967 02:16:54.966 << pong id=66 rtt=10ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859816.969 02:16:56.968 << pong id=67 rtt=10ms offset=2278842438.0ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859818.970 02:16:58.969 << pong id=68 rtt=11ms offset=2278842438.5ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859820.974 02:17:00.974 << pong id=69 rtt=13ms offset=2278842440.5ms | estimate offset=2278842438.0ms (rtt 8ms)
+1789859822.975 02:17:02.974 << pong id=70 rtt=11ms offset=2278842436.5ms | estimate offset=2278842439.5ms (rtt 9ms)
+1789859824.978 02:17:04.977 << pong id=71 rtt=13ms offset=2278842440.5ms | estimate offset=2278842439.5ms (rtt 9ms)
+1789859827.261 02:17:07.260 << pong id=72 rtt=298ms offset=2278842581.0ms | estimate offset=2278842438.0ms (rtt 10ms)
+1789859828.987 02:17:08.987 << pong id=73 rtt=21ms offset=2278842433.5ms | estimate offset=2278842438.0ms (rtt 10ms)
+1789859830.987 02:17:10.986 << pong id=74 rtt=20ms offset=2278842435.0ms | estimate offset=2278842438.0ms (rtt 10ms)
+1789859832.978 02:17:12.977 << pong id=75 rtt=11ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859835.019 02:17:15.018 << pong id=76 rtt=48ms offset=2278842453.0ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859836.983 02:17:16.982 << pong id=77 rtt=11ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859839.423 02:17:19.423 << pong id=78 rtt=452ms offset=2278842228.0ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859840.990 02:17:20.989 << pong id=79 rtt=16ms offset=2278842438.0ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859842.992 02:17:22.991 << pong id=80 rtt=18ms offset=2278842441.0ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859844.987 02:17:24.986 << pong id=81 rtt=13ms offset=2278842439.5ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859846.993 02:17:26.992 << pong id=82 rtt=16ms offset=2278842441.0ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859848.990 02:17:28.989 << pong id=83 rtt=12ms offset=2278842439.0ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859850.992 02:17:30.991 << pong id=84 rtt=11ms offset=2278842439.5ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859853.021 02:17:33.021 << pong id=85 rtt=40ms offset=2278842453.0ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859855.022 02:17:35.021 << pong id=86 rtt=41ms offset=2278842431.5ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859856.996 02:17:36.995 << pong id=87 rtt=14ms offset=2278842437.0ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859859.009 02:17:39.008 << pong id=88 rtt=24ms offset=2278842436.0ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859861.005 02:17:41.004 << pong id=89 rtt=20ms offset=2278842444.0ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859863.002 02:17:43.001 << pong id=90 rtt=16ms offset=2278842438.0ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859865.024 02:17:45.023 << pong id=91 rtt=36ms offset=2278842440.0ms | estimate offset=2278842439.5ms (rtt 11ms)
+1789859867.007 02:17:47.006 << pong id=92 rtt=19ms offset=2278842435.5ms | estimate offset=2278842437.0ms (rtt 14ms)
+1789859869.010 02:17:49.009 << pong id=93 rtt=19ms offset=2278842434.5ms | estimate offset=2278842437.0ms (rtt 14ms)
+1789859871.020 02:17:51.019 << pong id=94 rtt=28ms offset=2278842448.0ms | estimate offset=2278842437.0ms (rtt 14ms)
+1789859873.004 02:17:53.003 << pong id=95 rtt=11ms offset=2278842438.5ms | estimate offset=2278842438.5ms (rtt 11ms)
+1789859875.003 02:17:55.002 << pong id=96 rtt=10ms offset=2278842440.0ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859877.006 02:17:57.006 << pong id=97 rtt=12ms offset=2278842440.0ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859879.036 02:17:59.035 << pong id=98 rtt=41ms offset=2278842453.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859881.008 02:18:01.007 << pong id=99 rtt=11ms offset=2278842441.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859883.011 02:18:03.010 << pong id=100 rtt=12ms offset=2278842439.0ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859885.021 02:18:05.020 << pong id=101 rtt=21ms offset=2278842433.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859887.076 02:18:07.075 << pong id=102 rtt=73ms offset=2278842408.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859889.014 02:18:09.014 << pong id=103 rtt=10ms offset=2278842439.0ms | estimate offset=2278842439.0ms (rtt 10ms)
+1789859891.017 02:18:11.017 << pong id=104 rtt=13ms offset=2278842438.5ms | estimate offset=2278842439.0ms (rtt 10ms)
+1789859893.027 02:18:13.026 << pong id=105 rtt=20ms offset=2278842438.0ms | estimate offset=2278842439.0ms (rtt 10ms)
+1789859895.016 02:18:15.015 << pong id=106 rtt=9ms offset=2278842440.5ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859897.044 02:18:17.043 << pong id=107 rtt=35ms offset=2278842452.5ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859899.025 02:18:19.024 << pong id=108 rtt=15ms offset=2278842440.5ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859901.067 02:18:21.066 << pong id=109 rtt=54ms offset=2278842454.0ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859904.340 02:18:24.339 << pong id=110 rtt=1329ms offset=2278843086.5ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859905.064 02:18:25.064 << pong id=111 rtt=51ms offset=2278842459.5ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859907.026 02:18:27.026 << pong id=112 rtt=12ms offset=2278842441.0ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859909.031 02:18:29.030 << pong id=113 rtt=15ms offset=2278842438.5ms | estimate offset=2278842440.5ms (rtt 9ms)
+1789859911.029 02:18:31.028 << pong id=114 rtt=14ms offset=2278842439.0ms | estimate offset=2278842441.0ms (rtt 12ms)
+1789859913.063 02:18:33.062 << pong id=115 rtt=45ms offset=2278842422.5ms | estimate offset=2278842441.0ms (rtt 12ms)
+1789859915.071 02:18:35.070 << pong id=116 rtt=52ms offset=2278842449.0ms | estimate offset=2278842441.0ms (rtt 12ms)
+1789859917.042 02:18:37.041 << pong id=117 rtt=21ms offset=2278842445.5ms | estimate offset=2278842441.0ms (rtt 12ms)
+1789859919.030 02:18:39.029 << pong id=118 rtt=10ms offset=2278842441.0ms | estimate offset=2278842441.0ms (rtt 10ms)
+1789859921.092 02:18:41.091 << pong id=119 rtt=70ms offset=2278842464.0ms | estimate offset=2278842441.0ms (rtt 10ms)
+1789859923.049 02:18:43.048 << pong id=120 rtt=24ms offset=2278842435.0ms | estimate offset=2278842441.0ms (rtt 10ms)
+1789859925.036 02:18:45.035 << pong id=121 rtt=10ms offset=2278842440.0ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859927.114 02:18:47.113 << pong id=122 rtt=87ms offset=2278842470.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859929.044 02:18:49.043 << pong id=123 rtt=17ms offset=2278842441.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859931.052 02:18:51.051 << pong id=124 rtt=24ms offset=2278842448.0ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859933.041 02:18:53.040 << pong id=125 rtt=13ms offset=2278842442.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859935.061 02:18:55.060 << pong id=126 rtt=32ms offset=2278842445.0ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859937.043 02:18:57.042 << pong id=127 rtt=13ms offset=2278842440.5ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859939.043 02:18:59.043 << pong id=128 rtt=12ms offset=2278842441.0ms | estimate offset=2278842440.0ms (rtt 10ms)
+1789859941.062 02:19:01.061 << pong id=129 rtt=29ms offset=2278842433.5ms | estimate offset=2278842441.0ms (rtt 12ms)
+1789859943.046 02:19:03.045 << pong id=130 rtt=11ms offset=2278842440.5ms | estimate offset=2278842440.5ms (rtt 11ms)
+1789859944.720 02:19:04.719 voice: rx=691 ka=244 played=691 fec=0 plc=0 late=1 dup=0 dtx=0 starved=4 underruns=1 trimmed=0 depth=0ms target=40ms
+1789859944.720 02:19:04.719 clock: offset=2278842440.5ms rtt=11ms
+1789859944.720 02:19:04.720 >> {"t":"music.control","action":"pause"}
+1789859944.758 02:19:04.757 << {"t":"music.pause","id":"BSTsnWoslP4","positionMs":236203}
+1789859944.758 02:19:04.757 music: pause (local player stopped)
+1789859944.759 02:19:04.758 << {"t":"state","talk":false,"music":{"id":"BSTsnWoslP4","title":"Bohemian Rhapsody","artist":"Queen","playing":false,"positionMs":236203,"atHostTimeMs":2353665943,"durationMs":355000},"queue":[]}
+1789859945.049 02:19:05.048 << pong id=131 rtt=11ms offset=2278842440.5ms | estimate offset=2278842440.5ms (rtt 11ms)
+1789859946.723 02:19:06.723 >> {"t":"bye","reason":"user"}
+1789859946.724 02:19:06.723 voice (final): rx=691 ka=246 played=691 fec=0 plc=0 late=1 dup=0 dtx=0 starved=4 underruns=1 trimmed=0 depth=0ms target=40ms
+1789859946.724 02:19:06.723 bye

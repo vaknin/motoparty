@@ -1,0 +1,102 @@
+peer side (s since the peer started):
+      6.5  << {"t": "music.load", "id": "BSTsnWoslP4", "path": "/track/BSTsnWoslP4.m4a", "title": "Bohemian Rhapsody", "artist": "Queen", "durationMs": 35
+      6.9  music: cached BSTsnWoslP4 (5736965 bytes in 331 ms) -> /home/kivan/.cache/motoparty-peer/BSTsnWoslP4.m4a
+      6.9  >> {"t": "music.ready", "id": "BSTsnWoslP4"}
+      6.9  << {"t": "music.play", "id": "BSTsnWoslP4", "positionMs": 0, "atHostTimeMs": 2353413183}
+      6.9  music: play BSTsnWoslP4 from 0 ms at host 2353413183 = local 74570746.5 (in 296 ms)
+     64.9  >> {"t": "talk.open", "by": "client"}
+     64.9  << {"t": "talk.open", "by": "client"}
+     64.9  TALK OPEN - sending 440 Hz tone
+     79.9  >> {"t": "talk.close", "by": "client", "reason": "trigger"}
+     80.0  << {"t": "talk.close", "by": "client", "reason": "trigger"}
+     80.0  TALK CLOSED
+     80.0  << {"t": "music.play", "id": "BSTsnWoslP4", "positionMs": 57751, "atHostTimeMs": 2353487491}
+     80.0  music: play BSTsnWoslP4 from 57751 ms at host 2353487491 = local 74645053.0 (in 1489 ms)
+    259.9  >> {"t": "music.control", "action": "pause"}
+    259.9  << {"t": "music.pause", "id": "BSTsnWoslP4", "positionMs": 236203}
+    259.9  music: pause (local player stopped)
+
+trace (s since the first line):
+      0.0  Motoparty: command: "play song bohemian rhapsody"
+      1.9  Motoparty: announce: Playing Bohemian Rhapsody by Queen
+      2.2  start warm: lead 300 ms, 299 ms to the anchor point
+      2.2  trace: pos 254 ms, expected -33 ms, err 287 ms, speed 1.0, phase start-warm, t 1, playing true, whenReady true, state 3
+      3.2  trace: pos 978 ms, expected 968 ms, err 10 ms, speed 1.0, phase start-warm, t 1002, playing true, whenReady true, state 3
+      4.2  trace: pos 1724 ms, expected 1969 ms, err -245 ms, speed 1.0, phase start-warm, t 2003, playing true, whenReady true, state 3
+      5.2  trace: pos 2957 ms, expected 2973 ms, err -16 ms, speed 1.0, phase start-warm, t 3007, playing true, whenReady true, state 3
+      6.2  trace: pos 3965 ms, expected 3974 ms, err -9 ms, speed 1.0, phase start-warm, t 4008, playing true, whenReady true, state 3
+      6.2  check: median err -101 ms (spread 232 ms, n 9), waiting for confirmation
+      8.2  drift -36 ms (start latency 325 ms, cold 300 ms)
+     18.2  check: median err -111 ms (spread 250 ms, n 9), waiting for confirmation
+     20.2  drift -113 ms: speed 1.02825 for 4000 ms
+     20.2  trace: pos 18021 ms, expected 18034 ms, err -13 ms, speed 1.02825, phase nudge, t 1, playing true, whenReady true, state 3
+     21.2  trace: pos 18931 ms, expected 19036 ms, err -105 ms, speed 1.02825, phase nudge, t 1003, playing true, whenReady true, state 3
+     22.2  trace: pos 20001 ms, expected 20038 ms, err -37 ms, speed 1.02825, phase nudge, t 2004, playing true, whenReady true, state 3
+     23.2  trace: pos 21060 ms, expected 21039 ms, err 21 ms, speed 1.02825, phase nudge, t 3006, playing true, whenReady true, state 3
+     24.3  trace: pos 22071 ms, expected 22043 ms, err 28 ms, speed 1.0, phase nudge, t 4010, playing true, whenReady true, state 3
+     25.2  nudge done: drift 1 ms
+     25.3  trace: pos 23042 ms, expected 23045 ms, err -3 ms, speed 1.0, phase nudge, t 5011, playing true, whenReady true, state 3
+     26.3  trace: pos 24076 ms, expected 24046 ms, err 30 ms, speed 1.0, phase nudge, t 6013, playing true, whenReady true, state 3
+     27.3  trace: pos 25108 ms, expected 25047 ms, err 61 ms, speed 1.0, phase nudge, t 7013, playing true, whenReady true, state 3
+     28.3  trace: pos 26106 ms, expected 26048 ms, err 58 ms, speed 1.0, phase nudge, t 8015, playing true, whenReady true, state 3
+     28.3  drift 33 ms (start latency 325 ms, cold 300 ms)
+     38.3  drift 50 ms (start latency 325 ms, cold 300 ms)
+     48.3  drift 53 ms (start latency 325 ms, cold 300 ms)
+     58.3  drift 34 ms (start latency 325 ms, cold 300 ms)
+     60.0  Motoparty: talk open (by client)
+     75.0  Motoparty: talk closed (by client, trigger)
+     76.5  start cold: lead 300 ms, 300 ms to the anchor point
+     76.5  trace: pos 58054 ms, expected 57762 ms, err 292 ms, speed 1.0, phase start-cold, t 1, playing true, whenReady true, state 3
+     77.5  trace: pos 58756 ms, expected 58763 ms, err -7 ms, speed 1.0, phase start-cold, t 1002, playing true, whenReady true, state 3
+     78.5  trace: pos 59674 ms, expected 59763 ms, err -89 ms, speed 1.0, phase start-cold, t 2002, playing true, whenReady true, state 3
+     79.5  trace: pos 60546 ms, expected 60766 ms, err -220 ms, speed 1.0, phase start-cold, t 3005, playing true, whenReady true, state 3
+     80.5  trace: pos 61446 ms, expected 61766 ms, err -320 ms, speed 1.0, phase start-cold, t 4005, playing true, whenReady true, state 3
+     80.5  check: median err -221 ms (spread 299 ms, n 9), waiting for confirmation
+     82.6  check: median err -327 ms (spread 226 ms, n 9), waiting for confirmation (previous -221 ms not confirmed)
+     84.6  drift -292 ms: speed 1.05 for 5840 ms
+     84.6  trace: pos 65536 ms, expected 65806 ms, err -270 ms, speed 1.05, phase nudge, t 0, playing true, whenReady true, state 3
+     85.6  trace: pos 66554 ms, expected 66808 ms, err -254 ms, speed 1.05, phase nudge, t 1002, playing true, whenReady true, state 3
+     86.6  trace: pos 67610 ms, expected 67809 ms, err -199 ms, speed 1.05, phase nudge, t 2004, playing true, whenReady true, state 3
+     87.6  trace: pos 68643 ms, expected 68811 ms, err -168 ms, speed 1.05, phase nudge, t 3006, playing true, whenReady true, state 3
+     88.6  trace: pos 69727 ms, expected 69812 ms, err -85 ms, speed 1.05, phase nudge, t 4007, playing true, whenReady true, state 3
+     89.6  trace: pos 70767 ms, expected 70814 ms, err -47 ms, speed 1.05, phase nudge, t 5009, playing true, whenReady true, state 3
+     90.6  trace: pos 71770 ms, expected 71815 ms, err -45 ms, speed 1.0, phase nudge, t 6010, playing true, whenReady true, state 3
+     91.4  nudge done: drift -183 ms
+     91.6  trace: pos 72838 ms, expected 72817 ms, err 21 ms, speed 1.0, phase nudge, t 7011, playing true, whenReady true, state 3
+     92.6  trace: pos 73818 ms, expected 73818 ms, err 0 ms, speed 1.0, phase nudge, t 8013, playing true, whenReady true, state 3
+     93.6  trace: pos 74780 ms, expected 74819 ms, err -39 ms, speed 1.0, phase nudge, t 9014, playing true, whenReady true, state 3
+     94.4  drift -71 ms (start latency 325 ms, cold 355 ms)
+     94.6  trace: pos 75772 ms, expected 75820 ms, err -48 ms, speed 1.0, phase nudge, t 10015, playing true, whenReady true, state 3
+    104.5  drift -79 ms (start latency 325 ms, cold 355 ms)
+    114.5  drift -53 ms (start latency 325 ms, cold 355 ms)
+    124.5  drift 1 ms (start latency 325 ms, cold 355 ms)
+    134.5  drift -8 ms (start latency 325 ms, cold 355 ms)
+    144.5  drift -45 ms (start latency 325 ms, cold 355 ms)
+    154.5  drift -47 ms (start latency 325 ms, cold 355 ms)
+    164.5  drift -66 ms (start latency 325 ms, cold 355 ms)
+    174.5  drift -65 ms (start latency 325 ms, cold 355 ms)
+    184.6  check: median err -83 ms (spread 249 ms, n 9), waiting for confirmation
+    186.6  drift -40 ms (start latency 325 ms, cold 355 ms)
+    196.6  drift 12 ms (start latency 325 ms, cold 355 ms)
+    206.6  check: median err -82 ms (spread 221 ms, n 9), waiting for confirmation
+    208.6  drift -36 ms (start latency 325 ms, cold 355 ms)
+    218.6  drift -37 ms (start latency 325 ms, cold 355 ms)
+    228.6  drift -3 ms (start latency 325 ms, cold 355 ms)
+    238.7  drift -41 ms (start latency 325 ms, cold 355 ms)
+    248.7  drift -35 ms (start latency 325 ms, cold 355 ms)
+
+nudges (drift before → speed × time → nudge done (one raw read) → next filtered reading):
+   -113 ms  speed 1.0283 × 4000 ms  →  done +1  →  +33 ms  (8.0 s later)
+   -292 ms  speed 1.0500 × 5840 ms  →  done -183  →  -71 ms  (9.9 s later)
+  speed-ups: next reading +33, -71 ms (mean -19); size of nudge -113, -292
+
+unconfirmed readings (check: … waiting): 6, nudges: 2, re-seeks: 0
+
+reading moved > 100 ms between two checks with no speed change in between: 0
+
+starts:
+  start warm: lead 300 ms, 299 ms to the anchor point
+  start cold: lead 300 ms, 300 ms to the anchor point
+
+errors in logcat: 1, crash buffer lines: 0
+  E kivan.motoparty: Failed to query component interface for required system resources: 6

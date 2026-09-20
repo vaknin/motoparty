@@ -27,8 +27,15 @@ class VoiceEngine(
     private val send: (ts: Long, payload: ByteArray) -> Unit,
     /** The sender's running 16 kHz clock (PROTOCOL.md: random start, runs while talk is closed). */
     private val clockTs: () -> Long,
-    /** A kind-1 packet was sent or received (drives the 10 s silence close). */
+    /** A kind-1 packet was sent or received (drives the 20 s silence close). */
     private val onActivity: () -> Unit,
+    /**
+     * The capture loop read its first frame of this session, i.e. the microphone is delivering
+     * (F7: half of what the "live" earcon means; see [LiveCue]). Called once per [start], from
+     * the capture thread with that thread's `elapsedRealtime`, so it must not block: the host
+     * hops to Main itself.
+     */
+    private val onCaptureUp: (atMs: Long) -> Unit = {},
 ) {
     /** One [start]..[stop]. Only [onFailed] of the talk that failed is told. */
     private class Session(val onFailed: (what: String, e: Throwable) -> Unit)
@@ -47,6 +54,13 @@ class VoiceEngine(
     @Volatile var framesPlayed = 0L; private set
     /** Every frame the capture loop encoded, sent or dropped as DTX: proof the loop is alive. */
     @Volatile var framesCaptured = 0L; private set
+    /**
+     * When the running engine read its first frame (`elapsedRealtime`), or null before that.
+     * Cleared by [start] only: an engine carried across a collapsed close/open (see [TalkAudio])
+     * keeps it, which is exactly the answer the re-opened talk needs — its microphone is already
+     * live and no new [onCaptureUp] will ever come.
+     */
+    @Volatile var captureUpAtMs: Long? = null; private set
     private var underrunsAtStart = 0
 
     /** A session is running (false after [stop], or after a loop failed on its own). */
@@ -83,6 +97,7 @@ class VoiceEngine(
         framesSent = 0
         framesPlayed = 0
         framesCaptured = 0
+        captureUpAtMs = null
         val s = Session(onFailed)
         session.set(s)
         captureThread = thread(name = "voice-capture") { runCatching { captureLoop(s) }.onFailure { fail(s, "capture", it) } }
@@ -172,6 +187,11 @@ class VoiceEngine(
                 if (framesCaptured == 0L) {
                     t.step("first frame")
                     Log.i(TAG, t.line("capture up"))
+                    // The mic is delivering: half of the "live" earcon's condition (F7). Cheap and
+                    // never blocking — the callback only posts to Main.
+                    val at = SystemClock.elapsedRealtime()
+                    captureUpAtMs = at
+                    runCatching { onCaptureUp(at) }.onFailure { Log.w(TAG, "onCaptureUp failed: $it") }
                 } else {
                     longestReadNanos = maxOf(longestReadNanos, workFrom - readFrom)
                 }

@@ -93,7 +93,7 @@ def track(tmp_path_factory):
     return out
 
 
-def start_pair(tmp_path, track, *client_args, silence_ms=10_000):
+def start_pair(tmp_path, track, *client_args, silence_ms=20_000):
     cp, vp, hp = free_port(), free_port(socket.SOCK_DGRAM), free_port()
     host_args = ["host", "--no-mdns", "--bind", "127.0.0.1", "--port", str(cp), "--voice-port", str(vp),
                  "--http-port", str(hp), "--name", "Test Host", "--silence-ms", str(silence_ms)]

@@ -164,8 +164,9 @@ served. The client downloads the whole file before replying `music.ready`.
    switch the headset to call mode, play the "live" earcon when their mic is open, and start
    sending audio.
 3. Ends when either side triggers again (`talk.close{reason:"trigger"}`, client→host as a
-   request) or after 10 s in which neither side sent a non-DTX frame (host decides,
-   `reason:"silence"`) or on link loss.
+   request) or after 20 s in which neither side sent a non-DTX frame (host decides,
+   `reason:"silence"`; 20 s since 2026-09-20, was 10 s: a pause in a conversation must not
+   cost another headset profile switch) or on link loss.
 4. Host broadcasts `talk.close` and `state{talk:false}` (except after the host's own
    `"unavailable"` answer in step 1: talk never opened and `state.talk` stayed false; a
    client's `"unavailable"` comes after the host's `talk.open`, so it is broadcast as usual).

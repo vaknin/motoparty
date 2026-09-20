@@ -1,0 +1,193 @@
+1789859094.061 02:04:54.060 connecting to 192.168.1.100:47800
+1789859094.061 02:04:54.061 commands: talk | say <text> | pause | resume | next | previous | vol+ | vol- (local) |
+1789859094.061           unavailable (toggle "my mic is dead") | stats | raw <json> (send unvalidated) | quit
+1789859094.158 02:04:54.157 connected to 192.168.1.100:47800
+1789859094.158 02:04:54.157 << {"t":"hello","proto":1,"role":"host","name":"Pixel 8","voicePort":47801,"httpPort":47802}
+1789859094.164 02:04:54.164 << {"t":"state","talk":false,"queue":[]}
+1789859094.175 02:04:54.174 << pong id=1 rtt=8ms offset=2278842426.0ms | estimate offset=2278842426.0ms (rtt 8ms)
+1789859096.182 02:04:56.181 << pong id=2 rtt=12ms offset=2278842425.0ms | estimate offset=2278842426.0ms (rtt 8ms)
+1789859098.184 02:04:58.183 << pong id=3 rtt=13ms offset=2278842424.5ms | estimate offset=2278842426.0ms (rtt 8ms)
+1789859098.870 02:04:58.870 voice: rx=0 ka=5 played=0 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=0ms target=40ms
+1789859098.870 02:04:58.870 clock: offset=2278842426.0ms rtt=8ms
+1789859098.870 02:04:58.870 >> {"t":"talk.open","by":"client"}
+1789859098.887 02:04:58.886 << {"t":"talk.open","by":"client"}
+1789859098.887 02:04:58.886 TALK OPEN - sending 440 Hz tone
+1789859098.887 02:04:58.886 << {"t":"state","talk":true,"queue":[]}
+1789859100.169 02:05:00.168 voice rx: rx=14 ka=6 played=13 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=20ms target=40ms | tx: audio=64 dtx_skipped=0 keepalive=5
+1789859100.176 02:05:00.176 << pong id=4 rtt=6ms offset=2278842427.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859102.169 02:05:02.169 voice rx: rx=114 ka=6 played=113 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=20ms target=40ms | tx: audio=164 dtx_skipped=0 keepalive=5
+1789859102.180 02:05:02.179 << pong id=5 rtt=7ms offset=2278842425.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859104.170 02:05:04.170 voice rx: rx=214 ka=6 played=213 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=20ms target=40ms | tx: audio=264 dtx_skipped=0 keepalive=5
+1789859104.179 02:05:04.178 << pong id=6 rtt=7ms offset=2278842426.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859106.171 02:05:06.170 voice rx: rx=314 ka=6 played=313 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=20ms target=40ms | tx: audio=364 dtx_skipped=0 keepalive=5
+1789859106.183 02:05:06.182 << pong id=7 rtt=8ms offset=2278842426.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859106.873 02:05:06.873 voice: rx=349 ka=6 played=347 fec=0 plc=0 late=1 dup=0 dtx=0 starved=1 underruns=1 trimmed=0 depth=40ms target=60ms
+1789859106.873 02:05:06.873 clock: offset=2278842427.0ms rtt=6ms
+1789859106.874 02:05:06.873 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859106.922 02:05:06.921 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859106.922 02:05:06.922 TALK CLOSED
+1789859106.926 02:05:06.925 << {"t":"state","talk":false,"queue":[]}
+1789859108.172 02:05:08.171 voice rx: rx=352 ka=7 played=352 fec=0 plc=0 late=1 dup=0 dtx=0 starved=4 underruns=1 trimmed=0 depth=0ms target=60ms | tx: audio=401 dtx_skipped=0 keepalive=6
+1789859108.184 02:05:08.184 << pong id=8 rtt=8ms offset=2278842426.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859110.188 02:05:10.187 << pong id=9 rtt=11ms offset=2278842426.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859110.876 02:05:10.875 >> {"t":"talk.open","by":"client"}
+1789859110.910 02:05:10.909 << {"t":"talk.open","by":"client"}
+1789859110.910 02:05:10.909 TALK OPEN - sending 440 Hz tone
+1789859110.913 02:05:10.913 << {"t":"state","talk":true,"queue":[]}
+1789859112.174 02:05:12.173 voice rx: rx=370 ka=10 played=370 fec=0 plc=0 late=1 dup=0 dtx=0 starved=7 underruns=1 trimmed=0 depth=0ms target=60ms | tx: audio=464 dtx_skipped=0 keepalive=8
+1789859112.196 02:05:12.195 << pong id=10 rtt=19ms offset=2278842431.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859114.175 02:05:14.174 voice rx: rx=425 ka=10 played=425 fec=0 plc=0 late=1 dup=0 dtx=0 starved=13 underruns=1 trimmed=0 depth=0ms target=60ms | tx: audio=564 dtx_skipped=0 keepalive=8
+1789859114.233 02:05:14.232 << pong id=11 rtt=55ms offset=2278842404.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859116.177 02:05:16.176 voice rx: rx=425 ka=12 played=425 fec=0 plc=0 late=1 dup=0 dtx=0 starved=13 underruns=1 trimmed=0 depth=0ms target=60ms | tx: audio=664 dtx_skipped=0 keepalive=8
+1789859116.183 02:05:16.182 << pong id=12 rtt=5ms offset=2278842427.5ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859118.178 02:05:18.177 voice rx: rx=457 ka=13 played=457 fec=0 plc=0 late=2 dup=0 dtx=0 starved=23 underruns=2 trimmed=0 depth=0ms target=60ms | tx: audio=764 dtx_skipped=0 keepalive=8
+1789859118.190 02:05:18.189 << pong id=13 rtt=8ms offset=2278842426.0ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859118.879 02:05:18.878 voice: rx=468 ka=13 played=467 fec=0 plc=0 late=2 dup=0 dtx=0 starved=26 underruns=2 trimmed=0 depth=20ms target=60ms
+1789859118.879 02:05:18.878 clock: offset=2278842427.5ms rtt=5ms
+1789859118.879 02:05:18.878 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859118.892 02:05:18.892 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859118.893 02:05:18.892 TALK CLOSED
+1789859118.895 02:05:18.894 << {"t":"state","talk":false,"queue":[]}
+1789859120.180 02:05:20.179 voice rx: rx=470 ka=14 played=470 fec=0 plc=0 late=2 dup=0 dtx=0 starved=29 underruns=2 trimmed=0 depth=0ms target=60ms | tx: audio=800 dtx_skipped=0 keepalive=9
+1789859120.202 02:05:20.201 << pong id=14 rtt=11ms offset=2278842425.5ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859122.193 02:05:22.192 << pong id=15 rtt=10ms offset=2278842427.0ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859122.881 02:05:22.881 >> {"t":"talk.open","by":"client"}
+1789859122.899 02:05:22.898 << {"t":"talk.open","by":"client"}
+1789859122.899 02:05:22.898 TALK OPEN - sending 440 Hz tone
+1789859122.901 02:05:22.901 << {"t":"state","talk":true,"queue":[]}
+1789859124.181 02:05:24.181 voice rx: rx=470 ka=18 played=470 fec=0 plc=0 late=2 dup=0 dtx=0 starved=29 underruns=2 trimmed=0 depth=0ms target=60ms | tx: audio=864 dtx_skipped=0 keepalive=11
+1789859124.193 02:05:24.192 << pong id=16 rtt=9ms offset=2278842426.5ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859126.183 02:05:26.182 voice rx: rx=524 ka=18 played=524 fec=0 plc=0 late=2 dup=0 dtx=0 starved=33 underruns=2 trimmed=0 depth=0ms target=60ms | tx: audio=964 dtx_skipped=0 keepalive=11
+1789859126.199 02:05:26.199 << pong id=17 rtt=11ms offset=2278842424.5ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859128.183 02:05:28.182 voice rx: rx=524 ka=20 played=524 fec=0 plc=0 late=2 dup=0 dtx=0 starved=35 underruns=2 trimmed=0 depth=0ms target=40ms | tx: audio=1064 dtx_skipped=0 keepalive=11
+1789859128.193 02:05:28.192 << pong id=18 rtt=7ms offset=2278842426.5ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859130.184 02:05:30.183 voice rx: rx=524 ka=22 played=524 fec=0 plc=0 late=2 dup=0 dtx=0 starved=35 underruns=2 trimmed=0 depth=0ms target=40ms | tx: audio=1164 dtx_skipped=0 keepalive=11
+1789859130.194 02:05:30.194 << pong id=19 rtt=6ms offset=2278842427.0ms | estimate offset=2278842427.5ms (rtt 5ms)
+1789859130.884 02:05:30.883 voice: rx=524 ka=22 played=524 fec=0 plc=0 late=2 dup=0 dtx=0 starved=35 underruns=2 trimmed=0 depth=0ms target=40ms
+1789859130.884 02:05:30.883 clock: offset=2278842427.5ms rtt=5ms
+1789859130.884 02:05:30.883 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859130.900 02:05:30.899 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859130.900 02:05:30.899 TALK CLOSED
+1789859130.903 02:05:30.902 << {"t":"state","talk":false,"queue":[]}
+1789859132.200 02:05:32.199 << pong id=20 rtt=10ms offset=2278842426.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859134.198 02:05:34.198 << pong id=21 rtt=10ms offset=2278842426.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859134.887 02:05:34.887 >> {"t":"talk.open","by":"client"}
+1789859134.906 02:05:34.906 << {"t":"talk.open","by":"client"}
+1789859134.907 02:05:34.906 TALK OPEN - sending 440 Hz tone
+1789859134.907 02:05:34.906 << {"t":"state","talk":true,"queue":[]}
+1789859136.187 02:05:36.186 voice rx: rx=558 ka=27 played=557 fec=0 plc=0 late=2 dup=0 dtx=0 starved=35 underruns=2 trimmed=0 depth=20ms target=40ms | tx: audio=1262 dtx_skipped=0 keepalive=15
+1789859136.196 02:05:36.195 << pong id=22 rtt=7ms offset=2278842427.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859138.188 02:05:38.188 voice rx: rx=658 ka=27 played=656 fec=0 plc=0 late=3 dup=0 dtx=0 starved=36 underruns=3 trimmed=0 depth=40ms target=60ms | tx: audio=1363 dtx_skipped=0 keepalive=15
+1789859138.201 02:05:38.201 << pong id=23 rtt=10ms offset=2278842426.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859140.190 02:05:40.189 voice rx: rx=758 ka=27 played=756 fec=0 plc=0 late=3 dup=0 dtx=0 starved=36 underruns=3 trimmed=0 depth=40ms target=60ms | tx: audio=1463 dtx_skipped=0 keepalive=15
+1789859140.205 02:05:40.205 << pong id=24 rtt=9ms offset=2278842425.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859142.191 02:05:42.190 voice rx: rx=858 ka=27 played=856 fec=0 plc=0 late=3 dup=0 dtx=0 starved=36 underruns=3 trimmed=0 depth=40ms target=60ms | tx: audio=1563 dtx_skipped=0 keepalive=15
+1789859142.200 02:05:42.199 << pong id=25 rtt=6ms offset=2278842427.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859142.891 02:05:42.891 voice: rx=893 ka=27 played=891 fec=0 plc=0 late=3 dup=0 dtx=0 starved=36 underruns=3 trimmed=0 depth=40ms target=60ms
+1789859142.891 02:05:42.891 clock: offset=2278842427.0ms rtt=6ms
+1789859142.892 02:05:42.891 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859142.907 02:05:42.907 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859142.907 02:05:42.907 TALK CLOSED
+1789859142.911 02:05:42.910 << {"t":"state","talk":false,"queue":[]}
+1789859144.192 02:05:44.191 voice rx: rx=895 ka=28 played=895 fec=0 plc=0 late=3 dup=0 dtx=0 starved=39 underruns=3 trimmed=0 depth=0ms target=60ms | tx: audio=1598 dtx_skipped=0 keepalive=16
+1789859144.201 02:05:44.200 << pong id=26 rtt=6ms offset=2278842427.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859146.202 02:05:46.202 << pong id=27 rtt=7ms offset=2278842427.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859146.895 02:05:46.894 >> {"t":"talk.open","by":"client"}
+1789859146.906 02:05:46.905 << {"t":"talk.open","by":"client"}
+1789859146.906 02:05:46.905 TALK OPEN - sending 440 Hz tone
+1789859146.906 02:05:46.905 << {"t":"state","talk":true,"queue":[]}
+1789859148.195 02:05:48.194 voice rx: rx=905 ka=31 played=903 fec=0 plc=0 late=3 dup=0 dtx=0 starved=39 underruns=3 trimmed=0 depth=40ms target=40ms | tx: audio=1662 dtx_skipped=0 keepalive=18
+1789859148.204 02:05:48.203 << pong id=28 rtt=8ms offset=2278842428.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859150.196 02:05:50.195 voice rx: rx=983 ka=31 played=981 fec=0 plc=0 late=3 dup=0 dtx=0 starved=42 underruns=3 trimmed=0 depth=40ms target=40ms | tx: audio=1762 dtx_skipped=0 keepalive=18
+1789859150.208 02:05:50.208 << pong id=29 rtt=10ms offset=2278842425.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859152.197 02:05:52.196 voice rx: rx=1046 ka=31 played=1046 fec=0 plc=0 late=3 dup=0 dtx=0 starved=48 underruns=3 trimmed=0 depth=0ms target=40ms | tx: audio=1862 dtx_skipped=0 keepalive=18
+1789859152.209 02:05:52.209 << pong id=30 rtt=8ms offset=2278842426.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859154.199 02:05:54.199 voice rx: rx=1113 ka=31 played=1111 fec=0 plc=0 late=3 dup=0 dtx=1 starved=54 underruns=3 trimmed=0 depth=40ms target=40ms | tx: audio=1962 dtx_skipped=0 keepalive=18
+1789859154.213 02:05:54.213 << pong id=31 rtt=9ms offset=2278842426.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859154.898 02:05:54.897 voice: rx=1143 ka=31 played=1141 fec=0 plc=0 late=3 dup=0 dtx=1 starved=57 underruns=3 trimmed=0 depth=40ms target=40ms
+1789859154.898 02:05:54.897 clock: offset=2278842427.0ms rtt=6ms
+1789859154.898 02:05:54.898 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859154.913 02:05:54.912 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859154.913 02:05:54.912 TALK CLOSED
+1789859154.916 02:05:54.916 << {"t":"state","talk":false,"queue":[]}
+1789859156.200 02:05:56.199 voice rx: rx=1146 ka=32 played=1146 fec=0 plc=0 late=3 dup=0 dtx=1 starved=60 underruns=3 trimmed=0 depth=0ms target=40ms | tx: audio=1998 dtx_skipped=0 keepalive=19
+1789859156.223 02:05:56.222 << pong id=32 rtt=20ms offset=2278842421.0ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859158.215 02:05:58.214 << pong id=33 rtt=9ms offset=2278842427.5ms | estimate offset=2278842427.0ms (rtt 6ms)
+1789859158.901 02:05:58.900 >> {"t":"talk.open","by":"client"}
+1789859158.920 02:05:58.920 << {"t":"talk.open","by":"client"}
+1789859158.920 02:05:58.920 TALK OPEN - sending 440 Hz tone
+1789859158.923 02:05:58.922 << {"t":"state","talk":true,"queue":[]}
+1789859160.203 02:06:00.202 voice rx: rx=1146 ka=35 played=1146 fec=0 plc=0 late=3 dup=0 dtx=1 starved=60 underruns=3 trimmed=0 depth=0ms target=40ms | tx: audio=2062 dtx_skipped=0 keepalive=21
+1789859160.217 02:06:00.216 << pong id=34 rtt=10ms offset=2278842427.0ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859162.204 02:06:02.203 voice rx: rx=1239 ka=36 played=1237 fec=0 plc=0 late=3 dup=0 dtx=1 starved=60 underruns=3 trimmed=0 depth=40ms target=40ms | tx: audio=2162 dtx_skipped=0 keepalive=21
+1789859162.221 02:06:02.220 << pong id=35 rtt=13ms offset=2278842425.5ms | estimate offset=2278842426.0ms (rtt 8ms)
+1789859164.206 02:06:04.205 voice rx: rx=1339 ka=36 played=1337 fec=0 plc=0 late=3 dup=0 dtx=1 starved=60 underruns=3 trimmed=0 depth=40ms target=40ms | tx: audio=2262 dtx_skipped=0 keepalive=21
+1789859164.220 02:06:04.219 << pong id=36 rtt=10ms offset=2278842427.0ms | estimate offset=2278842426.0ms (rtt 8ms)
+1789859166.207 02:06:06.206 voice rx: rx=1439 ka=36 played=1438 fec=0 plc=0 late=3 dup=0 dtx=1 starved=60 underruns=3 trimmed=0 depth=20ms target=40ms | tx: audio=2362 dtx_skipped=0 keepalive=21
+1789859166.222 02:06:06.221 << pong id=37 rtt=11ms offset=2278842426.5ms | estimate offset=2278842426.0ms (rtt 8ms)
+1789859166.904 02:06:06.903 voice: rx=1468 ka=36 played=1467 fec=0 plc=0 late=3 dup=0 dtx=1 starved=63 underruns=3 trimmed=0 depth=40ms target=40ms
+1789859166.904 02:06:06.903 clock: offset=2278842426.0ms rtt=8ms
+1789859166.904 02:06:06.903 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859166.920 02:06:06.919 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859166.920 02:06:06.919 TALK CLOSED
+1789859166.921 02:06:06.920 << {"t":"state","talk":false,"queue":[]}
+1789859168.208 02:06:08.207 voice rx: rx=1469 ka=37 played=1469 fec=0 plc=0 late=3 dup=0 dtx=2 starved=66 underruns=3 trimmed=0 depth=0ms target=40ms | tx: audio=2397 dtx_skipped=0 keepalive=22
+1789859168.243 02:06:08.243 << pong id=38 rtt=30ms offset=2278842417.0ms | estimate offset=2278842427.5ms (rtt 9ms)
+1789859170.224 02:06:10.223 << pong id=39 rtt=10ms offset=2278842427.0ms | estimate offset=2278842427.5ms (rtt 9ms)
+1789859170.907 02:06:10.906 >> {"t":"talk.open","by":"client"}
+1789859170.923 02:06:10.922 << {"t":"talk.open","by":"client"}
+1789859170.923 02:06:10.922 TALK OPEN - sending 440 Hz tone
+1789859170.923 02:06:10.922 << {"t":"state","talk":true,"queue":[]}
+1789859171.210 02:06:11.209 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859171.220 02:06:11.220 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859171.220 02:06:11.220 TALK CLOSED
+1789859171.221 02:06:11.220 << {"t":"state","talk":false,"queue":[]}
+1789859171.513 02:06:11.512 >> {"t":"talk.open","by":"client"}
+1789859172.235 02:06:12.235 << pong id=40 rtt=11ms offset=2278842426.5ms | estimate offset=2278842427.5ms (rtt 9ms)
+1789859172.453 02:06:12.452 << {"t":"talk.open","by":"client"}
+1789859172.453 02:06:12.452 TALK OPEN - sending 440 Hz tone
+1789859172.453 02:06:12.452 << {"t":"state","talk":true,"queue":[]}
+1789859174.211 02:06:14.210 voice rx: rx=1504 ka=42 played=1502 fec=0 plc=0 late=4 dup=0 dtx=2 starved=70 underruns=4 trimmed=0 depth=40ms target=60ms | tx: audio=2498 dtx_skipped=0 keepalive=25
+1789859174.227 02:06:14.226 << pong id=41 rtt=12ms offset=2278842426.0ms | estimate offset=2278842427.0ms (rtt 10ms)
+1789859175.516 02:06:15.516 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859175.538 02:06:15.537 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859175.538 02:06:15.537 TALK CLOSED
+1789859175.538 02:06:15.537 << {"t":"state","talk":false,"queue":[]}
+1789859176.212 02:06:16.212 voice rx: rx=1571 ka=42 played=1571 fec=0 plc=0 late=4 dup=0 dtx=2 starved=73 underruns=4 trimmed=0 depth=0ms target=60ms | tx: audio=2565 dtx_skipped=0 keepalive=25
+1789859176.227 02:06:16.227 << pong id=42 rtt=11ms offset=2278842425.5ms | estimate offset=2278842427.0ms (rtt 10ms)
+1789859178.228 02:06:18.228 << pong id=43 rtt=10ms offset=2278842428.0ms | estimate offset=2278842428.0ms (rtt 10ms)
+1789859179.520 02:06:19.519 >> {"t":"talk.open","by":"client"}
+1789859179.540 02:06:19.540 << {"t":"talk.open","by":"client"}
+1789859179.540 02:06:19.540 TALK OPEN - sending 440 Hz tone
+1789859179.543 02:06:19.542 << {"t":"state","talk":true,"queue":[]}
+1789859180.214 02:06:20.213 voice rx: rx=1571 ka=46 played=1571 fec=0 plc=0 late=4 dup=0 dtx=2 starved=73 underruns=4 trimmed=0 depth=0ms target=60ms | tx: audio=2598 dtx_skipped=0 keepalive=28
+1789859180.223 02:06:20.222 << pong id=44 rtt=7ms offset=2278842427.5ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859182.215 02:06:22.214 voice rx: rx=1655 ka=46 played=1653 fec=0 plc=0 late=4 dup=0 dtx=2 starved=73 underruns=4 trimmed=0 depth=40ms target=60ms | tx: audio=2698 dtx_skipped=0 keepalive=28
+1789859182.230 02:06:22.229 << pong id=45 rtt=11ms offset=2278842426.5ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859184.216 02:06:24.215 voice rx: rx=1736 ka=46 played=1735 fec=0 plc=0 late=4 dup=0 dtx=2 starved=76 underruns=4 trimmed=0 depth=20ms target=40ms | tx: audio=2798 dtx_skipped=0 keepalive=28
+1789859184.230 02:06:24.229 << pong id=46 rtt=10ms offset=2278842427.0ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859186.217 02:06:26.216 voice rx: rx=1800 ka=46 played=1800 fec=0 plc=0 late=4 dup=0 dtx=3 starved=86 underruns=4 trimmed=0 depth=0ms target=40ms | tx: audio=2898 dtx_skipped=0 keepalive=28
+1789859186.232 02:06:26.231 << pong id=47 rtt=11ms offset=2278842427.5ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859188.219 02:06:28.218 voice rx: rx=1849 ka=46 played=1848 fec=0 plc=0 late=4 dup=0 dtx=3 starved=95 underruns=4 trimmed=0 depth=20ms target=40ms | tx: audio=2998 dtx_skipped=0 keepalive=28
+1789859188.232 02:06:28.231 << pong id=48 rtt=9ms offset=2278842428.5ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859190.220 02:06:30.219 voice rx: rx=1943 ka=46 played=1941 fec=0 plc=0 late=4 dup=0 dtx=3 starved=98 underruns=4 trimmed=0 depth=40ms target=40ms | tx: audio=3098 dtx_skipped=0 keepalive=28
+1789859190.238 02:06:30.237 << pong id=49 rtt=14ms offset=2278842427.0ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859192.221 02:06:32.220 voice rx: rx=2021 ka=46 played=2021 fec=0 plc=0 late=4 dup=0 dtx=3 starved=105 underruns=4 trimmed=0 depth=0ms target=40ms | tx: audio=3198 dtx_skipped=0 keepalive=28
+1789859192.240 02:06:32.239 << pong id=50 rtt=15ms offset=2278842424.5ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859194.224 02:06:34.223 voice rx: rx=2033 ka=47 played=2033 fec=0 plc=0 late=4 dup=0 dtx=3 starved=110 underruns=4 trimmed=0 depth=0ms target=40ms | tx: audio=3299 dtx_skipped=0 keepalive=28
+1789859194.236 02:06:34.235 << pong id=51 rtt=9ms offset=2278842427.5ms | estimate offset=2278842427.5ms (rtt 7ms)
+1789859196.224 02:06:36.223 voice rx: rx=2033 ka=49 played=2033 fec=0 plc=0 late=4 dup=0 dtx=3 starved=110 underruns=4 trimmed=0 depth=0ms target=40ms | tx: audio=3399 dtx_skipped=0 keepalive=28
+1789859196.244 02:06:36.243 << pong id=52 rtt=15ms offset=2278842424.5ms | estimate offset=2278842427.5ms (rtt 9ms)
+1789859198.226 02:06:38.225 voice rx: rx=2033 ka=51 played=2033 fec=0 plc=0 late=4 dup=0 dtx=3 starved=110 underruns=4 trimmed=0 depth=0ms target=40ms | tx: audio=3499 dtx_skipped=0 keepalive=28
+1789859198.246 02:06:38.245 << pong id=53 rtt=17ms offset=2278842424.5ms | estimate offset=2278842427.5ms (rtt 9ms)
+1789859199.523 02:06:39.522 voice: rx=2033 ka=52 played=2033 fec=0 plc=0 late=4 dup=0 dtx=3 starved=110 underruns=4 trimmed=0 depth=0ms target=40ms
+1789859199.523 02:06:39.522 clock: offset=2278842427.5ms rtt=9ms
+1789859199.523 02:06:39.522 >> {"t":"talk.close","by":"client","reason":"trigger"}
+1789859199.536 02:06:39.535 << {"t":"talk.close","by":"client","reason":"trigger"}
+1789859199.536 02:06:39.536 TALK CLOSED
+1789859199.538 02:06:39.538 << {"t":"state","talk":false,"queue":[]}
+1789859200.239 02:06:40.238 << pong id=54 rtt=10ms offset=2278842430.0ms | estimate offset=2278842427.5ms (rtt 9ms)
+1789859202.239 02:06:42.238 << pong id=55 rtt=8ms offset=2278842428.0ms | estimate offset=2278842428.0ms (rtt 8ms)
+1789859203.526 02:06:43.525 >> {"t":"bye","reason":"user"}
+1789859203.527 02:06:43.526 voice (final): rx=2033 ka=56 played=2033 fec=0 plc=0 late=4 dup=0 dtx=3 starved=110 underruns=4 trimmed=0 depth=0ms target=40ms
+1789859203.527 02:06:43.526 bye

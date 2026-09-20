@@ -1,0 +1,10 @@
+02:22:29.038 overlay_rotation.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-20-d4-overlay
+02:22:29.685 phone: mWakefulness=Awake, top: bitpit.launcher/.ui.HomeActivity
+02:22:29.810 app pid: 17762
+02:22:30.012 bluetooth:   09-19 22:26:58.747 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []   09-19 23:31:49.694 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []
+02:22:31.192 display 1080x2400, rotation settings were accelerometer=1 user=0
+02:22:31.611 overlay at start: 551 497 865 1061
+02:23:19.587 overlay at end: 551 497 865 1061 (start: 551 497 865 1061)
+02:23:21.420 cleanup: kill 335171 2>/dev/null
+02:23:21.425 cleanup: sh1 settings put system accelerometer_rotation 1; sh1 settings put system user_rotation 0
+02:23:21.662 cleanup: kill 335139 2>/dev/null

@@ -207,6 +207,9 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 
 ## Behaviour notes
 
+- **No floating buttons on iOS.** The TALK/MUSIC overlay above other apps exists on the Pixel
+  only (decided with the user 2026-09-20): iOS cannot draw over other apps, and nothing in
+  `ios/` tries to. The passenger's triggers are the app's own buttons and the headset controls.
 - **Talk:** TALK sends `talk.open{by:client}`, and nothing changes until the host decides. On
   `talk.open` the app pauses music and switches the session to `.playAndRecord`/`.voiceChat`
   with Bluetooth HFP. It then starts a fresh voice-processing AVAudioEngine and plays the

@@ -7,6 +7,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
@@ -30,6 +31,7 @@ class TalkAudioTest {
     @Volatile private var voiceFail: ((String, Throwable) -> Unit)? = null
     @Volatile private var enterGate: CountDownLatch? = null
     @Volatile private var stopGate: CountDownLatch? = null
+    @Volatile private var exitGate: CountDownLatch? = null
     @Volatile private var enterThrows = false
     @Volatile private var jitterMs = 0
 
@@ -47,6 +49,7 @@ class TalkAudioTest {
         exitCall = {
             if (depth > 0) depth--
             ops += "exit"
+            exitGate?.await(5, TimeUnit.SECONDS)
             pause()
         },
         voiceStart = { onFailed ->
@@ -106,6 +109,39 @@ class TalkAudioTest {
         talk.close().await()
         assertEquals(0, depth)
         assertEquals("earcon", ops.last())
+    }
+
+    /**
+     * The 2026-09-20 AirPods bench (`results/2026-09-20-d1-talk-4`): the re-open reached the state
+     * machine 11 ms *after* `exitCall` returned, and the system then processed our
+     * `clearCommunicationDevice` (173.078) after the next `enterCall` had already set the device
+     * (173.077). With Main no longer blocked the re-open arrives during the teardown, and the
+     * worst case left is this one — it arrives while `exitCall` itself is inside the Bluetooth
+     * stack, where nothing can call it back. What must hold then: the request is taken at once
+     * (no Main thread waits for the audio thread), and the route is re-entered exactly once,
+     * after the exit has finished — never a clear and a set issued back to back.
+     */
+    @Test
+    fun reopenWhileExitCallIsBlockedReentersTheRouteExactlyOnce() {
+        talk.open(1).await()
+        exitGate = CountDownLatch(1)
+        talk.close()
+        while ("exit" !in ops) Thread.sleep(1) // the switch back to A2DP is in flight...
+        val last = talk.open(2) // ...when talk re-opens
+        assertFalse("open must not wait for the audio thread", last.isCompleted)
+        assertEquals(listOf("enter", "start", "stop", "exit"), ops.toList())
+
+        exitGate!!.countDown()
+        last.await()
+        // One enter after the exit finished, and no second exit: the pair is never issued twice.
+        assertEquals(listOf("enter", "start", "stop", "exit", "earcon", "enter", "start"), ops.toList())
+        assertEquals(1, depth)
+        assertTrue(voiceOn)
+
+        exitGate = null
+        talk.close().await()
+        assertEquals(0, depth)
+        assertEquals(2, ops.count { it == "exit" })
     }
 
     @Test

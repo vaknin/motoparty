@@ -6,6 +6,7 @@
   bench.py unavailable <out-dir>   unavailable.sh: the two refusal paths, expectation by expectation
   bench.py overlay <out-dir>       overlay_rotation.sh: overlay frame per rotation, on screen, tappable
   bench.py frame <package>         stdin `dumpsys window windows` -> "x1 y1 x2 y2" of our overlay
+  bench.py window <title>          the same, matched on any window title (e.g. MotopartyDismiss)
 
 Inputs in <out-dir>: logcat.txt (`-v epoch`; the older threadtime format also parses, times are
 then seconds of the day), client*.log (epoch-stamped peer output), audio_mode.txt, overlay.tsv.
@@ -51,8 +52,22 @@ def client(out, name="client.log"):
     return ev
 
 
+# Our own tags. The logcat is filtered by pid, and the app's pid also carries framework E lines
+# (`E ActivityThread: Failed to find provider info for androidx.car.app.connection`) that say
+# nothing about the run: they are printed, not counted.
+APP_TAGS = {"Motoparty", "LinkService", "LinkHost", "VoiceEngine", "VoiceSocket", "AudioRouter",
+            "AudioThread", "AudioModeWatch", "TalkAudio", "SyncController", "MusicController",
+            "ControlServer", "Discovery", "Transcriber", "Announcer"}
+
+
 def errors(ev, out):
-    bad = [e for e in ev if e[1] in "EF" or "Exception" in e[3]]
+    bad, other = [], []
+    for e in ev:
+        # An Exception / FATAL counts whatever the tag; E/F alone only under our own tags.
+        if "Exception" in e[3] or "FATAL" in e[3] or (e[1] in "EF" and e[2] in APP_TAGS):
+            bad.append(e)
+        elif e[1] in "EF":
+            other.append(e)
     crash = [l for l in open(f"{out}/crash.txt", errors="replace") if l.strip() and not l.startswith("-")] \
         if os.path.exists(f"{out}/crash.txt") else []
     print(f"\nerrors in logcat: {len(bad)}, crash buffer lines: {len(crash)}")
@@ -60,6 +75,10 @@ def errors(ev, out):
         print(f"  {e[1]} {e[2]}: {e[3][:160]}")
     for l in crash[:5]:
         print("  crash:", l.rstrip()[:160])
+    if other:
+        print(f"  not counted (other tags): {len(other)}")
+        for e in other[:5]:
+            print(f"    {e[1]} {e[2]}: {e[3][:160]}")
     return len(bad) + len(crash)
 
 
@@ -69,8 +88,12 @@ def ms(a, b):
 
 # ---------------------------------------------------------------------------------------- talk
 
+MAIN_LAG = re.compile(r"control message \S+ waited \d+ ms for Main")
 STATS = re.compile(r"tx (\d+) sent of (\d+) captured \((-?\d+) DTX\), rx (\d+) received, (\d+) played, "
                    r"(\d+) lost, (\d+) late, (\d+) FEC, (\d+) PLC, (\d+) keepalives, jitter target (\d+) ms")
+# The engine's own capture window: it starts 0.8-1.5 s after talk opens, so open->close is the
+# wrong yardstick for a short cycle (8 s reads 76-84 %). Its `expected` is the right one.
+CAPREAD = re.compile(r"capture: read (\d+) frames in \d+ ms \((\d+) expected\)")
 
 
 def talk_cycles(ev):
@@ -79,7 +102,8 @@ def talk_cycles(ev):
         c = cycles[-1] if cycles else None
         if tag == "Motoparty" and (m := re.match(r"talk open \(by (\w+)\)", msg)):
             cycles.append(dict(open=t, by=m[1], hfp=None, dev=None, close=None, reason=None,
-                               media=None, stats=None, uses=0, kept=False, collapsed=False, detail=[]))
+                               media=None, stats=None, read=None, uses=0, kept=False,
+                               collapsed=False, detail=[]))
         elif c is None:
             continue
         elif tag == "AudioRouter" and msg.startswith("communication device") and c["close"] is None:
@@ -101,6 +125,10 @@ def talk_cycles(ev):
         elif (tag == "AudioRouter" and re.match(r"(enterCall|exitCall) \d+ ms", msg)) \
                 or (tag == "VoiceEngine" and not msg.startswith("talk stats:")):
             c["detail"].append(f"{tag}: {msg}")
+            # The last one, like stats: a collapsed cycle leaves its empty `read 0 … (0 expected)`
+            # in the next cycle, ahead of that cycle's own line.
+            if (m := CAPREAD.match(msg)) and int(m[2]):
+                c["read"] = (int(m[1]), int(m[2]))
     return cycles
 
 
@@ -140,15 +168,21 @@ def cmd_talk(out):
         if s and dur:
             sent, cap, dtx, rx, _, lost, late, fec, plc = (int(x) for x in s.groups()[:9])
             exp = dur * 50
-            alive = "capture alive" if cap >= 0.85 * exp else f"capture STALLED? ({cap / exp:.0%} of expected)"
+            # Alive against the engine's own capture window when it logged one; open→close only
+            # as a fallback (older builds), where a short cycle reads low by construction.
+            read, base = c["read"] or (cap, exp), "capture window" if c["read"] else "open→close"
+            alive = "capture alive" if read[0] >= 0.85 * read[1] \
+                else f"capture STALLED? ({read[0] / read[1]:.0%} of {read[1]:.0f} expected, {base})"
             quiet = f", {dtx / cap:.0%} DTX" if cap else ""
             print(f"{i:>2} {c['by']:6} {cols[0]:>8} {cols[1]:>11} {dur:6.1f} {cap:8} {exp:5.0f} {sent:5} {dtx:5} "
                   f"{rx:5} {lost:4} {late:4} {fec:3} {plc:3}  {alive}{quiet}; {note}")
         else:
             print(f"{i:>2} {c['by']:6} {cols[0]:>8} {cols[1]:>11} {dur if dur is None else round(dur, 1)!s:>6} "
                   f"{'(no talk stats line)':>40}  {note}")
-        if (c["hfp"] is None and not c["kept"]) or (c["media"] is None and not c["collapsed"]) \
-                or c["close"] is None:
+        # A collapsed cycle (closed and re-opened before its route was up) has neither an HFP nor a
+        # media line of its own, by design: the next cycle kept the route.
+        if (c["hfp"] is None and not c["kept"] and not c["collapsed"]) \
+                or (c["media"] is None and not c["collapsed"]) or c["close"] is None:
             bad += 1
         if c["dev"] and not c["dev"].endswith(": true"):
             print(f"   route: {c['dev']}")
@@ -163,6 +197,17 @@ def cmd_talk(out):
                     ("close→media", [(c["media"] - c["close"]) * 1000 for c in cycles if c["media"] and c["close"]])):
         if v:
             print(f"{name} ms: median {st.median(v):.0f}, max {max(v):.0f} (n={len(v)})")
+    # Main-thread lag (core/MainLag.kt) and the TalkAudio collapse lines, as a page of their own:
+    # both are the answer to "did a control message wait behind the audio thread".
+    notes = [(t, msg) for t, lvl, tag, msg in ev
+             if (tag == "Motoparty" and MAIN_LAG.match(msg)) or tag == "TalkAudio"]
+    if ev:
+        lag = [n for n in notes if MAIN_LAG.match(n[1])]
+        print(f"\nMain lag lines ('waited … for Main'): {len(lag)}, TalkAudio lines: "
+              f"{len(notes) - len(lag)}")
+        t0 = ev[0][0]
+        for t, msg in notes:
+            print(f"  {t - t0:7.1f}  {msg[:150]}")
     nerr = errors(ev, out) if ev else 0
     if os.path.exists(f"{out}/audio_mode.txt"):
         print("\nfinal audio state:\n  " + open(f"{out}/audio_mode.txt").read().strip().replace("\n", "\n  "))
@@ -290,8 +335,23 @@ def cmd_overlay(out):
         f = [int(x) for x in frame.split()] if frame.strip() else None
         w, h = int(w), int(h)
         on = f is not None and f[0] >= 0 and f[1] >= 0 and f[2] <= w and f[3] <= h
-        good &= on and tap != "no"
-        print(f"{step:14} {rot:>3} {f'{w}x{h}':>10} {frame or 'NO WINDOW':>24}  {'yes' if on else 'NO':9}  {tap}")
+        # `tap` still carries the row's newline; the column is printed raw, the verdict reads the
+        # stripped word (before, "no\n" != "no" quietly passed a failed tap).
+        note = tap.strip()
+        # The three rows of the dismiss step (DISMISS=1, once at the end) are judged by their own
+        # rule. Their last column is not a tap but the check word the script wrote ("ok …" passes,
+        # "FAIL …" does not), and `dismissed` is the one row where NO buttons window is the pass:
+        # the drag onto the X is meant to take that window away.
+        if step == "dismissed":
+            shown = "gone" if f is None else "STILL UP"
+            ok = f is None and note.startswith("ok")
+        elif step in ("dismiss-target", "restored"):
+            # The X seen mid-drag / the buttons back afterwards: both windows must be on screen.
+            shown, ok = ("yes" if on else "NO"), on and note.startswith("ok")
+        else:
+            shown, ok = ("yes" if on else "NO"), on and note != "no"
+        good &= ok
+        print(f"{step:14} {rot:>3} {f'{w}x{h}':>10} {frame or 'NO WINDOW':>24}  {shown:9}  {tap}")
     ev = logcat(out)
     errors(ev, out) if ev else None
     print(f"\nVERDICT: {'CLEAN' if good else 'LOOK AT THE ROWS ABOVE'}")
@@ -302,7 +362,10 @@ def cmd_overlay(out):
 FRAME = re.compile(r"(?<![A-Za-z])(?:mFrame|frame)=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]")
 
 
-def cmd_frame(pkg):
+def find_frame(needle):
+    """Frame of the first APPLICATION_OVERLAY window whose `Window #n Window{…}` header contains
+    `needle` — our package for the buttons, a title for any other window (see android/HANDOFF.md
+    F6: the X target is titled `MotopartyDismiss`, on purpose without the package in it)."""
     blocks, cur = [], None
     for line in sys.stdin:
         if re.match(r"\s*Window #\d+ Window\{", line):
@@ -311,14 +374,22 @@ def cmd_frame(pkg):
         elif cur is not None:
             cur.append(line)
     for b in blocks:
-        if pkg in b[0] and any("ty=APPLICATION_OVERLAY" in l for l in b):
+        if needle in b[0] and any("ty=APPLICATION_OVERLAY" in l for l in b):
             for l in b:
                 if m := FRAME.search(l):
                     print(*m.groups())
                     return
 
 
+def cmd_frame(pkg):
+    find_frame(pkg)
+
+
+def cmd_window(title):
+    find_frame(title)
+
+
 if __name__ == "__main__":
     cmd, arg = sys.argv[1], sys.argv[2]
     {"talk": cmd_talk, "music": cmd_music, "unavailable": cmd_unavailable,
-     "overlay": cmd_overlay, "frame": cmd_frame}[cmd](arg)
+     "overlay": cmd_overlay, "frame": cmd_frame, "window": cmd_window}[cmd](arg)

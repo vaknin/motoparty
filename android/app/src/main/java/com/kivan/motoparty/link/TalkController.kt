@@ -73,6 +73,7 @@ class TalkController(private val nowMs: () -> Long, private val silenceMs: Long 
     }
 
     companion object {
-        const val SILENCE_MS = 10_000L
+        /** PROTOCOL.md "Talk flow": close after this long without a non-DTX frame either way. */
+        const val SILENCE_MS = 20_000L
     }
 }

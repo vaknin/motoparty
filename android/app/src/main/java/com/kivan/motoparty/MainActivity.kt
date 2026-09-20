@@ -15,11 +15,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.lifecycleScope
 import com.kivan.motoparty.ui.MainScreen
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import com.kivan.motoparty.ui.Permission
 
 class MainActivity : ComponentActivity() {
@@ -43,12 +39,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (runtimePermissions.any { !granted(it) }) requestPermissions.launch(runtimePermissions.toTypedArray())
+        // The overlay setting is no longer watched here: LinkService collects it, so the buttons
+        // also appear and disappear when this activity is gone (F6).
         LinkService.start(this)
-        lifecycleScope.launch {
-            MotopartyApp.instance.settings.flow.map { it.overlayEnabled }.distinctUntilChanged().collect {
-                if (Hub.status.value.running) LinkService.maybeStartOverlay(this@MainActivity)
-            }
-        }
     }
 
     override fun onResume() {

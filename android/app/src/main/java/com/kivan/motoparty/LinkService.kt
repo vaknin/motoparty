@@ -27,7 +27,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -51,10 +53,19 @@ class LinkService : LifecycleService() {
         host = LinkHost(this, hostScope).also { it.start() }
         lifecycleScope.launch {
             Hub.status.distinctUntilChangedBy { Triple(it.clientName, it.talkOpen, it.nowPlaying?.title) }.collect {
-                getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(it))
+                repost(it)
             }
         }
-        maybeStartOverlay(this)
+        // The overlay follows the setting for as long as the *service* lives: the activity may be
+        // long gone (that is exactly when the rider cannot get rid of the buttons), so turning the
+        // setting off — from the app, or by dropping the buttons on the X — has to be seen here.
+        // A StateFlow replays its current value, so this also does the initial start.
+        lifecycleScope.launch {
+            MotopartyApp.instance.settings.flow.map { it.overlayEnabled }.distinctUntilChanged().collect {
+                maybeStartOverlay(this@LinkService)
+                repost(Hub.status.value) // the "Show buttons" action appears / disappears with it
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -65,6 +76,9 @@ class LinkService : LifecycleService() {
             ACTION_STOP -> stopSelf()
             ACTION_TALK -> Triggers.fire(TriggerKind.TALK, TriggerSource.UI)
             ACTION_MUSIC -> Triggers.fire(TriggerKind.MUSIC, TriggerSource.UI)
+            // The way back from a drag onto the X. Only the setting is written; the collector in
+            // onCreate starts the overlay and re-posts this notification.
+            ACTION_SHOW_OVERLAY -> MotopartyApp.instance.settings.update { it.copy(overlayEnabled = true) }
         }
         return START_STICKY
     }
@@ -102,6 +116,10 @@ class LinkService : LifecycleService() {
         }
     }
 
+    private fun repost(s: LinkStatus) {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(s))
+    }
+
     private fun notification(s: LinkStatus): Notification {
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
@@ -114,6 +132,15 @@ class LinkService : LifecycleService() {
             if (s.talkOpen) append(" · TALKING")
             s.nowPlaying?.let { append(" · ${it.title}") }
         }
+        // Android shows three actions. While the floating buttons are hidden, getting them back
+        // matters more than the "Command" shortcut (which the buttons themselves also offer), so
+        // the middle slot swaps; Talk and Stop always stay.
+        val buttonsHidden = !MotopartyApp.instance.settings.value.overlayEnabled &&
+            AndroidSettings.canDrawOverlays(this)
+        val middle: NotificationCompat.Builder.() -> Unit = {
+            if (buttonsHidden) addAction(0, "Show buttons", action(ACTION_SHOW_OVERLAY, 4))
+            else addAction(0, "Command", action(ACTION_MUSIC, 2))
+        }
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentTitle("Motoparty")
@@ -121,7 +148,7 @@ class LinkService : LifecycleService() {
             .setOngoing(true)
             .setContentIntent(open)
             .addAction(0, if (s.talkOpen) "End talk" else "Talk", action(ACTION_TALK, 1))
-            .addAction(0, "Command", action(ACTION_MUSIC, 2))
+            .apply(middle)
             .addAction(0, "Stop", action(ACTION_STOP, 3))
             .build()
     }
@@ -140,6 +167,7 @@ class LinkService : LifecycleService() {
         const val ACTION_STOP = "com.kivan.motoparty.STOP"
         const val ACTION_TALK = "com.kivan.motoparty.TALK"
         const val ACTION_MUSIC = "com.kivan.motoparty.MUSIC"
+        const val ACTION_SHOW_OVERLAY = "com.kivan.motoparty.SHOW_OVERLAY"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, LinkService::class.java))

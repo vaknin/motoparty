@@ -30,6 +30,21 @@ class AudioRouter(context: Context) {
     var selectedDevice: String? = null
         private set
 
+    /**
+     * The [AudioDeviceInfo] type the call route ended up on, or null when we left it to the phone
+     * (earpiece / speaker). Published from the audio thread like [selectedDevice].
+     */
+    @Volatile
+    var selectedType: Int? = null
+        private set
+
+    /**
+     * Does this route still have to bring a Bluetooth SCO link up? Then the route is *not* usable
+     * when [enterCall] returns — the link follows ~1 s later, which is what [ScoWatch] watches and
+     * [LiveCue] waits for. A BLE headset, a wired one or the earpiece are usable at once.
+     */
+    val needsSco: Boolean get() = selectedType == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+
     /** Reference counted: talk and a voice command may overlap. */
     @Synchronized
     fun enterCall() {
@@ -45,7 +60,10 @@ class AudioRouter(context: Context) {
                     val ok = am.setCommunicationDevice(device)
                     t.step("setCommunicationDevice")
                     Log.i(TAG, "communication device ${describe(device)}: $ok")
-                    if (ok) selectedDevice = describe(device)
+                    if (ok) {
+                        selectedDevice = describe(device)
+                        selectedType = device.type
+                    }
                 }
             } else {
                 @Suppress("DEPRECATION")
@@ -54,6 +72,9 @@ class AudioRouter(context: Context) {
                 am.isBluetoothScoOn = true
                 t.step("startBluetoothSco")
                 selectedDevice = "Bluetooth SCO"
+                // The legacy path asks for SCO whatever is connected; treat it as an SCO route,
+                // so the live earcon waits for the link there too (minSdk 29, untested since).
+                selectedType = AudioDeviceInfo.TYPE_BLUETOOTH_SCO
             }
         } finally {
             Log.i(TAG, t.line("enterCall"))
@@ -84,6 +105,7 @@ class AudioRouter(context: Context) {
             am.mode = AudioManager.MODE_NORMAL
             t.step("setMode")
             selectedDevice = null
+            selectedType = null
             Log.i(TAG, "back to media mode")
             Log.i(TAG, t.line("exitCall"))
         }

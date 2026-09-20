@@ -1,0 +1,55 @@
+         1789862650.369 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862650.373 30452 30452 I Motoparty: talk: no client connected
+         1789862650.478 30452 30474 D AudioSystem: onNewService: media.audio_policy service obtained 0xb400007593e27b60
+         1789862650.479 30452 30474 D AudioSystem: getService: IAudioPolicyService retrieved: 0xb400007593e27b60  cached: 0xb400007593e27b60
+         1789862660.051 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862660.052 30452 30452 I Motoparty: talk: no client connected
+         1789862662.736 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789862662.740 30452 30452 D ViewRootImpl: Skipping stats log for color mode
+         1789862662.748 30452 30452 I ContentCaptureHelper: Setting logging level to OFF
+         1789862662.763 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@d91b618
+         1789862662.831 30452 30452 D VRI[MainActivity]: WindowInsets changed: 2400x1080 statusBars:[0,74,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,74,0,84] 
+         1789862662.869 30452 30452 I Surface : Creating surface for consumer unnamed-30452-3 with slotExpansion=1 for 64 slots
+         1789862662.870 30452 30452 I Surface : Creating surface for consumer VRI[MainActivity]#3(BLAST Consumer)3 with slotExpansion=1 for 64 slots
+         1789862662.945 30452 30452 D InsetsController: hide(ime())
+         1789862662.945 30452 30452 I ImeTracker: com.kivan.motoparty:a8b4a8d5: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789862666.498 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862666.500 30452 30452 I Motoparty: talk: no client connected
+         1789862676.450 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862676.451 30452 30452 I Motoparty: talk: no client connected
+         1789862679.158 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789862679.164 30452 30452 D ViewRootImpl: Skipping stats log for color mode
+         1789862679.171 30452 30452 I ContentCaptureHelper: Setting logging level to OFF
+         1789862679.184 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@a83d3d5
+         1789862679.251 30452 30452 D VRI[MainActivity]: WindowInsets changed: 1080x2400 statusBars:[0,74,0,0] navigationBars:[0,0,0,132] mandatorySystemGestures:[0,74,0,132] 
+         1789862679.288 30452 30452 I Surface : Creating surface for consumer unnamed-30452-4 with slotExpansion=1 for 64 slots
+         1789862679.289 30452 30452 I Surface : Creating surface for consumer VRI[MainActivity]#4(BLAST Consumer)4 with slotExpansion=1 for 64 slots
+         1789862679.386 30452 30452 D InsetsController: hide(ime())
+         1789862679.386 30452 30452 I ImeTracker: com.kivan.motoparty:44d47301: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789862682.776 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862682.779 30452 30452 I Motoparty: talk: no client connected
+         1789862692.449 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862692.452 30452 30452 I Motoparty: talk: no client connected
+         1789862695.021 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789862695.023 30452 30452 D ViewRootImpl: Skipping stats log for color mode
+         1789862695.035 30452 30452 I ContentCaptureHelper: Setting logging level to OFF
+         1789862695.053 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@af8a2a2
+         1789862695.114 30452 30452 D VRI[MainActivity]: WindowInsets changed: 2400x1080 statusBars:[0,74,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,74,0,84] 
+         1789862695.151 30452 30452 I Surface : Creating surface for consumer unnamed-30452-5 with slotExpansion=1 for 64 slots
+         1789862695.151 30452 30452 I Surface : Creating surface for consumer VRI[MainActivity]#5(BLAST Consumer)5 with slotExpansion=1 for 64 slots
+         1789862695.212 30452 30462 W kivan.motoparty: Cleared Reference was only reachable from finalizer (only reported once)
+         1789862695.230 30452 30452 D InsetsController: hide(ime())
+         1789862695.230 30452 30452 I ImeTracker: com.kivan.motoparty:73d73f9f: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789862698.660 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862698.662 30452 30452 I Motoparty: talk: no client connected
+         1789862708.243 30452 30452 I Motoparty: trigger TALK from OVERLAY
+         1789862708.244 30452 30452 I Motoparty: talk: no client connected
+         1789862710.458 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789862710.460 30452 30452 D ViewRootImpl: Skipping stats log for color mode
+         1789862710.470 30452 30452 I ContentCaptureHelper: Setting logging level to OFF
+         1789862710.489 30452 30452 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@afeb475
+         1789862710.544 30452 30452 D VRI[MainActivity]: WindowInsets changed: 1080x2400 statusBars:[0,132,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,164,0,84] 
+         1789862710.581 30452 30452 I Surface : Creating surface for consumer unnamed-30452-6 with slotExpansion=1 for 64 slots
+         1789862710.581 30452 30452 I Surface : Creating surface for consumer VRI[MainActivity]#6(BLAST Consumer)6 with slotExpansion=1 for 64 slots
+         1789862710.653 30452 30452 D InsetsController: hide(ime())
+         1789862710.653 30452 30452 I ImeTracker: com.kivan.motoparty:5107e57d: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN

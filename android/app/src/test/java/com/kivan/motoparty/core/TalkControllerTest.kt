@@ -29,15 +29,16 @@ class TalkControllerTest {
     }
 
     @Test
-    fun closesAfterTenSecondsOfMutualSilence() {
+    fun closesAfterTwentySecondsOfMutualSilence() {
         talk.onLocalTrigger()
         now = 9_000
         talk.noteActivity()
-        now = 18_999
+        now = 28_999
         assertNull(talk.tick())
-        now = 19_000
+        now = 29_000
         assertEquals(Action.Close("host", "silence"), talk.tick())
         assertNull(talk.tick())
+        assertEquals("PROTOCOL.md: 20 s since 2026-09-20", 20_000L, TalkController.SILENCE_MS)
     }
 
     /**

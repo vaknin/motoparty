@@ -1,0 +1,112 @@
+talk cycles in logcat: 9
+ # by     open→HFP close→media  dur s captured   exp  sent   DTX    rx lost late FEC PLC  capture / reason
+ 1 client      189          57    8.0      352   402   352     0   392    0    0   0   0  capture alive, 0% DTX; client/trigger
+      AudioRouter: enterCall 188 ms (setMode 0, devices 174, setCommunicationDevice 12)
+      VoiceEngine: start 1 ms
+      VoiceEngine: playback up 193 ms (AudioTrack 23, play 168, first write 1)
+      VoiceEngine: capture up 807 ms (AudioRecord 135, effects+encoder 34, startRecording 44, first frame 593)
+      VoiceEngine: playback: wrote 352 frames in 7655 ms (382 expected), 0 re-anchors
+      VoiceEngine: capture: read 352 frames in 7634 ms (381 expected), device 353 frames, slowest encode+send 10 ms, longest read wait 26 ms
+      VoiceEngine: stop 46 ms (join capture 46, join playback 0)
+      AudioRouter: exitCall 9 ms (clearCommunicationDevice 8, setMode 1)
+ 2 client      210         786    8.0      374   399   118   256   388    0    5   0   3  capture alive, 68% DTX; client/trigger
+      AudioRouter: enterCall 210 ms (setMode 0, devices 207, setCommunicationDevice 1)
+      VoiceEngine: start 0 ms
+      VoiceEngine: playback up 93 ms (AudioTrack 38, play 54, first write 0)
+      VoiceEngine: capture up 305 ms (AudioRecord 32, effects+encoder 11, startRecording 57, first frame 203)
+      VoiceEngine: playback: wrote 364 frames in 7692 ms (384 expected), 1 re-anchors
+      VoiceEngine: capture: read 374 frames in 7685 ms (384 expected), device 375 frames, slowest encode+send 5 ms, longest read wait 50 ms
+      VoiceEngine: stop 71 ms (join capture 70, join playback 0)
+      AudioRouter: exitCall 715 ms (clearCommunicationDevice 3, setMode 709)
+ 3 client      459         675    8.0      311   400    54   257   376    0    0   0   0  capture STALLED? (78% of expected), 83% DTX; client/trigger
+      AudioRouter: enterCall 457 ms (setMode 0, devices 454, setCommunicationDevice 1)
+      VoiceEngine: start 1 ms
+      VoiceEngine: playback up 700 ms (AudioTrack 42, play 657, first write 0)
+      VoiceEngine: capture up 1310 ms (AudioRecord 638, effects+encoder 19, startRecording 609, first frame 42)
+      VoiceEngine: capture: read 311 frames in 6262 ms (313 expected), device 312 frames, slowest encode+send 4 ms, longest read wait 24 ms
+      VoiceEngine: playback: wrote 314 frames in 6844 ms (342 expected), 0 re-anchors
+      VoiceEngine: stop 47 ms (join capture 47, join playback 0)
+      AudioRouter: exitCall 626 ms (clearCommunicationDevice 25, setMode 601)
+ 4 client      248         763    8.0      371   400   371     0   386    0    6   0   3  capture alive, 0% DTX; client/trigger
+      AudioRouter: enterCall 245 ms (setMode 0, devices 215, setCommunicationDevice 28)
+      VoiceEngine: start 0 ms
+      VoiceEngine: playback up 128 ms (AudioTrack 31, play 96, first write 0)
+      VoiceEngine: capture up 335 ms (AudioRecord 67, effects+encoder 20, startRecording 44, first frame 202)
+      VoiceEngine: capture: read 371 frames in 7606 ms (380 expected), device 371 frames, slowest encode+send 5 ms, longest read wait 51 ms
+      VoiceEngine: playback: wrote 358 frames in 7615 ms (380 expected), 1 re-anchors
+      VoiceEngine: stop 49 ms (join capture 49, join playback 0)
+      AudioRouter: exitCall 713 ms (clearCommunicationDevice 25, setMode 687)
+ 5 client      426         752    8.0      348   402   251    97   379    0    3   0   3  capture alive, 28% DTX; client/trigger
+      AudioRouter: enterCall 426 ms (setMode 0, devices 412, setCommunicationDevice 12)
+      VoiceEngine: start 0 ms
+      VoiceEngine: playback up 233 ms (AudioTrack 45, play 187, first write 0)
+      VoiceEngine: capture up 656 ms (AudioRecord 177, effects+encoder 15, startRecording 430, first frame 33)
+      VoiceEngine: playback: wrote 363 frames in 7374 ms (368 expected), 0 re-anchors
+      VoiceEngine: capture: read 348 frames in 6994 ms (349 expected), device 349 frames, slowest encode+send 6 ms, longest read wait 26 ms
+      VoiceEngine: stop 52 ms (join capture 51, join playback 0)
+      AudioRouter: exitCall 699 ms (clearCommunicationDevice 9, setMode 689)
+ 6 client      528         797    8.0      329   400   323     6   373    0    0   0   0  capture STALLED? (82% of expected), 2% DTX; client/trigger
+      AudioRouter: enterCall 527 ms (setMode 1, devices 523, setCommunicationDevice 2)
+      VoiceEngine: start 0 ms
+      VoiceEngine: playback up 355 ms (AudioTrack 25, play 329, first write 0)
+      VoiceEngine: capture up 887 ms (AudioRecord 294, effects+encoder 24, startRecording 523, first frame 44)
+      VoiceEngine: capture: read 329 frames in 6626 ms (331 expected), device 330 frames, slowest encode+send 4 ms, longest read wait 28 ms
+      VoiceEngine: playback: wrote 335 frames in 7131 ms (356 expected), 0 re-anchors
+      VoiceEngine: stop 72 ms (join capture 71, join playback 0)
+      AudioRouter: exitCall 722 ms (clearCommunicationDevice 3, setMode 719)
+ 7 client        -        1223    0.3        0    15     0     0     0    0    0   0   0  capture STALLED? (0% of expected); client/trigger
+      AudioRouter: enterCall 433 ms (setMode 2, devices 405, setCommunicationDevice 14)
+      VoiceEngine: start 5 ms
+      VoiceEngine: playback: wrote 0 frames in 0 ms (0 expected), 0 re-anchors
+      VoiceEngine: stop 501 ms (join capture 500, join playback 0), still running: voice-capture
+      VoiceEngine: capture: read 0 frames in 0 ms (0 expected), device -1 frames, slowest encode+send 0 ms, longest read wait 0 ms
+      AudioRouter: exitCall 573 ms (clearCommunicationDevice 572, setMode 0)
+ 8 client       79          86    3.1      116   154   102    14   149    0    0   0   0  capture STALLED? (75% of expected), 12% DTX; client/trigger
+      AudioRouter: enterCall 12 ms (setMode 0, devices 9, setCommunicationDevice 1)
+      VoiceEngine: start 0 ms
+      VoiceEngine: playback up 414 ms (AudioTrack 26, play 387, first write 0)
+      VoiceEngine: capture up 688 ms (AudioRecord 349, effects+encoder 24, startRecording 208, first frame 105)
+      VoiceEngine: playback: wrote 117 frames in 2586 ms (129 expected), 0 re-anchors
+      VoiceEngine: capture: read 116 frames in 2426 ms (121 expected), device 117 frames, slowest encode+send 6 ms, longest read wait 54 ms
+      VoiceEngine: stop 75 ms (join capture 73, join playback 0)
+      AudioRouter: exitCall 7 ms (clearCommunicationDevice 6, setMode 0)
+ 9 client      249         837   20.0      951  1000   462   489   987    0    2   0   2  capture alive, 51% DTX; client/trigger
+      AudioRouter: enterCall 248 ms (setMode 0, devices 237, setCommunicationDevice 10)
+      VoiceEngine: start 0 ms
+      VoiceEngine: playback up 240 ms (AudioTrack 20, play 218, first write 0)
+      VoiceEngine: capture up 725 ms (AudioRecord 178, effects+encoder 17, startRecording 53, first frame 475)
+      VoiceEngine: playback: wrote 964 frames in 19505 ms (975 expected), 0 re-anchors
+      VoiceEngine: capture: read 951 frames in 19495 ms (974 expected), device 952 frames, slowest encode+send 6 ms, longest read wait 24 ms
+      VoiceEngine: stop 56 ms (join capture 56, join playback 0)
+      AudioRouter: exitCall 779 ms (clearCommunicationDevice 1, setMode 778)
+
+peer requests (host answer time, ms):
+  talk.open  -> by=client            17
+  talk.close -> by=client trigger    48
+  talk.open  -> by=client            34
+  talk.close -> by=client trigger    13
+  talk.open  -> by=client            18
+  talk.close -> by=client trigger    16
+  talk.open  -> by=client            19
+  talk.close -> by=client trigger    15
+  talk.open  -> by=client            11
+  talk.close -> by=client trigger    15
+  talk.open  -> by=client            19
+  talk.close -> by=client trigger    16
+  talk.open  -> by=client            16
+  talk.close -> by=client trigger    10
+  talk.open  -> by=client            940
+  talk.close -> by=client trigger    22
+  talk.open  -> by=client            20
+  talk.close -> by=client trigger    13
+open→HFP ms: median 248, max 528 (n=8)
+close→media ms: median 763, max 1223 (n=9)
+
+errors in logcat: 0, crash buffer lines: 0
+
+final audio state:
+  Mode owner token: null
+    Active communication device: AudioDeviceAttributes: role:output type:bt_a2dp addr:XX:XX:XX:XX:EC:2F name:AirPods Pro profiles:[{ENCODING_PCM_8BIT, sampling rates=[48000], channel masks=0x0C, encapsulation type=0}] descriptors:[]
+    mAudioModeOwner: AudioDeviceBroker$AudioModeInfo[mMode=0, mPid=0, mUid=0, mToken=null]
+
+VERDICT: LOOK AT THE ROWS ABOVE (1 incomplete cycles, 0 errors)

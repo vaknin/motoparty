@@ -88,7 +88,7 @@ port; `--bind`; `--no-mdns`). The hello carries the real ports.
 - Talk authority. It opens or closes on client requests and on the stdin `talk` command, and
   broadcasts `talk.*` + `state`. After `mic off` it answers a client's `talk.open` with
   `talk.close{by:"host",reason:"unavailable"}` instead — talk never opens, `state.talk` stays
-  false and nothing else is broadcast. It closes with `reason:"silence"` after 10 s
+  false and nothing else is broadcast. It closes with `reason:"silence"` after 20 s
   (`--silence-ms`) with no voice activity from the client, and with `"link"` on link loss.
   Music that was playing is frozen during talk and resumed with `music.play` at
   `now + 1500 ms`.
@@ -141,7 +141,7 @@ What to check:
 - `offset` should be stable within a few ms, with `rtt` in the single digits on a hotspot.
 - `voice rx` should show `underruns` staying low and `target` settling back to 40 ms.
 - Pixel-triggered talk should show up as `<< talk.open{by:"host"}`.
-- A 10 s pause in talking should end talk with `reason:"silence"`.
+- A 20 s pause in talking should end talk with `reason:"silence"`.
 - `raw {"t":"future.thing"}` must be ignored by the app. `raw {"t":"ping","id":1}` (missing
   `t0`) must not crash it.
 
@@ -183,7 +183,7 @@ sudo sh -c 'nft insert rule inet filter input tcp dport { 47800, 47802 } accept 
 Then, from the iPhone app, check each of these:
 
 - It connects via Bonjour. Mute Bonjour with `--no-mdns` to force the sweep.
-- Talk: you should hear yourself (the echo), and it should end on 10 s of silence.
+- Talk: you should hear yourself (the echo), and it should end on 20 s of silence.
 - Type `load` on the host: the iPhone should download the file, send `music.ready`, and start
   at the logged host time.
 - Type `talk` on the host: the iPhone should pause music, and after the second `talk` it

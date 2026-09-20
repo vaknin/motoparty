@@ -61,13 +61,13 @@ type (it cannot be claimed from the background).
 | Package / file | What |
 |---|---|
 | `core/` | Pure Kotlin, JVM-tested: `Messages`/`Codec` (JSON + u32 framing), `ClockEstimator`, `VoicePacket`, `JitterBuffer`, `CommandParser` |
-| `LinkService` | Foreground service (`microphone\|mediaPlayback\|connectedDevice`), wake + Wi-Fi low-latency locks, notification with Talk/Command/Stop |
+| `LinkService` | Foreground service (`microphone\|mediaPlayback\|connectedDevice`), wake + Wi-Fi low-latency locks, notification with Talk/Command/Stop (Command becomes "Show buttons" while the overlay is off) |
 | `LinkHost` | Wires everything; the one place protocol decisions are made (main thread) |
-| `link/` | `Discovery` (NSD `_motoparty._tcp`, TXT proto/voice/http), `ControlServer` (TCP 47800), `VoiceSocket` (UDP 47801), `TalkController` (talk authority, 10 s silence close) |
-| `audio/` | `Opus` (JNI), `VoiceEngine` (AudioRecord VOICE_COMMUNICATION 16 kHz → Opus → UDP; UDP → jitter → Opus FEC/PLC → AudioTrack), `AudioRouter` (MODE_IN_COMMUNICATION + `setCommunicationDevice`), `Earcons` (generated tones) |
+| `link/` | `Discovery` (NSD `_motoparty._tcp`, TXT proto/voice/http), `ControlServer` (TCP 47800), `VoiceSocket` (UDP 47801), `TalkController` (talk authority, 20 s silence close) |
+| `audio/` | `Opus` (JNI), `VoiceEngine` (AudioRecord VOICE_COMMUNICATION 16 kHz → Opus → UDP; UDP → jitter → Opus FEC/PLC → AudioTrack), `AudioRouter` (MODE_IN_COMMUNICATION + `setCommunicationDevice`), `Earcons` (generated tones), `LiveCue` (when the "live" beep may play: first captured frame **and** the SCO link up, fallback timer 2.5 s), `ScoWatch`/`AudioModeWatch` (Bluetooth SCO link state and audio mode, cached off Main) |
 | `music/` | `Catalog` (NewPipeExtractor, YouTube Music search, itag-140 resolve), `OkHttpDownloader`, `TrackCache` (1 GiB LRU, ranged download, prefetch), `TrackServer` (hand-rolled HTTP on 47802), `Player` (ExoPlayer + MediaSession), `SyncController` (scheduled start with learned start-up latency, 10 s drift check, speed nudge 80 ms–1 s, re-seek > 1 s, latency trim), `MusicController` (queue, load/ready/play, talk pause/resume) |
 | `voicecmd/` | `Transcriber` (on-device SpeechRecognizer, falls back to the default service), `Announcer` (TTS + earcons) |
-| `overlay/OverlayService` | Draggable TYPE_APPLICATION_OVERLAY with TALK and MUSIC zones (112×100 dp), colour = state |
+| `overlay/OverlayService` | Draggable TYPE_APPLICATION_OVERLAY with TALK and MUSIC zones (112×100 dp), colour = state; drag onto the X at the bottom to hide (sets `overlayEnabled=false`, back via the notification's "Show buttons") |
 | `trigger/` | `Triggers`: one stream fed by overlay, headset buttons, notification and UI |
 | `ui/MainScreen` | Link status, now playing/queue, search, settings, log |
 
@@ -93,7 +93,7 @@ to the newest tag on https://github.com/TeamNewPipe/NewPipeExtractor/releases an
 - Client `volumeUp/volumeDown` (`music.control` or voice) changes the **host's** media volume;
   the protocol has no H→C volume message.
 - While talk is open the headset is in HFP, so AirPods presses arrive as call controls, not
-  media keys; end talk with the overlay/notification/UI (or the 10 s silence close).
+  media keys; end talk with the overlay/notification/UI (or the 20 s silence close).
 - sherpa-onnx fallback ASR (plan) is not implemented; the platform recognizer may ignore the
   Bluetooth mic.
 - `Earcons` and TTS are not mixed into the voice stream, so the remote side does not hear

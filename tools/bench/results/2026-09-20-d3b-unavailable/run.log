@@ -1,0 +1,12 @@
+02:34:12.095 unavailable.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-20-d3b-unavailable
+02:34:12.624 phone: mWakefulness=Awake, top: bitpit.launcher/.ui.HomeActivity
+02:34:12.735 app pid: 26278
+02:34:12.935 bluetooth:   09-19 22:26:58.747 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []   09-19 23:31:49.694 XX:XX:XX:XX:EC:2F: no longer A2DP active. Remains []
+02:34:13.639 (a) client mic unavailable, TALK pressed on the host
+02:34:24.880 (b) host mic unavailable
+02:34:31.278 app restarted, pid 26653
+02:34:42.150 cleanup: sh1 pm grant com.kivan.motoparty android.permission.RECORD_AUDIO; restart_app; sh1 dumpsys package com.kivan.motoparty | grep -m1 'RECORD_AUDIO: granted' >'/home/kivan/Work/motoparty/tools/bench/results/2026-09-20-d3b-unavailable/permission.txt'
+02:34:47.056 app restarted, pid 26793
+02:34:47.056 app restarted, pid 26793
+02:34:47.458 cleanup: kill 341626 2>/dev/null
+02:34:47.462 cleanup: kill 341557 2>/dev/null

@@ -1,0 +1,79 @@
+         1789860854.324 26278 26318 I ControlServer: #1 connected from /192.168.1.102:43902
+         1789860854.399 26278 26320 I ControlServer: #1 is the client: arch
+         1789860854.400 26278 26278 I Motoparty: client "arch" connected from 192.168.1.102
+         1789860860.038 26278 26278 I Motoparty: trigger TALK from OVERLAY
+         1789860860.043 26278 26278 I Motoparty: talk open (by host)
+         1789860860.070 26278 26582 D AudioSystem: onNewService: media.audio_policy service obtained 0xb400007593da30e0
+         1789860860.072 26278 26582 D AudioSystem: getService: IAudioPolicyService retrieved: 0xb400007593da30e0  cached: 0xb400007593da30e0
+         1789860860.104 26278 26278 I Motoparty: talk closed (by client, unavailable)
+         1789860860.105 26278 26278 I Motoparty: client microphone unavailable
+         1789860860.228 26278 26582 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789860860.229 26278 26582 I AudioRouter: enterCall 184 ms (setMode 1, devices 180, setCommunicationDevice 1)
+         1789860860.229 26278 26582 I VoiceEngine: start 0 ms
+         1789860860.335 26278 26586 D nativeloader: Load /data/app/~~vkQ7dH-jyE04NqA1aHcTlw==/com.kivan.motoparty-bYo0i3q1ZqRNC_NxVLscPA==/base.apk!/lib/arm64-v8a/libmotoparty_opus.so using class loader ns clns-9 (caller=/data/app/~~vkQ7dH-jyE04NqA1aHcTlw==/com.kivan.motoparty-bYo0i3q1ZqRNC_NxVLscPA==/base.apk!classes7.dex): ok
+         1789860860.441 26278 26586 I VoiceEngine: playback: wrote 0 frames in 0 ms (0 expected), 0 re-anchors
+         1789860860.441 26278 26586 D AudioTrack: stop(20441): called with 0 frames delivered
+         1789860860.465 26278 26584 I VoiceEngine: capture: read 0 frames in 0 ms (0 expected), device -1 frames, slowest encode+send 0 ms, longest read wait 0 ms
+         1789860860.731 26278 26582 I VoiceEngine: talk stats: tx 0 sent of 0 captured (0 DTX), rx 0 received, 0 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789860860.732 26278 26582 I VoiceEngine: stop 501 ms (join capture 500, join playback 0), still running: voice-capture
+         1789860861.590 26278 26315 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1150ms. Data bytes: 552 Reply bytes: 0 Flags: 17
+         1789860861.712 26278 26582 I AudioRouter: back to media mode
+         1789860861.712 26278 26582 I AudioRouter: exitCall 980 ms (clearCommunicationDevice 978, setMode 1)
+         1789860865.104 26278 26320 I ControlServer: #1 closed: closed by peer
+         1789860865.105 26278 26278 I Motoparty: client gone: closed by peer
+         1789860867.403 26653 26653 I libprocessgroup: Created cgroup /sys/fs/cgroup/apps/uid_10700/pid_26653
+         1789860867.407 26653 26653 I Zygote  : Process 26653 created for com.kivan.motoparty
+         1789860867.407 26653 26653 I kivan.motoparty: Late-enabling -Xcheck:jni
+         1789860867.425 26653 26653 I kivan.motoparty: Using generational CollectorTypeCMC GC.
+         1789860867.431 26653 26653 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+         1789860867.456 26653 26653 D CompatChangeReporter: Compat change id reported: 333566037; UID 10700; state: ENABLED
+         1789860867.457 26653 26653 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+         1789860867.457 26653 26653 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+         1789860867.557 26653 26653 D nativeloader: Configuring clns-9 for other apk /data/app/~~vkQ7dH-jyE04NqA1aHcTlw==/com.kivan.motoparty-bYo0i3q1ZqRNC_NxVLscPA==/base.apk. target_sdk_version=37, uses_libraries=, library_path=/data/app/~~vkQ7dH-jyE04NqA1aHcTlw==/com.kivan.motoparty-bYo0i3q1ZqRNC_NxVLscPA==/lib/arm64:/data/app/~~vkQ7dH-jyE04NqA1aHcTlw==/com.kivan.motoparty-bYo0i3q1ZqRNC_NxVLscPA==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.kivan.motoparty
+         1789860867.564 26653 26653 V GraphicsEnvironment: Currently set values for:
+         1789860867.564 26653 26653 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[com.android.angle]
+         1789860867.564 26653 26653 V GraphicsEnvironment:   angle_gl_driver_selection_values=[angle]
+         1789860867.564 26653 26653 V GraphicsEnvironment: com.kivan.motoparty is not listed in per-application setting
+         1789860867.564 26653 26653 V GraphicsEnvironment: No special selections for ANGLE, returning default driver choice
+         1789860867.565 26653 26653 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+         1789860867.566 26653 26653 D CompatChangeReporter: Compat change id reported: 407952621; UID 10700; state: ENABLED
+         1789860867.566 26653 26653 D CompatChangeReporter: Compat change id reported: 419020719; UID 10700; state: ENABLED
+         1789860867.586 26653 26653 D CompatChangeReporter: Compat change id reported: 418924588; UID 10700; state: ENABLED
+         1789860867.590 26653 26653 D CompatChangeReporter: Compat change id reported: 458413887; UID 10700; state: ENABLED
+         1789860867.592 26653 26678 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+         1789860867.593 26653 26678 D vulkan  : searching for layers in '/data/app/~~vkQ7dH-jyE04NqA1aHcTlw==/com.kivan.motoparty-bYo0i3q1ZqRNC_NxVLscPA==/lib/arm64'
+         1789860867.593 26653 26678 D vulkan  : searching for layers in '/data/app/~~vkQ7dH-jyE04NqA1aHcTlw==/com.kivan.motoparty-bYo0i3q1ZqRNC_NxVLscPA==/base.apk!/lib/arm64-v8a'
+         1789860867.641 26653 26653 I ContentCaptureHelper: Setting logging level to OFF
+         1789860867.716 26653 26653 I ExoPlayerImpl: Init 1ceede4 [AndroidXMedia3/1.11.1] [shiba, Pixel 8, Google, 37]
+         1789860867.763 26653 26653 I MediaSessionImpl: Init 3d8157c [AndroidXMedia3/1.11.1] [shiba, Pixel 8, Google, 37]
+         1789860867.765 26653 26696 D AudioSystem: onNewServiceWithAdapter: media.audio_flinger service obtained 0xb400007533db1820
+         1789860867.766 26653 26696 D AudioSystem: getService: IAudioFlingerService retrieved: 0xb400007593df61f0  IAudioFlinger cached: 0xb400007533db1820
+         1789860867.776 26653 26653 I MediaSessionCompat: Couldn't find a unique registered media button receiver in the given context.
+         1789860867.785 26653 26695 E ActivityThread: Failed to find provider info for androidx.car.app.connection
+         1789860867.807 26653 26653 D DesktopExperienceFlags: Toggle override initialized to: false
+         1789860867.810 26653 26653 I TextToSpeech: Sucessfully bound to com.google.android.tts
+         1789860867.813 26653 26674 I TextToSpeech: Connected to TTS engine
+         1789860867.819 26653 26700 I TextToSpeech: Setting up the connection to TTS engine...
+         1789860867.821 26653 26653 I Motoparty: host up as "Pixel 8"
+         1789860867.835 26653 26653 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@9bd564f
+         1789860868.223 26653 26653 D VRI[MainActivity]: WindowInsets changed: 1080x2400 statusBars:[0,132,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,164,0,84] 
+         1789860868.248 26653 26653 I HWUI    : Using FreeType backend (prop=Auto)
+         1789860868.312 26653 26666 I kivan.motoparty: Compiler allocated 5317KB to compile void android.view.ViewRootImpl.performTraversals(long)
+         1789860868.373 26653 26653 I Surface : Creating surface for consumer unnamed-26653-0 with slotExpansion=1 for 64 slots
+         1789860868.374 26653 26653 I Surface : Creating surface for consumer VRI[MainActivity]#0(BLAST Consumer)0 with slotExpansion=1 for 64 slots
+         1789860868.489 26653 26653 I kivan.motoparty: hiddenapi: Accessing hidden method Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/compose/ui/platform/AndroidComposeView$Companion; (domain=app, TargetSdkVersion=37) using reflection: allowed
+         1789860868.520 26653 26674 I HWUI    : Davey! duration=842ms; Flags=1, FrameTimelineVsyncId=143627681, IntendedVsync=1297282788993058, Vsync=1297282955329278, InputEventId=0, HandleInputStart=1297282969018888, AnimationStart=1297282969019823, PerformTraversalsStart=1297282969020230, DrawStart=1297283562004280, FrameDeadline=1297282805593058, FrameStartTime=1297282968813280, FrameInterval=16633622, WorkloadTarget=16600000, AnimationTime=1297282955329278, SyncQueued=1297283592683642, SyncStart=1297283592848885, IssueDrawCommandsStart=1297283593318408, SwapBuffers=1297283621012337, FrameCompleted=1297283632156014, DequeueBufferDuration=43579, QueueBufferDuration=361450, GpuCompleted=1297283632156014, SwapBuffersCompleted=1297283621478116, DisplayPresentTime=0, CommandSubmissionCompleted=1297283621012337, 
+         1789860868.554 26653 26653 I Choreographer: Skipped 40 frames!  The application may be doing too much work on its main thread.
+         1789860868.567 26653 26653 I Surface : Creating surface for consumer unnamed-26653-1 with slotExpansion=1 for 64 slots
+         1789860868.568 26653 26653 I Surface : Creating surface for consumer VRI[]#1(BLAST Consumer)1 with slotExpansion=1 for 64 slots
+         1789860868.572 26653 26653 I ContentCaptureHelper: Setting logging level to OFF
+         1789860868.808 26653 26698 I Discovery: registered Pixel 8
+         1789860871.820 26653 26701 I ControlServer: #1 connected from /192.168.1.102:59240
+         1789860871.933 26653 26703 I ControlServer: #1 is the client: arch
+         1789860871.936 26653 26653 I Motoparty: client "arch" connected from 192.168.1.102
+         1789860873.248 26653 26732 D ProfileInstaller: Installing profile for com.kivan.motoparty
+         1789860876.563 26653 26653 I Motoparty: microphone unavailable: RECORD_AUDIO not granted
+         1789860876.574 26653 26653 I Motoparty: talk.open refused: microphone unavailable
+         1789860878.065 26653 26668 I kivan.motoparty: Background concurrent mark compact GC freed 8371KB AllocSpace bytes, 3(64KB) LOS objects, 97% free, 6371KB/256MB, paused 211us,2.256ms total 115.668ms
+         1789860880.570 26653 26703 I ControlServer: #1 closed: closed by peer
+         1789860880.573 26653 26653 I Motoparty: client gone: closed by peer

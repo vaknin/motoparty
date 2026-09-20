@@ -45,6 +45,13 @@ class TalkAudio(
     /** The session the running voice engine belongs to (for failure reports). */
     @Volatile private var owner = 0
 
+    /**
+     * Whose voice engine is running: the session a capture-thread callback belongs to now. After a
+     * collapsed close/open that is the *re-opened* talk, which is the one still waiting for its
+     * live earcon ([LiveCue]).
+     */
+    val ownerSession: Int get() = owner
+
     /** Talk [session] opened. The job completes when the route and the voice engine are up. */
     fun open(session: Int): Job {
         wanted = session

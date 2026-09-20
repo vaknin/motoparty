@@ -16,7 +16,7 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `core/VoicePacket.kt` | done |
 | `core/JitterBuffer.kt` | done per the latest spec: talk-spurt start plays `target` ms after arrival; underrun = packet after its slot, +20 ms at most once per spurt; -20 ms after 10 s; changes apply at next spurt; keepalive seqs never count as loss; seq-contiguous ts jump = silence; FEC/PLC; brief PLC then silence on an empty buffer. A packet that came too late to play also counts as "seen" for the silence-gap test (fixed 2026-09-19 night). Per-talk counters for `talk stats` (layer 2, section 3 item 3) |
 | `core/CommandParser.kt` | done per the latest spec (per code point, U+2019 -> `'`, keep L*/M*/N*) |
-| `link/TalkController.kt` | done (pure state machine, 10 s silence close, link loss) |
+| `link/TalkController.kt` | done (pure state machine, 20 s silence close since 2026-09-20 F6, link loss) |
 | `link/ControlServer.kt` | done. One writer coroutine per connection (socket writes on main threw NetworkOnMainThreadException), pong answered on the reader thread, second hello replaces client (old one gets `bye`), 6 s liveness watchdog |
 | `link/VoiceSocket.kt` | done. UDP 47801, peer = source of last valid packet from the control client's IP, running 16 kHz `ts` clock from a random start (`currentTs()`), keepalive every 1 s idle carrying current ts, shared seq |
 | `link/Discovery.kt` | done (NSD `_motoparty._tcp`, TXT proto/voice/http) |
@@ -24,6 +24,8 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `core/TalkStats.kt` | done. Pure: the `talk stats` loss arithmetic and the exact line format (layer 2) |
 | `audio/VoiceEngine.kt` | done. Logs one `talk stats:` line per talk at `stop` (built by `TalkStats`). Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity. `start`/`stop` belong on the audio thread. Each `start(onFailed)` is a session (an `AtomicReference`, not a `running` flag): a loop that outlives `stop`'s 500 ms join cannot carry on under the next `start`, and only the first failure of a still-current session reports, to that session's `onFailed` |
 | `audio/AudioRouter.kt` | done (ref-counted MODE_IN_COMMUNICATION + setCommunicationDevice, prefers BLE headset > SCO > wired > USB). Audio-thread only; `selectedDevice` is published from there instead of queried from Main. `enterCall` counts itself before it can throw, so every caller pairs it with `exitCall` regardless; `exitCall` sets `MODE_NORMAL` in a `finally`; `exitAll` is the shutdown backstop |
+| `audio/LiveCue.kt` | done, unit-tested (`LiveCueTest`, 10). Pure: when the "live" earcon may play — first captured frame **and** the route really up (SCO connected for a Bluetooth headset), one fire per open, 2.5 s fallback timer. See section 2, "F7" |
+| `audio/ScoWatch.kt` | done, device-unverified. The Bluetooth SCO link state cached off Main (two broadcasts; Android 17 may have retired the classic one — section 2, "F7") |
 | `audio/AudioThread.kt` | done, reviewed, unit-tested (`AudioThreadTest`). The single serial thread every route change and voice start/stop runs on (section 4, "Talk no longer blocks Main"). Not yet run on the device |
 | `audio/Earcons.kt` | done (generated tones: LIVE, CLOSED, OK, ERROR, LISTEN) |
 | `music/Catalog.kt`, `OkHttpDownloader.kt` | done (NewPipeExtractor v0.26.5; YT Music songs/albums/playlists, artist = top 20 songs; falls back to plain YouTube search; resolves progressive M4A, itag 140 preferred) |
@@ -35,18 +37,24 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `voicecmd/Transcriber.kt` | done (on-device recognizer when available, falls back to default on language/client errors) |
 | `voicecmd/Announcer.kt` | done (TTS, USAGE_ASSISTANT, earcon first) |
 | `LinkHost.kt` | done: all wiring and protocol decisions, main thread, `guarded{}` around event loops. Talk and recognizer audio work goes through `AudioThread`; `talkSession` drops late callbacks of an earlier talk |
-| `LinkService.kt` | done (FGS types microphone\|mediaPlayback\|connectedDevice, drops microphone if SecurityException; wake + Wi-Fi low-latency locks; notification actions Talk/Command/Stop) |
-| `overlay/OverlayService.kt` + `overlay/OverlayPlacement.kt` | done. The position is stored as a fraction of the free travel and clamped on restore, on every layout, on rotation and during the drag itself; the landscape bug is fixed in code (device check still open). `OverlayPlacement` is pure and unit-tested |
+| `LinkService.kt` | done (FGS types microphone\|mediaPlayback\|connectedDevice, drops microphone if SecurityException; wake + Wi-Fi low-latency locks; notification actions Talk/Command/Stop, where "Command" becomes "Show buttons" while the overlay is off). Since F6 it also collects `settings.overlayEnabled` and starts/stops the overlay itself, so the switch works with the activity gone |
+| `overlay/OverlayService.kt` + `overlay/OverlayPlacement.kt` | done. The position is stored as a fraction of the free travel and clamped on restore, on every layout, on rotation and during the drag itself; the landscape bug is fixed in code. Since the D4 overlay bench (2026-09-20) the clamp runs against the **usable** area, not the display bounds: `params.x/y` are relative to the window's parent frame, which excludes the status bar / cutout / navigation bar (rotation 0: `parent=[0,132][1080,2337]` on 1080x2400), so a far-corner drag used to end 132 px below the screen. `usableSize()` now subtracts `currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(systemBars \| displayCutout)` (API 30+; `displayMetrics` below that), and `OverlayPlacement.usable()` is the pure arithmetic for it. `ACTION_CANCEL` now ends the drag and saves the position like `ACTION_UP` (it never fires a trigger) — before, a cancelled drag was dropped and the next layout pass snapped the buttons back. Both are device-unverified. F6 (2026-09-20) adds drag-to-dismiss: a second, untouchable X window at the bottom centre while a drag runs, and dropping the buttons on it restores the pre-drag position, sets `overlayEnabled=false` and stops the service (see section 2, "F6", for the geometry, the hit rule and the window titles). `OverlayPlacement` is pure and unit-tested (21) |
 | `trigger/Trigger.kt` | done |
 | `ui/MainScreen.kt`, `MainActivity.kt` | done (status, permissions, TALK/COMMAND, now playing/queue, search, settings, log). Still not seen rendered: the one screenshot attempt caught another app in the foreground |
 | `Settings.kt`, `Hub.kt`, `MotopartyApp.kt` | done |
 | `tools/fetch_opus.sh` | done |
 
-Tests (`app/src/test/...`), 111 in all by the last run (the list may lag), 2 skipped: `CodecTest` (14), `ClockEstimatorTest` (1),
-`VoicePacketTest` (3), `CommandParserTest` (2), `JitterBufferTest` (17), `TalkStatsTest` (4),
-`TalkControllerTest` (8), `ControlServerTest` (7, real loopback sockets), `TrackServerTest` (5),
-`SyncControllerTest` (23),
-`OverlayPlacementTest` (8), `AudioThreadTest` (6: order and one-at-a-time, failure to the shared
+Tests (`app/src/test/...`), 139 in all by the last run (the list may lag), 2 skipped: `CodecTest` (14), `ClockEstimatorTest` (1),
+`VoicePacketTest` (3), `CommandParserTest` (2), `JitterBufferTest` (20), `TalkStatsTest` (4),
+`TalkControllerTest` (8, incl. the 20 s silence close), `ControlServerTest` (7, real loopback sockets), `TrackServerTest` (5),
+`SyncControllerTest` (23), `MainLagTest` (3), `StepTimerTest` (2), `TalkAudioTest` (7),
+`LiveCueTest` (10: the F7 live-earcon rule — normal order, capture before SCO, SCO before the
+route, an SCO flap, a non-Bluetooth route, the timeout fallback, close before ready, stale
+sessions, a collapsed re-open, and the exact `live cue:` line),
+`OverlayPlacementTest` (22: travel/clamp/fraction round-trips, the usable area from bounds + insets,
+the D4 far corner on screen in all four rotations, and the F6 X target — where it sits, that a
+drop at the bottom centre hits it in portrait *and* in landscape, where the window is more than
+half the usable height, and the F7 share of the vertical travel that counts, 10 % / 39 %), `AudioThreadTest` (6: order and one-at-a-time, failure to the shared
 handler on the caller's scope, per-post handler, failure delivered before the job completes,
 cancelled waiter does not cancel the work, post after shutdown), `CatalogNetworkTest` (2, skipped
 unless `-Pnetwork`). Every fixture section is consumed by a
@@ -55,8 +63,9 @@ none is silently skipped.
 
 ## 2. Verified, and how
 
-- `./gradlew assembleDebug test` -> BUILD OK, 111 tests, 109 pass, 2 skipped (network), 0 fail
-  (after the D2 filtered-drift fix, 2026-09-19).
+- `./gradlew assembleDebug testDebugUnitTest` -> BUILD OK, 139 tests, 137 pass, 2 skipped
+  (network), 0 fail (after F7, 2026-09-20; was 128 after F6, 123 before it, 115 after the D1-bench-4
+  Main-blocking fix, 111 after the D2 filtered-drift fix).
 - `./gradlew :app:testDebugUnitTest -Pnetwork --tests '*CatalogNetworkTest*'` (laptop, live
   YouTube) -> pass: song/album/artist/playlist search; Bohemian Rhapsody resolved itag 140,
   5.7 MB downloaded in 2.2 s, `ftyp` box.
@@ -149,6 +158,41 @@ All against `tools/peer` on the laptop (192.168.1.102) over home Wi-Fi.
   is fine in portrait is off-screen in landscape. Fix: clamp x/y to the current display bounds both
   when restoring and on a configuration change. Left alone because it could not be re-tested on the
   device (see the note about the user picking the phone up).
+- **Overlay rotation bench D4** (`tools/bench/results/2026-09-20-d4-overlay-2/summary.txt`,
+  Pixel 8 1080x2400). At rest the overlay is fully on screen and tappable in all four rotations —
+  the landscape bug above is really fixed. But every `dragged-far` row was off screen, because the
+  clamp used the display bounds while `params.x/y` are relative to the window's parent frame
+  (rotation 0 `parent=[0,132][1080,2337]`, `mAttrs` y=365 vs. real frame y=497): the far corner
+  landed at `766 1968 1080 2532`, 132 px below the display (rot 90 `2218 590 2532 1154`,
+  132 right + 74 below; rot 180 and 270, 74 below). Every `after-release` row also snapped back to
+  the pre-drag frame, i.e. the drag was never saved — `DragOrTap` handled only DOWN/MOVE/UP, and
+  `input swipe` to an off-screen point ends in `ACTION_CANCEL`.
+  **Fixed in code, unverified on the device:** the clamp and `place()` now run against the usable
+  area (bounds minus `getInsetsIgnoringVisibility(systemBars | displayCutout)`, API 30+, with
+  `displayMetrics` below), and `ACTION_CANCEL` ends the drag and saves the position exactly as
+  `ACTION_UP` does — without ever firing a trigger. `OverlayPlacement.usable()` holds the
+  arithmetic and the unit tests use these bench numbers.
+  **The next `tools/bench/overlay_rotation.sh` run must show:** every `dragged-far` row `on
+  screen = yes` in all four rotations (rot 0 should end at y 2337, not 2532). Then the
+  `after-release` rows tell whether CANCEL was the whole story: staying at the far corner means the
+  save now happens; snapping back to the pre-drag frame means something else still drops the drag
+  (look for a `place()` from a layout pass that beats the save, and note that a real finger may
+  never send CANCEL at all — that path is still only reasoned about, not seen).
+  **The drag never persisting was that other cause** (`2026-09-20-d4-overlay-3`: in-screen drags
+  snapped back too and `shared_prefs/overlay.xml` never changed mtime, so CANCEL was not it). The
+  layout listener calls `place()`, which writes `params.x/y` back from the stored `fx/fy`; each
+  ACTION_MOVE's `updateViewLayout` triggers exactly such a layout pass, so every move was undone
+  and ACTION_UP then "saved" the fraction that was already stored — an unchanged `putFloat`, which
+  SharedPreferences drops without writing the file. Fix: ACTION_MOVE now updates `fx/fy` from the
+  clamped `params.x/y` as it drags, so `place()` is a no-op mid-drag (its `x == params.x` early
+  return) and a rotation during a drag still places the window proportionally; UP/CANCEL only
+  persist. This needs `position(fraction(x)) == x` exactly or `place()` would fight the finger by a
+  pixel — it does, pinned for every x in 0..travel at the Pixel 8 sizes by
+  `every pixel position round-trips exactly` in `OverlayPlacementTest` (float error there is ~1e-4,
+  far under the half pixel `roundToInt` needs).
+  **So the next `overlay_rotation.sh` run must also show** `after-release` = the `dragged-far`
+  frame, not the resting frame, in all four rotations — and the script's end-of-run restore drag
+  has to really bring the overlay back, instead of appearing to work because nothing ever moved.
 
 #### Screen-off costs latency (measured)
 
@@ -212,6 +256,189 @@ outside a listed set is malformed (drop, keep the connection). `Codec.checkEnums
 
 The third old gap, **no host->client ping**, is closed as "won't do": the host cannot measure RTT
 or show link quality, and that is accepted.
+
+### F6 (2026-09-20) — drag the buttons onto the X to put them away; 20 s silence close
+
+The rider's complaint: the floating TALK/MUSIC buttons could not be got rid of, "even if I close
+the app". Two causes — there was no gesture for it, and only `MainActivity` watched the
+`overlayEnabled` setting, so with the activity gone the switch changed nothing. Code only,
+**nothing below is device-verified**.
+
+- **Drag to dismiss** (`overlay/OverlayService.kt`). When a drag starts (past the touch slop) a
+  second `TYPE_APPLICATION_OVERLAY` window appears: a 112 dp circle with an ✕,
+  `FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_LAYOUT_NO_LIMITS`, so it can never take the drag
+  away from the buttons. It highlights (dark grey at 0.85 scale -> red, white ring, full size)
+  while the buttons are over it, and is removed on UP, on CANCEL and in `onDestroy`.
+- **Hit rule** (pure, `OverlayPlacement.overDismiss`, tested): the dragged window's centre x is
+  over the target **and its bottom edge has reached the target's vertical centre**
+  (`(top+bottom)/2`), i.e. the target grown downwards to the bottom of the usable area. It cannot
+  be plain centre-in-rect: the clamp parks the window's bottom edge *at* the usable bottom, i.e.
+  below the target's own bottom edge, and in landscape the buttons window (564 px) is more than
+  half the usable height (1017 px), so a centre-in-rect target would have ~12 px of reachable
+  travel. **Since F7 the vertical line is the target's centre, not its top edge** (it was the top
+  edge until 2026-09-20 F7, which made 72 % of the landscape travel count — a drag released
+  anywhere near the horizontal centre hid the buttons almost regardless of height). The line sits
+  a fixed 178 px above the usable bottom, so the same 178 px of travel count in every rotation:
+  **39 % of the vertical travel in landscape, 10 % in portrait** (was 72 % / 20 %). The other half
+  of what makes the gesture deliberate is the horizontal condition (the centre must be in the
+  middle 294 px of 2268, ~15 % of the horizontal travel).
+- **On a drop on the X**: the drag is *not* saved — `fx`/`fy` are restored to the values they had
+  at ACTION_DOWN (nothing was written to `overlay.xml` mid-drag, so the stored position is still
+  the old one), haptic feedback, `overlayEnabled=false` through `MotopartyApp.instance.settings`,
+  `stopSelf()`. The F5 fix in the MOVE branch (fx/fy follow the finger so the layout listener's
+  `place()` is a no-op mid-drag) is untouched.
+- **ACTION_CANCEL never dismisses** (decision): the system taking the gesture away is not the
+  rider letting go. CANCEL ends the drag and saves the position exactly as before F6.
+- **The service follows the setting** (`LinkService.onCreate`): it collects
+  `settings.flow.map { it.overlayEnabled }.distinctUntilChanged()` and calls `maybeStartOverlay`
+  plus a notification re-post. A `StateFlow` replays, so this also does the initial start, and the
+  now-redundant collector in `MainActivity` was removed (the permission path is unchanged: the
+  activity's `onResume` still calls `maybeStartOverlay`, which is what picks up a newly granted
+  "draw over other apps").
+- **"Show buttons" notification action** (`LinkService.notification`): Android shows three
+  actions, so while the buttons are hidden (and `canDrawOverlays`) the middle slot shows
+  "Show buttons" instead of "Command" — Talk/End talk and Stop always stay. It fires
+  `ACTION_SHOW_OVERLAY` ("com.kivan.motoparty.SHOW_OVERLAY"), handled in `onStartCommand`, which
+  only writes `overlayEnabled=true`; the collector does the rest. The `intent?.action == null ->
+  startInForeground()` path is untouched (the new action is non-null, so it does not re-claim the
+  FGS types).
+- **`TalkController.SILENCE_MS` is now `20_000L`** (was 10 s; user decision of today; PROTOCOL.md
+  is the coordinator's). `TalkControllerTest` and the 10 s mentions in `README.md` and
+  `VoiceEngine.kt` were updated. Section 2's old "10 s silence close, on device at last" bench
+  entry is history and was left alone — but the **next silence bench must wait 20 s**
+  (`tools/bench/beeps.sh` takes `SILENCE_S`; the coordinator owns `tools/`).
+
+**Window titles, for `dumpsys window windows`.** The buttons window is now titled
+`com.kivan.motoparty:buttons` and the X target `MotopartyDismiss`. This was chosen so that
+`tools/bench/bench.py cmd_frame` (which takes the **first** `Window #n Window{...}` block whose
+header contains the package *and* has `ty=APPLICATION_OVERLAY`) keeps picking the buttons: the
+buttons' title still contains the package string, the X's deliberately does not, so the X is
+invisible to `bench.py frame` even in `overlay_rotation.sh`'s mid-drag dump (that script dumps
+`dumpsys window windows` 4 s into a 5 s swipe — with a package-bearing title the X, added last and
+therefore likely higher in z-order, could have been picked instead of the buttons). `bench.py` was
+**not** edited. To watch the X itself, grep for `MotopartyDismiss`.
+
+**The X target's geometry** (so a bench script can compute a drop point), all in the window's
+inset parent frame — bounds minus the `systemBars|displayCutout` insets, i.e. the same frame
+`params.x/y` use; add the frame's origin to get display coordinates:
+
+    size   = 112 dp  (294 px at density 2.625), square, circular background
+    left   = (usableW - size) / 2          right  = left + size
+    bottom = usableH - 12 dp (31 px)       top    = bottom - size
+
+Portrait (usable 1080 x 2205): `[393,1880][687,2174]`. Landscape (usable 2268 x 1017):
+`[987,692][1281,986]`. A drop counts when the buttons window's centre x is in `left..right` and
+its bottom edge is at or below `(top+bottom)/2` (portrait 2027, landscape 839; F7 — it was `top`
+before) — dragging to the bottom centre of the screen always satisfies both.
+
+**Verify on the device (F6):**
+
+1. Drag the buttons: the ✕ appears at the bottom centre while the finger is down, and disappears
+   on release. `dumpsys window windows | grep -A2 MotopartyDismiss` mid-drag shows its frame.
+2. Drag them *onto* the ✕ and let go: the ✕ turns red as they come over it, the buttons vanish,
+   the notification's middle action becomes "Show buttons".
+   `adb shell run-as com.kivan.motoparty cat shared_prefs/settings.xml` must show
+   `<boolean name="overlayEnabled" value="false" />` (file `settings.xml`, key `overlayEnabled`;
+   the *position* still lives in `shared_prefs/overlay.xml`, keys `fx`/`fy`).
+3. `shared_prefs/overlay.xml` must be **unchanged** by that drag (same `fx`/`fy`, same mtime):
+   a dismissed drag is not a move.
+4. Tap "Show buttons" on the notification: the buttons come back **at the position they had
+   before the dismissing drag**, `overlayEnabled` is `true` again and the action goes back to
+   "Command". The app's own switch must still do the same with the app open.
+5. A drag released **anywhere else** still saves: the window stays where it was dropped and
+   `fx`/`fy` in `overlay.xml` change (the F5 regression test — `overlay_rotation.sh` covers it).
+6. Swipe the app away in recents (the foreground service and its notification stay; do **not**
+   `am force-stop`, which kills the service too): with no activity left, both the drop-on-X and
+   "Show buttons" must still work. That is the whole point of moving the collector into
+   `LinkService` — and it is the rider's original complaint ("even if I close the app").
+7. Talk with nobody speaking now closes after **20 s**, `talk.close{reason:"silence"}`.
+
+### F7 (2026-09-20) — the "live" beep now means "your mic is live, talk now"
+
+User decision of today: **no pre-roll buffer** (words spoken before the AirPods mic delivers were
+never captured and cannot be saved) — instead the go-beep must be truthful. Same tone, no protocol
+change (PROTOCOL.md "Talk flow" step 2 already only says: play the "live" earcon when the mic is
+open). Code only, **nothing below is device-verified**.
+
+**What was wrong.** `LinkHost` fired LIVE at `opened.join()` + a fixed `LIVE_EARCON_DELAY_MS =
+400`, i.e. 400 ms after `enterCall` + `VoiceEngine.start` *returned*, which has nothing to do with
+the microphone. On `tools/bench/results/2026-09-20-d1-talk-5` (AirPods): `enterCall` takes
+199–563 ms, the **SCO link is up 1.17–1.38 s after the press** (cycle 1: up at 0.97 s, dropped, up
+for good at 1.88 s), and the **first captured frame comes 62–166 ms after SCO up**. So cycle 1's
+earcon was issued ~630 ms *before* the link existed; it was only heard later because the output
+blocks until the link is up. "First capture frame" alone is no better: in the fast re-open a frame
+arrived **0.76 s before** SCO was up (the mic was delivering something, not the rider's voice).
+
+**The rule now** (`audio/LiveCue.kt`, pure, 10 JVM tests). LIVE fires when **both** hold:
+(a) the capture loop of this talk read its **first frame**, and (b) the **route is really up** —
+for a Bluetooth SCO device that means the SCO audio link is connected; any other route (earpiece,
+speaker, wired, `TYPE_BLE_HEADSET`) is up the moment `enterCall` returns. Exactly one fire per
+open, and a fallback timer (**2.5 s** after the open, `LiveCue.TIMEOUT_MS`) plays it anyway so the
+beep can never be missing. The old guards are kept: talk still open and `session == talkSession`.
+Cases covered by the tests: normal order, capture before SCO, SCO before the route reports, an SCO
+flap before the beep (cycle 1 — one beep, at the second connect), a non-Bluetooth route, the
+timeout, close before ready (no beep at all), stale-session events, and a collapsed fast re-open.
+
+**Wiring:**
+- **`audio/ScoWatch.kt`** (new, next to `AudioModeWatch`): the SCO link state cached off Main, on
+  its own daemon thread `motoparty-sco` (the registration itself is posted there too). It listens
+  to **two** broadcasts, because one of them may not exist on this phone:
+  `AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED` (`SCO_AUDIO_STATE_CONNECTED`) — the classic
+  signal, documented for the deprecated `startBluetoothSco()` path — and
+  `BluetoothHeadset.ACTION_AUDIO_STATE_CHANGED` (`STATE_AUDIO_CONNECTED`), sent by the Bluetooth
+  stack itself (needs `BLUETOOTH_CONNECT`, which we hold). Neither can fire early: both describe
+  the link, not the request for one. It logs one line per change, `ScoWatch: sco connected
+  (ACTION_SCO_AUDIO_STATE_UPDATED|ACTION_AUDIO_STATE_CHANGED|sticky)`, which is how a bench run
+  tells us which one is real here. **Why two:** Android 17 moved SCO management from the Bluetooth
+  stack into the audio framework ("Audio Managed SCO",
+  `source.android.com/docs/core/audio/sco-audio-mgmt`), where device state is reported through
+  `AudioDeviceCallback` "instead of legacy broadcasts" — so on this exact phone the classic
+  broadcast is doubtful, and the Bluetooth one is the backstop. If *both* stay silent, every talk
+  beeps on the timer and says `(fallback)`; the fix would then be an `AudioDeviceCallback` on the
+  SCO **input** device. (`AudioRecord.getRoutedDevice()` is **not** a candidate: the bench shows
+  the input patch to `bluetooth-sco-headset-microphones` created 0.8 s *before* the link is up.)
+- **`AudioRouter`** publishes `selectedType` (the `AudioDeviceInfo` type) next to `selectedDevice`
+  and derives `needsSco`; both cleared by `exitCall`. The legacy (<31) `startBluetoothSco` branch
+  counts as SCO too.
+- **`VoiceEngine`** takes an `onCaptureUp(atMs)` callback, invoked once per `start` from the
+  capture thread where the `capture up` line is logged — it only posts to Main, never blocks the
+  loop — and keeps `captureUpAtMs`. That field is cleared by `start` only, so an engine **carried
+  across a collapsed close/open keeps it**: the re-opened talk asks for it when its route job
+  completes (no new first frame will ever come) and it counts as +0 ms.
+- **`TalkAudio.ownerSession`** exposes which talk the running engine belongs to, so a capture-up
+  callback lands on the session that owns the mic *now*.
+- `LIVE_EARCON_DELAY_MS` is gone. `SCO_SETTLE_MS` (the recognizer's LISTEN earcon) is untouched.
+  The LIVE earcon is still played through `LinkHost.earcon(LIVE, call = true)`, i.e. on the audio
+  thread, in call mode (F3).
+
+**One log line per talk, for the bench** (`Motoparty:` tag, `Hub.log`; `LiveCueTest.the log line
+is what the bench parses` pins it), every offset in ms from the talk open:
+
+    live cue: session <n>, capture up <+N ms|none>, sco <+N ms|n/a|unknown>, fired +<N> ms (both|fallback)
+
+e.g. `live cue: session 8, capture up +1310 ms, sco +1240 ms, fired +1312 ms (both)`.
+`capture up none` = no frame was ever read (only possible on a `fallback`); `sco n/a` = the route
+is not a Bluetooth SCO one; `sco unknown` = the route never reported before the timer fired;
+`sco none` = an SCO route whose link was never seen up. `sco +0 ms` = the link was already up when
+this talk opened, i.e. a re-open that kept the route.
+
+**Verify on the device (F7):**
+
+1. One `live cue: …` line per talk open, and it says **`(both)`** with AirPods. `sco` should land
+   at 1.1–1.4 s and `capture up` 60–170 ms after it; `fired` = the later of the two.
+2. The beep is **heard after** the SCO link is up (the `bta_ag_sco.cc … -> BTA_AG_SCO_OPEN_ST`
+   line in `logcat_all`) and never before it. Speaking right after the beep must be heard by the
+   other phone in full — that is the whole point.
+3. `ScoWatch: sco connected (…)` appears at all, and the source in the brackets tells which
+   broadcast survives on Android 17 — note it in this file.
+4. Fast re-open (talk close + open ~300 ms apart, the `TalkAudio: re-open …: call route kept`
+   case): **exactly one** beep per open, the second one immediately (`capture up +0 ms,
+   sco +0 ms`), never two beeps for one open and never a silent open.
+5. `(fallback)` must not appear with AirPods. If it does on every talk, neither broadcast fires —
+   see the `AudioDeviceCallback` note above.
+6. An SCO flap inside one talk still beeps once.
+7. The closed / error / OK / LISTEN earcons are unchanged (still one `AudioTrack: stop(..)` line
+   each, F5).
 
 
 ## 3. Not done, in priority order
@@ -370,6 +597,71 @@ section 2. What is left:
      margin; the new `capture:` line (device frame position vs frames read) decides it: device ≈
      read -> the input did not deliver (route), device > read -> the loop overran.
 
+   **D1 bench 4 (2026-09-20, `tools/bench/results/2026-09-20-d1-talk-4/`, AirPods) -> offline fix,
+   JVM-tested, not yet on the device** (115 tests, 0 fail, 2 skipped; was 111).
+   The TalkAudio collapse worked on the earpiece but *never
+   ran* with the AirPods: `Motoparty: talk open (by client)` at 172.998 is 11 ms after the audio
+   thread's `exitCall 573 ms (clearCommunicationDevice 572, setMode 0)` returned at 172.987,
+   although the client's `talk.open` had reached the phone at ~172.07. Pings were answered in
+   11 ms throughout (reader thread, `ControlServer.handle`), so the link was fine — **Main was
+   blocked for ~0.9 s**, and the re-open only reached `TalkAudio` once the teardown had fully
+   settled. The next `enterCall` then set the device at 173.077 while the system processed our
+   `clearCommunicationDevice` at 173.078: a clear and a set crossing inside AudioService.
+   What blocked Main (found by reading every Main-side call into AudioManager/AudioTrack/
+   MediaPlayer/focus between `talk closed` and the next `talk open`; all fixed):
+   - `LinkHost.micAvailable()` read `audioManager.mode` — a binder call into AudioService, which
+     our own `exitCall` was holding — on the path of the client's `talk.open`.
+   - `Earcons.play(…)` on Main (the two ERROR earcons, the trigger ERROR ones, the volume OK one,
+     the announcer's, and the recognizer's LISTEN): building an `AudioTrack` goes through
+     audioserver, which is busy for the whole route switch. Also `adjustStreamVolume`, same reason.
+     (The live and closed earcons were already off Main.)
+   The fixes:
+   - **`audio/AudioModeWatch.kt`** (new): `AudioManager.getMode()` cached off Main, refreshed by
+     `AudioManager.OnModeChangedListener` on API 31+ and by a 1 s poll below that (minSdk is 29),
+     both on a dedicated daemon thread `motoparty-audio-mode` — *not* the audio thread, so the
+     value cannot be stuck behind a route switch. `micAvailable()` now reads only local state
+     (permission, FGS type, cached mode), so it cannot block. Protocol behaviour is unchanged:
+     refusal is still `talk.close{by:"host",reason:"unavailable"}`, nothing broadcast,
+     `state.talk` false. The cached mode can be up to ~1 s stale on API<31 during a switch, which
+     does not matter: the question is only "cellular call / ringing" (`MODE_IN_CALL`,
+     `MODE_RINGTONE`), never our own `MODE_IN_COMMUNICATION`.
+   - **Earcons go on the audio thread** (`LinkHost.earcon(kind, call)`), not on a thread of their
+     own: ordering against `enterCall`/`exitCall` is then defined, so the closed/error/OK tones
+     are still built after the route is back (media mode) and the live/listen ones inside call
+     mode — the price is that an earcon requested during a switch is heard after it (≤1.3 s),
+     which for a "that did not work" tone is the right trade. `Announcer` takes the player as a
+     lambda (`earconPlayer`) so it does not reach for Main either.
+   - **New instrument, `core/MainLag.kt`**: every control message is already stamped on the reader
+     thread (`ControlServer.Event.Received.atMs`); the host now compares that with the moment it
+     dequeues the event and logs, once per occurrence and only from 100 ms up,
+     `Motoparty: control message talk.open waited 930 ms for Main`. Pure builder, format pinned by
+     `MainLagTest` (the message name comes from `Message.wireType`, pinned against every
+     `@SerialName`). Nothing is allocated below the threshold.
+   - **Collapse path re-checked against the device ordering.** `TalkAudio.settle()` re-reads
+     `wanted` after `voiceStop()` and immediately before `exitCall()`, so the only remaining
+     window is a re-open arriving *while `exitCall` is inside the Bluetooth stack* — which cannot
+     be called back. In that case the request is still taken at once (`open()` only records it and
+     posts a settle; Main never waits) and the route is re-entered exactly once, after the exit
+     returned. New test `TalkAudioTest.reopenWhileExitCallIsBlockedReentersTheRouteExactlyOnce`
+     (the fake router blocks in `exitCall`): ops are exactly
+     `enter, start, stop, exit, earcon, enter, start`, one exit, `depth` 1. With Main unblocked the
+     bench's re-open (172.07, i.e. while `voice.stop` was still running) lands in the earlier
+     branch and logs `re-open during teardown`, so the close+open pair does not happen at all.
+   - **Not changed**: `AudioRouter.enterCall`'s `am.availableCommunicationDevices` (174–523 ms
+     because it is called right after `setMode`, while AudioService tears down A2DP). Reading the
+     list *before* `setMode` looks safe — the list is built from the connected communication-capable
+     output devices, not from the mode, so the BT SCO/BLE device is in it in `MODE_NORMAL` too —
+     but that is read off AOSP behaviour, not measured here, and it would not shorten the 0.9–1.7 s
+     Bluetooth link setup, which is not ours. If someone wants it: log the list once in
+     `MODE_NORMAL` on a bench run first, then move the read.
+   **Next device run (`tools/bench/talk_cycles.sh`)**: in the fast re-open with AirPods expect a
+   `TalkAudio: re-open during teardown: call route kept (session N)` line, **no**
+   `control message … waited … for Main` lines anywhere, and `talk.open` answered in <100 ms in
+   the peer's request table (it was 940 ms in this run). Still unverified on the device: the mode
+   listener actually firing (`AudioModeWatch` has no logcat line of its own — a refused
+   registration logs `AudioModeWatch: mode listener refused`), and that a delayed error earcon is
+   still audible where it should be.
+
 4. **Finish bench-testing the `"unavailable"` flow.** The parts done on device are the volume
    rules (verified) and the codec drop of `volumeUp`/`volumeDown` (verified). The two
    `"unavailable"` paths are covered by `TalkControllerTest` and code review but were **not**
@@ -402,6 +694,11 @@ section 2. What is left:
     always runs even if its waiter is cancelled, so enter/exit pairs never come apart. `post`
     returns a `Job` that completes when the block has run or failed; a post after `shutdown` is
     dropped and returns a completed job.
+  - **Main never calls the audio system** (D1 bench 4 fix, section 3 item 3): no `AudioManager`
+    getter, no `AudioTrack`, no `adjustStreamVolume` on Main — they are binder calls into the very
+    service our own route switch is holding. The mode is cached by `audio/AudioModeWatch.kt`, and
+    every earcon goes through `LinkHost.earcon`, i.e. the audio thread. `core/MainLag.kt` logs
+    `control message <t> waited N ms for Main` if a control message ever waits ≥100 ms again.
   - **Main still decides and sends first**: `LinkHost.applyTalk` sends `talk.open`/`talk.close` +
     `state` (and the resume `music.play`) before queueing the audio work.
   - **Failures come back on Main**: a throwing block is reported through `scope.launch` on the
@@ -492,7 +789,7 @@ section 2. What is left:
 
 ## 5. First three things to do
 
-1. `./gradlew assembleDebug test` (expect 111 tests, 2 skipped), `adb -s 192.168.1.100:5555 install -r
+1. `./gradlew assembleDebug test` (expect 122 tests, 2 skipped), `adb -s 192.168.1.100:5555 install -r
    app/build/outputs/apk/debug/app-debug.apk`, re-grant the four permissions + the
    `SYSTEM_ALERT_WINDOW` appop, and rerun the peer bench (`say play album …`, `talk`, `pause`)
    to confirm the baseline in section 2.

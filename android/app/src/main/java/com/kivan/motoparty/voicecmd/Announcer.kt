@@ -7,8 +7,17 @@ import android.util.Log
 import com.kivan.motoparty.audio.Earcons
 import java.util.Locale
 
-/** Speaks confirmations ("Playing X by Y") with an optional earcon in front. */
-class Announcer(context: Context) {
+/**
+ * Speaks confirmations ("Playing X by Y") with an optional earcon in front.
+ *
+ * [earconPlayer] exists so the tone is not built on Main: the host hands in a lambda that posts
+ * to the audio thread (see `LinkHost.earcon`). The default is the direct call, for tests and any
+ * caller without an audio thread.
+ */
+class Announcer(
+    context: Context,
+    private val earconPlayer: (Earcons.Kind) -> Unit = { Earcons.play(it, call = false) },
+) {
     private var ready = false
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
         ready = status == TextToSpeech.SUCCESS
@@ -25,7 +34,7 @@ class Announcer(context: Context) {
     }
 
     fun announce(text: String, earcon: Earcons.Kind?, language: String) {
-        earcon?.let { Earcons.play(it, call = false) }
+        earcon?.let(earconPlayer)
         if (!ready) return
         runCatching { tts.language = Locale.forLanguageTag(language) }
         // Leave room for the earcon before the voice starts.

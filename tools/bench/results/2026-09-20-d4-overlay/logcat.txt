@@ -1,0 +1,19 @@
+         1789860155.829 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860155.920 17762 17762 I Motoparty: talk: no client connected
+         1789860160.736 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860160.822 17762 17762 I Motoparty: talk: no client connected
+         1789860166.305 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860166.395 17762 17762 I Motoparty: talk: no client connected
+         1789860171.247 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860171.325 17762 17762 I Motoparty: talk: no client connected
+         1789860176.872 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860176.956 17762 17762 I Motoparty: talk: no client connected
+         1789860181.923 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860182.008 17762 17762 I Motoparty: talk: no client connected
+         1789860187.589 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860187.655 17762 17762 I Motoparty: talk: no client connected
+         1789860192.580 17762 17762 I Motoparty: trigger TALK from OVERLAY
+         1789860192.666 17762 17762 I Motoparty: talk: no client connected
+         1789860198.330 17762 17762 I Motoparty: trigger MUSIC from OVERLAY
+         1789860198.341 17762 17884 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789860198.342 17762 17884 I AudioRouter: enterCall 5 ms (setMode 1, devices 1, setCommunicationDevice 1)

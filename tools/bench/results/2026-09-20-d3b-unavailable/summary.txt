@@ -1,0 +1,16 @@
+(a) client mic unavailable, talk pressed on the host:
+  [ok] << talk.open{by:host}
+  [ok] >> talk.close{by:client,reason:unavailable}
+  [ok] << talk.close (host broadcast)
+  [ok] << state{talk:false} last
+  [ok] logcat: client microphone unavailable
+(b) host mic unavailable (RECORD_AUDIO revoked), talk asked by the client:
+  [ok] TALK REFUSED by host
+  [ok] connected (a state arrived) and state.talk never true
+  [ok] logcat: talk.open refused: microphone unavailable
+permission afterwards: android.permission.RECORD_AUDIO: granted=true, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+
+errors in logcat: 1, crash buffer lines: 0
+  E ActivityThread: Failed to find provider info for androidx.car.app.connection
+
+VERDICT: LOOK AT THE FAILS ABOVE

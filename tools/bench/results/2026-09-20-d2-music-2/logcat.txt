@@ -1,0 +1,282 @@
+         1789859685.386 17762 17814 I ControlServer: #4 connected from /192.168.1.102:58848
+         1789859685.416 17762 17853 I ControlServer: #4 is the client: arch
+         1789859685.425 17762 17762 I Motoparty: client "arch" connected from 192.168.1.102
+         1789859690.320 17762 17762 I Motoparty: command: "play song bohemian rhapsody"
+         1789859692.136 17762 17810 I DMCodecAdapterFactory: Creating an asynchronous MediaCodec adapter for track type audio
+         1789859692.137 17762 17810 I MediaCodec: Retry enabled for HDCP failure
+         1789859692.156 17762 17810 I ApexCodecsLazy: ApexCodecs loaded
+         1789859692.156 17762 17810 I Codec2Client: Available Codec2 services: "default" "default1" "default9" "software" "__ApexCodecs__"
+         1789859692.162 17762 17810 W kivan.motoparty: Failed to query component store for system resources: 6
+         1789859692.163 17762 23139 D CCodec  : allocate(c2.android.aac.decoder)
+         1789859692.164 17762 23139 I CCodec  : setting up 'default' as default (vendor) store
+         1789859692.171 17762 17762 I Motoparty: announce: Playing Bohemian Rhapsody by Queen
+         1789859692.178 17762 23139 I CCodec  : Created component [c2.android.aac.decoder] for [c2.android.aac.decoder]
+         1789859692.178 17762 23139 D CCodecConfig: read media type: audio/mp4a-latm
+         1789859692.180 17762 23139 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.max-count.values
+         1789859692.180 17762 23139 D ReflectedParamUpdater: extent() != 1 for single value type: output.subscribed-indices.values
+         1789859692.180 17762 23139 D ReflectedParamUpdater: extent() != 1 for single value type: input.buffers.allocator-ids.values
+         1789859692.180 17762 23139 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.allocator-ids.values
+         1789859692.180 17762 23139 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.allocator-ids.values
+         1789859692.180 17762 23139 D ReflectedParamUpdater: extent() != 1 for single value type: output.buffers.pool-ids.values
+         1789859692.181 17762 23139 D ReflectedParamUpdater: extent() != 1 for single value type: algo.buffers.pool-ids.values
+         1789859692.183 17762 23139 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789859692.183 17762 23139 D CCodecConfig: c2 config diff is Dict {
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 coded.aac-packaging.value = 0
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 coded.bitrate.value = 64000
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 coded.pl.level = 0
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 coded.pl.profile = 8192
+         1789859692.183 17762 23139 D CCodecConfig:   c2::i32 coding.drc.album-mode.value = 0
+         1789859692.183 17762 23139 D CCodecConfig:   c2::float coding.drc.attenuation-factor.value = 1
+         1789859692.183 17762 23139 D CCodecConfig:   c2::float coding.drc.boost-factor.value = 1
+         1789859692.183 17762 23139 D CCodecConfig:   c2::i32 coding.drc.compression-mode.value = 3
+         1789859692.183 17762 23139 D CCodecConfig:   c2::i32 coding.drc.effect-type.value = 3
+         1789859692.183 17762 23139 D CCodecConfig:   c2::float coding.drc.encoded-level.value = 0.25
+         1789859692.183 17762 23139 D CCodecConfig:   c2::float coding.drc.reference-level.value = -16
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 input.buffers.max-size.value = 8192
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 input.delay.value = 0
+         1789859692.183 17762 23139 D CCodecConfig:   string input.media-type.value = "audio/mp4a-latm"
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 output.delay.value = 2
+         1789859692.183 17762 23139 D CCodecConfig:   c2::float output.drc.output-loudness.value = 0.25
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 output.large-frame.max-size = 0
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 output.large-frame.threshold-size = 0
+         1789859692.183 17762 23139 D CCodecConfig:   string output.media-type.value = "audio/raw"
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 raw.channel-count.value = 1
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 raw.channel-mask.value = 0
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 raw.max-channel-count.value = 8
+         1789859692.183 17762 23139 D CCodecConfig:   c2::u32 raw.sample-rate.value = 44100
+         1789859692.183 17762 23139 D CCodecConfig: }
+         1789859692.187 17762 23139 I MediaCodec: MediaCodec will operate in async mode
+         1789859692.189 17762 17810 I MediaCodec: media_quality service unavailable, skipping updatePictureProfile
+         1789859692.189 17762 23139 D CCodec  : [c2.android.aac.decoder] buffers are bound to CCodec for this session
+         1789859692.189 17762 23139 D CCodecConfig: no c2 equivalents for log-session-id
+         1789859692.189 17762 23139 D CCodecConfig: no c2 equivalents for importance
+         1789859692.189 17762 23139 D CCodecConfig: no c2 equivalents for flags
+         1789859692.192 17762 23139 D CCodecConfig: c2 config diff is   c2::u32 raw.channel-count.value = 2
+         1789859692.192 17762 23139 D CCodec  : encoding statistics level = 0
+         1789859692.192 17762 23139 D CCodec  : setup formats input: AMessage(what = 0x00000000) = {
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-album-mode = 0
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-boost-level = 127
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-cut-level = 127
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-effect-type = 3
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-encoded-target-level = -1
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-max-output-channel_count = 8
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-target-ref-level = 64
+         1789859692.192 17762 23139 D CCodec  :   int32_t bitrate = 64000
+         1789859692.192 17762 23139 D CCodec  :   int32_t channel-count = 2
+         1789859692.192 17762 23139 D CCodec  :   int32_t channel-mask = 0
+         1789859692.192 17762 23139 D CCodec  :   int32_t level = 0
+         1789859692.192 17762 23139 D CCodec  :   int32_t max-input-size = 8192
+         1789859692.192 17762 23139 D CCodec  :   int32_t max-output-channel-count = 8
+         1789859692.192 17762 23139 D CCodec  :   string mime = "audio/mp4a-latm"
+         1789859692.192 17762 23139 D CCodec  :   int32_t profile = 2
+         1789859692.192 17762 23139 D CCodec  :   int32_t sample-rate = 44100
+         1789859692.192 17762 23139 D CCodec  : }
+         1789859692.192 17762 23139 D CCodec  : setup formats output: AMessage(what = 0x00000000) = {
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-album-mode = 0
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-boost-level = 127
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-cut-level = 127
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-effect-type = 3
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-drc-output-loudness = -1
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-encoded-target-level = -1
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-max-output-channel_count = 8
+         1789859692.192 17762 23139 D CCodec  :   int32_t aac-target-ref-level = 64
+         1789859692.192 17762 23139 D CCodec  :   int32_t buffer-batch-max-output-size = 0
+         1789859692.192 17762 23139 D CCodec  :   int32_t buffer-batch-threshold-output-size = 0
+         1789859692.192 17762 23139 D CCodec  :   int32_t channel-count = 2
+         1789859692.192 17762 23139 D CCodec  :   int32_t channel-mask = 0
+         1789859692.192 17762 23139 D CCodec  :   int32_t max-output-channel-count = 8
+         1789859692.192 17762 23139 D CCodec  :   string mime = "audio/raw"
+         1789859692.192 17762 23139 D CCodec  :   int32_t sample-rate = 44100
+         1789859692.192 17762 23139 D CCodec  :   int32_t android._config-pcm-encoding = 2
+         1789859692.192 17762 23139 D CCodec  : }
+         1789859692.192 17762 23139 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789859692.192 17762 23139 E kivan.motoparty: Failed to query component interface for required system resources: 6
+         1789859692.192 17762 17810 D MediaCodec: keep callback message for reclaim
+         1789859692.210 17762 23139 D C2Store : debug.c2.use_dmabufheaps set, forcing DMABUF Heaps
+         1789859692.211 17762 23139 D C2Store : Using DMABUF Heaps
+         1789859692.214 17762 23139 D CCodecBufferChannel: [c2.android.aac.decoder#690] Created input block pool with allocatorID 16 => poolID 17 - OK (0)
+         1789859692.216 17762 23139 I CCodecBufferChannel: [c2.android.aac.decoder#690] Created output block pool with allocatorID 16 => poolID 8705 - OK
+         1789859692.216 17762 23139 D CCodecBufferChannel: [c2.android.aac.decoder#690] Configured output block pool ids 8705 => OK
+         1789859692.235 17762 23139 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789859692.254 17762 17773 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789859692.255 17762 17810 D MediaCodec: keep callback message for reclaim
+         1789859692.255 17762 23139 D CCodecConfig: c2 config diff is   c2::float coding.drc.reference-level.value = -31
+         1789859692.255 17762 23139 D CCodecConfig:   c2::u32 raw.channel-mask.value = 12
+         1789859692.256 17762 23139 D CCodecBufferChannel: [c2.android.aac.decoder#690] Discard frames from previous generation.
+         1789859692.256 17762 23139 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789859692.256 17762 23139 D CCodecConfig: c2 config diff is   c2::i32 coding.drc.compression-mode.value = 2
+         1789859692.257 17762 23139 D CCodecBufferChannel: [c2.android.aac.decoder#690] flushed work; ignored.
+         1789859692.257 17762 23139 D CCodecBufferChannel: [c2.android.aac.decoder#690] Discard frames from previous generation.
+         1789859692.262 17762 23139 D CCodecBuffers: [c2.android.aac.decoder#690:1D-Output] popFromStashAndRegister: at 1000000265578us, output format changed to AMessage(what = 0x00000000) = {
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-drc-album-mode = 0
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-drc-boost-level = 127
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-drc-cut-level = 127
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-drc-effect-type = 3
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-drc-output-loudness = -1
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-encoded-target-level = -1
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-max-output-channel_count = 8
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t aac-target-ref-level = 124
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t buffer-batch-max-output-size = 0
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t buffer-batch-threshold-output-size = 0
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t channel-count = 2
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t channel-mask = 12
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t max-output-channel-count = 8
+         1789859692.262 17762 23139 D CCodecBuffers:   string mime = "audio/raw"
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t sample-rate = 44100
+         1789859692.262 17762 23139 D CCodecBuffers:   int32_t android._config-pcm-encoding = 2
+         1789859692.262 17762 23139 D CCodecBuffers: }
+         1789859692.272 17762 17810 I kivan.motoparty: hiddenapi: Accessing hidden method Landroid/media/AudioTrack;->getLatency()I (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/media3/exoplayer/audio/AudioTrackPositionTracker; (domain=app, TargetSdkVersion=37) using reflection: allowed
+         1789859692.483 17762 17762 I SyncController: start warm: lead 300 ms, 299 ms to the anchor point
+         1789859692.495 17762 17762 I SyncController: trace: pos 254 ms, expected -33 ms, err 287 ms, speed 1.0, phase start-warm, t 1, playing true, whenReady true, state 3
+         1789859692.584 17762 17810 D AudioTrack: getTimestamp_l(20394): stale timestamp time corrected, currentTimeNanos: 1286063684319480 < limitNs: 1296107388835127 < mStartNs: 1296107618835127
+         1789859693.496 17762 17762 I SyncController: trace: pos 978 ms, expected 968 ms, err 10 ms, speed 1.0, phase start-warm, t 1002, playing true, whenReady true, state 3
+         1789859694.497 17762 17762 I SyncController: trace: pos 1724 ms, expected 1969 ms, err -245 ms, speed 1.0, phase start-warm, t 2003, playing true, whenReady true, state 3
+         1789859695.501 17762 17762 I SyncController: trace: pos 2957 ms, expected 2973 ms, err -16 ms, speed 1.0, phase start-warm, t 3007, playing true, whenReady true, state 3
+         1789859696.503 17762 17762 I SyncController: trace: pos 3965 ms, expected 3974 ms, err -9 ms, speed 1.0, phase start-warm, t 4008, playing true, whenReady true, state 3
+         1789859696.507 17762 17762 I SyncController: check: median err -101 ms (spread 232 ms, n 9), waiting for confirmation
+         1789859697.501 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 241/247 (recycle/alloc) - 6/249 (fetch/transfer)
+         1789859698.525 17762 17762 I SyncController: drift -36 ms (start latency 325 ms, cold 300 ms)
+         1789859702.912 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 475/481 (recycle/alloc) - 6/483 (fetch/transfer)
+         1789859708.215 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 702/708 (recycle/alloc) - 6/710 (fetch/transfer)
+         1789859708.541 17762 17762 I SyncController: check: median err -111 ms (spread 250 ms, n 9), waiting for confirmation
+         1789859710.556 17762 17762 I SyncController: drift -113 ms: speed 1.02825 for 4000 ms
+         1789859710.562 17762 17762 I SyncController: trace: pos 18021 ms, expected 18034 ms, err -13 ms, speed 1.02825, phase nudge, t 1, playing true, whenReady true, state 3
+         1789859710.591 17762 23139 D CCodecConfig: no recognized params in: Dict {
+         1789859710.591 17762 23139 D CCodecConfig:   c2::float algo.rate.value = 45345.8
+         1789859710.591 17762 23139 D CCodecConfig:   c2::float ctrl.operating-rate.value = 45345.8
+         1789859710.591 17762 23139 D CCodecConfig: }
+         1789859711.564 17762 17762 I SyncController: trace: pos 18931 ms, expected 19036 ms, err -105 ms, speed 1.02825, phase nudge, t 1003, playing true, whenReady true, state 3
+         1789859712.566 17762 17762 I SyncController: trace: pos 20001 ms, expected 20038 ms, err -37 ms, speed 1.02825, phase nudge, t 2004, playing true, whenReady true, state 3
+         1789859713.461 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 933/939 (recycle/alloc) - 6/941 (fetch/transfer)
+         1789859713.568 17762 17762 I SyncController: trace: pos 21060 ms, expected 21039 ms, err 21 ms, speed 1.02825, phase nudge, t 3006, playing true, whenReady true, state 3
+         1789859714.566 17762 23139 D CCodecConfig: no recognized params in: Dict {
+         1789859714.566 17762 23139 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789859714.566 17762 23139 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789859714.566 17762 23139 D CCodecConfig: }
+         1789859714.571 17762 17762 I SyncController: trace: pos 22071 ms, expected 22043 ms, err 28 ms, speed 1.0, phase nudge, t 4010, playing true, whenReady true, state 3
+         1789859715.569 17762 17762 I SyncController: nudge done: drift 1 ms
+         1789859715.573 17762 17762 I SyncController: trace: pos 23042 ms, expected 23045 ms, err -3 ms, speed 1.0, phase nudge, t 5011, playing true, whenReady true, state 3
+         1789859716.574 17762 17762 I SyncController: trace: pos 24076 ms, expected 24046 ms, err 30 ms, speed 1.0, phase nudge, t 6013, playing true, whenReady true, state 3
+         1789859717.575 17762 17762 I SyncController: trace: pos 25108 ms, expected 25047 ms, err 61 ms, speed 1.0, phase nudge, t 7013, playing true, whenReady true, state 3
+         1789859718.576 17762 17762 I SyncController: trace: pos 26106 ms, expected 26048 ms, err 58 ms, speed 1.0, phase nudge, t 8015, playing true, whenReady true, state 3
+         1789859718.583 17762 17762 I SyncController: drift 33 ms (start latency 325 ms, cold 300 ms)
+         1789859718.785 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 1162/1168 (recycle/alloc) - 6/1170 (fetch/transfer)
+         1789859724.106 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 1392/1398 (recycle/alloc) - 6/1400 (fetch/transfer)
+         1789859728.597 17762 17762 I SyncController: drift 50 ms (start latency 325 ms, cold 300 ms)
+         1789859729.459 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 1623/1629 (recycle/alloc) - 6/1631 (fetch/transfer)
+         1789859734.806 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 1850/1856 (recycle/alloc) - 6/1858 (fetch/transfer)
+         1789859738.607 17762 17762 I SyncController: drift 53 ms (start latency 325 ms, cold 300 ms)
+         1789859740.202 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 2083/2089 (recycle/alloc) - 6/2091 (fetch/transfer)
+         1789859745.511 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 1(8192 size) used buffers - 2313/2319 (recycle/alloc) - 6/2321 (fetch/transfer)
+         1789859748.624 17762 17762 I SyncController: drift 34 ms (start latency 325 ms, cold 300 ms)
+         1789859750.315 17762 17810 D MediaCodec: keep callback message for reclaim
+         1789859750.319 17762 23139 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789859750.357 17762 17762 I Motoparty: talk open (by client)
+         1789859750.362 17762 17884 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789859750.362 17762 17884 I AudioRouter: enterCall 4 ms (setMode 1, devices 0, setCommunicationDevice 1)
+         1789859750.363 17762 17884 I VoiceEngine: start 0 ms
+         1789859751.165 17762 23208 I VoiceEngine: playback up 799 ms (AudioTrack 34, play 764, first write 0)
+         1789859751.342 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 4(32768 size) used buffers - 2534/2540 (recycle/alloc) - 6/2539 (fetch/transfer)
+         1789859751.524 17762 23207 I VoiceEngine: capture up 1158 ms (AudioRecord 342, effects+encoder 19, startRecording 762, first frame 34)
+         1789859757.232 17762 23143 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 6(49152 size) total buffers - 0(0 size) used buffers - 2555/2561 (recycle/alloc) - 6/2563 (fetch/transfer)
+         1789859757.234 17762 23143 D AidlBufferPoolAcc: evictor expired: 1, evicted: 1
+         1789859765.343 17762 17762 I Motoparty: talk closed (by client, trigger)
+         1789859765.348 17762 23207 I VoiceEngine: capture: read 691 frames in 13858 ms (692 expected), device 692 frames, slowest encode+send 9 ms, longest read wait 26 ms
+         1789859765.361 17762 23208 I VoiceEngine: playback: wrote 707 frames in 14196 ms (709 expected), 0 re-anchors
+         1789859765.361 17762 23208 D AudioTrack: stop(20399): called with 226240 frames delivered
+         1789859765.416 17762 17884 I VoiceEngine: talk stats: tx 691 sent of 691 captured (0 DTX), rx 748 received, 707 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789859765.417 17762 17884 I VoiceEngine: stop 72 ms (join capture 72, join playback 0)
+         1789859766.094 17762 17884 I AudioRouter: back to media mode
+         1789859766.095 17762 17884 I AudioRouter: exitCall 677 ms (clearCommunicationDevice 5, setMode 672)
+         1789859766.605 17762 17810 D MediaCodec: keep callback message for reclaim
+         1789859766.606 17762 23139 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789859766.608 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 1(8192 size) total buffers - 1(8192 size) used buffers - 2555/2562 (recycle/alloc) - 6/2563 (fetch/transfer)
+         1789859766.631 17762 23139 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789859766.654 17762 17773 W kivan.motoparty: AIBinder_linkToDeath is being called with a non-null cookie and no onUnlink callback set. Use AIBinder_DeathRecipient_setOnUnlinked to manage the lifetime of the cookie. This will become an abort.
+         1789859766.839 17762 17762 I SyncController: start cold: lead 300 ms, 300 ms to the anchor point
+         1789859766.846 17762 17762 I SyncController: trace: pos 58054 ms, expected 57762 ms, err 292 ms, speed 1.0, phase start-cold, t 1, playing true, whenReady true, state 3
+         1789859767.168 17762 17810 D AudioTrack: getTimestamp_l(20406): stale timestamp time corrected, currentTimeNanos: 1296168429977938 < limitNs: 1296182057386962 < mStartNs: 1296182058386962
+         1789859767.848 17762 17762 I SyncController: trace: pos 58756 ms, expected 58763 ms, err -7 ms, speed 1.0, phase start-cold, t 1002, playing true, whenReady true, state 3
+         1789859768.848 17762 17762 I SyncController: trace: pos 59674 ms, expected 59763 ms, err -89 ms, speed 1.0, phase start-cold, t 2002, playing true, whenReady true, state 3
+         1789859769.851 17762 17762 I SyncController: trace: pos 60546 ms, expected 60766 ms, err -220 ms, speed 1.0, phase start-cold, t 3005, playing true, whenReady true, state 3
+         1789859770.851 17762 17762 I SyncController: trace: pos 61446 ms, expected 61766 ms, err -320 ms, speed 1.0, phase start-cold, t 4005, playing true, whenReady true, state 3
+         1789859770.857 17762 17762 I SyncController: check: median err -221 ms (spread 299 ms, n 9), waiting for confirmation
+         1789859771.749 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 2774/2785 (recycle/alloc) - 11/2785 (fetch/transfer)
+         1789859772.871 17762 17762 I SyncController: check: median err -327 ms (spread 226 ms, n 9), waiting for confirmation (previous -221 ms not confirmed)
+         1789859774.884 17762 17762 I SyncController: drift -292 ms: speed 1.05 for 5840 ms
+         1789859774.887 17762 23139 D CCodecConfig: no recognized params in: Dict {
+         1789859774.887 17762 23139 D CCodecConfig:   c2::float algo.rate.value = 46305
+         1789859774.887 17762 23139 D CCodecConfig:   c2::float ctrl.operating-rate.value = 46305
+         1789859774.887 17762 23139 D CCodecConfig: }
+         1789859774.890 17762 17762 I SyncController: trace: pos 65536 ms, expected 65806 ms, err -270 ms, speed 1.05, phase nudge, t 0, playing true, whenReady true, state 3
+         1789859775.893 17762 17762 I SyncController: trace: pos 66554 ms, expected 66808 ms, err -254 ms, speed 1.05, phase nudge, t 1002, playing true, whenReady true, state 3
+         1789859776.894 17762 17762 I SyncController: trace: pos 67610 ms, expected 67809 ms, err -199 ms, speed 1.05, phase nudge, t 2004, playing true, whenReady true, state 3
+         1789859777.132 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3013/3024 (recycle/alloc) - 11/3024 (fetch/transfer)
+         1789859777.896 17762 17762 I SyncController: trace: pos 68643 ms, expected 68811 ms, err -168 ms, speed 1.05, phase nudge, t 3006, playing true, whenReady true, state 3
+         1789859778.897 17762 17762 I SyncController: trace: pos 69727 ms, expected 69812 ms, err -85 ms, speed 1.05, phase nudge, t 4007, playing true, whenReady true, state 3
+         1789859779.899 17762 17762 I SyncController: trace: pos 70767 ms, expected 70814 ms, err -47 ms, speed 1.05, phase nudge, t 5009, playing true, whenReady true, state 3
+         1789859780.737 17762 23139 D CCodecConfig: no recognized params in: Dict {
+         1789859780.737 17762 23139 D CCodecConfig:   c2::float algo.rate.value = 44100
+         1789859780.737 17762 23139 D CCodecConfig:   c2::float ctrl.operating-rate.value = 44100
+         1789859780.737 17762 23139 D CCodecConfig: }
+         1789859780.900 17762 17762 I SyncController: trace: pos 71770 ms, expected 71815 ms, err -45 ms, speed 1.0, phase nudge, t 6010, playing true, whenReady true, state 3
+         1789859781.750 17762 17762 I SyncController: nudge done: drift -183 ms
+         1789859781.902 17762 17762 I SyncController: trace: pos 72838 ms, expected 72817 ms, err 21 ms, speed 1.0, phase nudge, t 7011, playing true, whenReady true, state 3
+         1789859782.457 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3248/3259 (recycle/alloc) - 11/3259 (fetch/transfer)
+         1789859782.903 17762 17762 I SyncController: trace: pos 73818 ms, expected 73818 ms, err 0 ms, speed 1.0, phase nudge, t 8013, playing true, whenReady true, state 3
+         1789859783.904 17762 17762 I SyncController: trace: pos 74780 ms, expected 74819 ms, err -39 ms, speed 1.0, phase nudge, t 9014, playing true, whenReady true, state 3
+         1789859784.763 17762 17762 I SyncController: drift -71 ms (start latency 325 ms, cold 355 ms)
+         1789859784.905 17762 17762 I SyncController: trace: pos 75772 ms, expected 75820 ms, err -48 ms, speed 1.0, phase nudge, t 10015, playing true, whenReady true, state 3
+         1789859787.624 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3471/3482 (recycle/alloc) - 11/3482 (fetch/transfer)
+         1789859792.831 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3694/3705 (recycle/alloc) - 11/3705 (fetch/transfer)
+         1789859794.772 17762 17762 I SyncController: drift -79 ms (start latency 325 ms, cold 355 ms)
+         1789859798.446 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 3937/3948 (recycle/alloc) - 11/3948 (fetch/transfer)
+         1789859803.590 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4158/4169 (recycle/alloc) - 11/4169 (fetch/transfer)
+         1789859804.787 17762 17762 I SyncController: drift -53 ms (start latency 325 ms, cold 355 ms)
+         1789859808.787 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4382/4393 (recycle/alloc) - 11/4393 (fetch/transfer)
+         1789859814.054 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4608/4619 (recycle/alloc) - 11/4619 (fetch/transfer)
+         1789859814.803 17762 17762 I SyncController: drift 1 ms (start latency 325 ms, cold 355 ms)
+         1789859819.296 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 4834/4845 (recycle/alloc) - 11/4845 (fetch/transfer)
+         1789859824.474 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5057/5068 (recycle/alloc) - 11/5068 (fetch/transfer)
+         1789859824.818 17762 17762 I SyncController: drift -8 ms (start latency 325 ms, cold 355 ms)
+         1789859829.653 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5281/5292 (recycle/alloc) - 11/5292 (fetch/transfer)
+         1789859834.783 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5502/5513 (recycle/alloc) - 11/5513 (fetch/transfer)
+         1789859834.828 17762 17762 I SyncController: drift -45 ms (start latency 325 ms, cold 355 ms)
+         1789859839.997 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5726/5737 (recycle/alloc) - 11/5737 (fetch/transfer)
+         1789859844.841 17762 17762 I SyncController: drift -47 ms (start latency 325 ms, cold 355 ms)
+         1789859845.102 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 5945/5956 (recycle/alloc) - 11/5956 (fetch/transfer)
+         1789859850.330 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6168/6179 (recycle/alloc) - 11/6179 (fetch/transfer)
+         1789859854.852 17762 17762 I SyncController: drift -66 ms (start latency 325 ms, cold 355 ms)
+         1789859855.576 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6397/6408 (recycle/alloc) - 11/6408 (fetch/transfer)
+         1789859860.863 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6625/6636 (recycle/alloc) - 11/6636 (fetch/transfer)
+         1789859864.869 17762 17762 I SyncController: drift -65 ms (start latency 325 ms, cold 355 ms)
+         1789859865.968 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 6841/6852 (recycle/alloc) - 11/6852 (fetch/transfer)
+         1789859871.100 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7065/7076 (recycle/alloc) - 11/7076 (fetch/transfer)
+         1789859874.881 17762 17762 I SyncController: check: median err -83 ms (spread 249 ms, n 9), waiting for confirmation
+         1789859876.263 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7288/7299 (recycle/alloc) - 11/7299 (fetch/transfer)
+         1789859876.894 17762 17762 I SyncController: drift -40 ms (start latency 325 ms, cold 355 ms)
+         1789859881.547 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7515/7526 (recycle/alloc) - 11/7526 (fetch/transfer)
+         1789859886.841 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7744/7755 (recycle/alloc) - 11/7755 (fetch/transfer)
+         1789859886.906 17762 17762 I SyncController: drift 12 ms (start latency 325 ms, cold 355 ms)
+         1789859890.805 17762 17762 D MediaSessionManager: Package org.kde.kdeconnect_tp doesn't exist
+         1789859891.930 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 7959/7970 (recycle/alloc) - 11/7970 (fetch/transfer)
+         1789859896.921 17762 17762 I SyncController: check: median err -82 ms (spread 221 ms, n 9), waiting for confirmation
+         1789859897.054 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8180/8191 (recycle/alloc) - 11/8191 (fetch/transfer)
+         1789859898.935 17762 17762 I SyncController: drift -36 ms (start latency 325 ms, cold 355 ms)
+         1789859902.263 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8408/8419 (recycle/alloc) - 11/8419 (fetch/transfer)
+         1789859907.373 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8628/8639 (recycle/alloc) - 11/8639 (fetch/transfer)
+         1789859908.948 17762 17762 I SyncController: drift -37 ms (start latency 325 ms, cold 355 ms)
+         1789859912.463 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 8847/8858 (recycle/alloc) - 11/8858 (fetch/transfer)
+         1789859917.577 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9067/9078 (recycle/alloc) - 11/9078 (fetch/transfer)
+         1789859918.962 17762 17762 I SyncController: drift -3 ms (start latency 325 ms, cold 355 ms)
+         1789859922.798 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9294/9305 (recycle/alloc) - 11/9305 (fetch/transfer)
+         1789859927.893 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9511/9522 (recycle/alloc) - 11/9522 (fetch/transfer)
+         1789859928.977 17762 17762 I SyncController: drift -41 ms (start latency 325 ms, cold 355 ms)
+         1789859932.992 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9730/9741 (recycle/alloc) - 11/9741 (fetch/transfer)
+         1789859938.190 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 9955/9966 (recycle/alloc) - 11/9966 (fetch/transfer)
+         1789859938.992 17762 17762 I SyncController: drift -35 ms (start latency 325 ms, cold 355 ms)
+         1789859943.343 17762 23139 D AidlBufferPool: bufferpool2 0xb400007603db9748 : 5(40960 size) total buffers - 1(8192 size) used buffers - 10177/10188 (recycle/alloc) - 11/10188 (fetch/transfer)
+         1789859945.352 17762 17810 D MediaCodec: keep callback message for reclaim
+         1789859945.353 17762 23139 I CCodecConfig: query failed after returning 21 values (BAD_INDEX)
+         1789859947.291 17762 17853 I ControlServer: #4 closed: closed by peer
+         1789859947.298 17762 17762 I Motoparty: client gone: closed by peer

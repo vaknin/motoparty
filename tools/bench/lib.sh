@@ -113,10 +113,12 @@ fake_host() {
 host_cmd() { [ "$DRY" = 1 ] && echo "$*" >&7; }
 
 # keep_awake: until exit, poke the screen every 15 s so it can't time out and relock mid-run
-# (a locked phone hides the overlay). Needs the phone unlocked to begin with.
+# (a locked phone hides the overlay). Needs the phone unlocked to begin with. KEYCODE_WAKEUP alone
+# does not reset the screen-off timer of a screen that is already on (lastUserActivityTime stays,
+# checked 2026-09-20); a no-op KEYCODE_F13 counts as user activity and does.
 keep_awake() {
   [ "$DRY" = 1 ] && return 0
-  ( while :; do $ADB shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1; sleep 15; done ) &
+  ( while :; do $ADB shell 'input keyevent KEYCODE_WAKEUP; input keyevent KEYCODE_F13' >/dev/null 2>&1; sleep 15; done ) &
   on_exit "kill $! 2>/dev/null"
 }
 locked() { sh1 dumpsys window | grep -q -E 'isKeyguardShowing=true|mShowingLockscreen=true'; }

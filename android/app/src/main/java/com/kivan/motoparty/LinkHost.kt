@@ -8,9 +8,12 @@ import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
 import android.view.KeyEvent
+import com.kivan.motoparty.audio.AudioModeWatch
 import com.kivan.motoparty.audio.AudioRouter
 import com.kivan.motoparty.audio.AudioThread
 import com.kivan.motoparty.audio.Earcons
+import com.kivan.motoparty.audio.LiveCue
+import com.kivan.motoparty.audio.ScoWatch
 import com.kivan.motoparty.audio.TalkAudio
 import com.kivan.motoparty.audio.VoiceEngine
 import com.kivan.motoparty.core.Announce
@@ -22,6 +25,7 @@ import com.kivan.motoparty.core.CloseReason
 import com.kivan.motoparty.core.ControlAction
 import com.kivan.motoparty.core.Earcon
 import com.kivan.motoparty.core.Hello
+import com.kivan.motoparty.core.MainLag
 import com.kivan.motoparty.core.PROTO_VERSION
 import com.kivan.motoparty.core.Message
 import com.kivan.motoparty.core.MusicControl
@@ -31,6 +35,7 @@ import com.kivan.motoparty.core.Role
 import com.kivan.motoparty.core.State
 import com.kivan.motoparty.core.TalkClose
 import com.kivan.motoparty.core.TalkOpen
+import com.kivan.motoparty.core.wireType
 import com.kivan.motoparty.link.ControlServer
 import com.kivan.motoparty.link.Discovery
 import com.kivan.motoparty.link.TalkController
@@ -91,6 +96,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         send = { ts, p -> voiceSocket.sendAudio(ts, p) },
         clockTs = { voiceSocket.currentTs() },
         onActivity = talk::noteActivity,
+        // From the capture thread, on its first frame: never block it, hop to Main.
+        onCaptureUp = { atMs -> scope.launch { onCaptureUp(atMs) } },
     )
     /** Route + voice engine for talk, collapsed to the latest open/close (see [TalkAudio]). */
     private val talkAudio = TalkAudio(
@@ -100,6 +107,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         voiceStart = { onFailed -> voice.start(onFailed) },
         voiceStop = voice::stop,
         voiceRunning = { voice.isRunning },
+        // Already on the audio thread, i.e. after exitCall: media mode, as it must be.
         closedEarcon = { Earcons.play(Earcons.Kind.CLOSED, call = false) },
         // From the audio thread or a voice thread: hop to Main, where talk state lives.
         onFailed = { session, what, e -> scope.launch { onMicFailed(session, "$what: ${e.message}") } },
@@ -108,7 +116,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private val trackServer = TrackServer(scope, cache::cached)
     private val discovery = Discovery(context, deviceName)
     private val transcriber = Transcriber(context)
-    private val announcer = Announcer(context)
+    private val announcer = Announcer(context, earconPlayer = { earcon(it) })
     private val music: MusicController = MusicController(
         scope, cache, sync, player, clock,
         send = control::send,
@@ -117,6 +125,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         onError = { announce(it, Earcon.ERROR) },
     )
     private val audioManager = context.getSystemService(AudioManager::class.java)
+    /** `AudioManager.getMode()` cached off Main; see [AudioModeWatch] and [micAvailable]. */
+    private val audioMode = AudioModeWatch(context)
+    /** The Bluetooth SCO link state, cached off Main: the other half of the live earcon's truth. */
+    private val sco = ScoWatch(context) { connected, atMs -> scope.launch { onScoState(connected, atMs) } }
+    /** Decides when the "live" earcon may be played (F7). Touched on Main only. */
+    private val liveCue = LiveCue()
     private var listenJob: Job? = null
     /**
      * Bumped on every talk open, on Main. Audio work finishes asynchronously, so a failure or the
@@ -139,8 +153,15 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 Hub.log("start $name failed: ${e.message}")
             }
         }
+        audioMode.start()
+        sco.start()
         Hub.log("host up as \"$deviceName\"")
-        scope.launch { for (e in control.events) guarded("control event") { onControlEvent(e) } }
+        scope.launch {
+            for (e in control.events) {
+                noteMainLag(e)
+                guarded("control event") { onControlEvent(e) }
+            }
+        }
         scope.launch { Triggers.events.collect { guarded("trigger") { onTrigger(it.kind, it.source) } } }
         scope.launch { Hub.actions.collect { guarded("ui action") { onUiAction(it) } } }
         scope.launch {
@@ -171,6 +192,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             router.exitAll()
         }
         audio.shutdown()
+        audioMode.stop()
+        sco.stop()
         player.release()
         announcer.release()
         Hub.status.update { LinkStatus(log = it.log) }
@@ -192,6 +215,17 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private fun pushState() {
         control.send(state())
         refreshStatus()
+    }
+
+    /**
+     * How long a message sat in the channel before Main got to it (see [MainLag]). Anything over
+     * 100 ms means Main was blocked — on the 2026-09-20 bench by an audio-service binder call —
+     * and the protocol decision it carries (a talk re-open, above all) was made too late to
+     * collapse with the teardown in flight. One line per occurrence, nothing when Main is idle.
+     */
+    private fun noteMainLag(e: ControlServer.Event) {
+        if (e !is ControlServer.Event.Received) return
+        MainLag.lineIfLate(e.message.wireType, clock() - e.atMs)?.let(Hub::log)
     }
 
     private fun onControlEvent(e: ControlServer.Event) {
@@ -260,7 +294,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         applyTalk(action)
         if (reason == CloseReason.UNAVAILABLE) {
             Hub.log("client microphone unavailable")
-            if (weAsked) Earcons.play(Earcons.Kind.ERROR, call = false)
+            if (weAsked) earcon(Earcons.Kind.ERROR)
         }
     }
 
@@ -279,7 +313,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         val weAsked = talk.openedBy == Role.HOST
         val action = talk.onMicFailure() ?: return
         applyTalk(action)
-        if (weAsked) Earcons.play(Earcons.Kind.ERROR, call = false)
+        if (weAsked) earcon(Earcons.Kind.ERROR)
     }
 
     /**
@@ -294,23 +328,30 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 music.onTalkOpen(duck = settings.value.duckDuringTalk)
                 pushState()
                 val session = ++talkSession
+                liveCue.open(session, clock())
                 // Switching the headset to HFP blocks for about a second; messages went out first.
                 // A failure here is this phone's "cannot open the microphone" case. enterCall
                 // counts itself before it can throw, so the close that follows balances it.
                 val opened = talkAudio.open(session)
                 Hub.log("talk open (by ${action.by})")
                 scope.launch {
-                    // Give the headset a moment past the switch so the earcon is audible.
+                    // The route is decided once this returns; the SCO link is not up yet.
                     opened.join()
-                    delay(LIVE_EARCON_DELAY_MS)
-                    if (talk.isOpen && session == talkSession) {
-                        audio.post("live earcon") { Earcons.play(Earcons.Kind.LIVE, call = true) }
-                    }
+                    // A collapsed re-open kept a running engine, whose first frame is behind us.
+                    voice.captureUpAtMs?.let { fireLive(liveCue.captureUp(session, it)) }
+                    fireLive(liveCue.route(session, router.needsSco, sco.connected, clock()))
+                }
+                scope.launch {
+                    // The beep may be late, never missing (a signal that never came).
+                    delay(LiveCue.TIMEOUT_MS + 50)
+                    fireLive(liveCue.tick(session, clock()))
                 }
             }
             is TalkController.Action.Close -> {
                 control.send(TalkClose(action.by, action.reason))
                 pushState()
+                // A talk that closed before its microphone was live never gets its go-beep.
+                liveCue.close()
                 // The client is told to resume at now + resumeLeadMs and is not kept waiting for
                 // our headset. Our own player is a different matter: A2DP does not exist again
                 // until exitCall has finished, and a play() into a route that is still being
@@ -330,6 +371,34 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
+    /**
+     * The capture loop of the talk that owns the voice engine read its first frame (on Main, via
+     * [VoiceEngine.onCaptureUp]). Half of what the "live" earcon means; [LiveCue] holds the rule.
+     */
+    private fun onCaptureUp(atMs: Long) {
+        fireLive(liveCue.captureUp(talkAudio.ownerSession, atMs))
+    }
+
+    /** The SCO link came up or dropped ([ScoWatch], on Main). The other half. */
+    private fun onScoState(connected: Boolean, atMs: Long) {
+        if (connected) fireLive(liveCue.scoConnected(atMs)) else liveCue.scoDisconnected()
+    }
+
+    /**
+     * Play the "live" earcon, once per talk open. `call = true`: it is a call-route sound and must
+     * follow the headset that is in call mode. The guards are the old ones — talk still open, and
+     * still the same talk — because [LiveCue]'s decision is made from events that travel.
+     *
+     * One line per talk for the bench, e.g.
+     * `live cue: session 8, capture up +1310 ms, sco +1240 ms, fired +1312 ms (both)`.
+     */
+    private fun fireLive(fire: LiveCue.Fire?) {
+        if (fire == null) return
+        if (!talk.isOpen || fire.session != talkSession) return
+        Hub.log(fire.line())
+        earcon(Earcons.Kind.LIVE, call = true)
+    }
+
     // ---- triggers ----
 
     private fun onTrigger(kind: TriggerKind, source: TriggerSource) {
@@ -337,13 +406,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         when (kind) {
             TriggerKind.TALK -> {
                 if (!talk.isOpen && !control.hasClient()) {
-                    Earcons.play(Earcons.Kind.ERROR, call = false)
+                    earcon(Earcons.Kind.ERROR)
                     Hub.log("talk: no client connected")
                     return
                 }
                 // Our own trigger with no usable mic: error earcon, and no talk.open goes out.
                 if (!talk.isOpen && !micAvailable()) {
-                    Earcons.play(Earcons.Kind.ERROR, call = false)
+                    earcon(Earcons.Kind.ERROR)
                     return
                 }
                 listenJob?.cancel()
@@ -395,7 +464,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             try {
                 entered.join()
                 delay(SCO_SETTLE_MS)
-                Earcons.play(Earcons.Kind.LISTEN, call = true)
+                earcon(Earcons.Kind.LISTEN, call = true)
                 delay(250)
                 val r = transcriber.listen(settings.value.asrLanguage)
                 leaveCall()
@@ -479,9 +548,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             announce("Didn't catch that", Earcon.ERROR)
             return
         }
-        // Two steps: one step is barely audible under a helmet.
-        repeat(2) { audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0) }
-        Earcons.play(Earcons.Kind.OK, call = false)
+        // Two steps: one step is barely audible under a helmet. Off Main with the earcon, in the
+        // same block: adjustStreamVolume is a binder call into the audio service like any other.
+        audio.post("volume") {
+            repeat(2) { audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0) }
+            Earcons.play(Earcons.Kind.OK, call = false)
+        }
         Hub.log("volume ${if (direction == AudioManager.ADJUST_RAISE) "up" else "down"} (local)")
     }
 
@@ -559,6 +631,11 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      *
      * `MODE_IN_COMMUNICATION` is not treated as busy — that is the mode our own talk and our own
      * recognizer put the device in.
+     *
+     * Every check here is local: a permission lookup, a flag and the mode [AudioModeWatch] keeps
+     * cached. Asking `AudioManager` for the mode directly would be a binder call into the audio
+     * service, which our own `exitCall` can hold for over a second — and this runs on the path of
+     * the client's `talk.open`, i.e. exactly then (2026-09-20 bench).
      */
     private fun micAvailable(): Boolean {
         if (!hasMic()) {
@@ -569,19 +646,30 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             Hub.log("microphone unavailable: service has no microphone type")
             return false
         }
-        val mode = audioManager.mode
-        if (mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_RINGTONE) {
+        if (audioMode.inPhoneCall) {
             Hub.log("microphone unavailable: phone call in progress")
             return false
         }
         return true
     }
 
+    /**
+     * Earcons never play on Main: building an `AudioTrack` (even a MODE_STATIC one) goes through
+     * audioserver, which is busy for the whole of a route switch — up to ~1.3 s on the AirPods.
+     * They go on the *audio thread* rather than a thread of their own, so their order against
+     * `enterCall`/`exitCall` is defined: the closed and error tones are built after the route is
+     * back (media mode) and the live one inside call mode, exactly as before. The price is that
+     * an error earcon requested during a switch is heard after it, which for a "that did not
+     * work" tone is fine.
+     */
+    private fun earcon(kind: Earcons.Kind, call: Boolean = false) {
+        audio.post("earcon") { Earcons.play(kind, call) }
+    }
+
     private fun hasMic() =
         context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     companion object {
-        private const val LIVE_EARCON_DELAY_MS = 400L
         private const val SCO_SETTLE_MS = 700L
     }
 }
