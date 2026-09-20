@@ -1,0 +1,158 @@
+         1789880620.565 11796 11876 I ControlServer: #1 connected from /192.168.1.102:52542
+         1789880620.681 11796 11880 I ControlServer: #1 is the client: arch
+         1789880620.683 11796 11796 I Motoparty: client "arch" connected from 192.168.1.102
+         1789880625.460 11796 11796 I Motoparty: talk open (by client)
+         1789880625.659 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880625.659 11796 13433 I AudioRouter: enterCall 198 ms (setMode 1, devices 187, setCommunicationDevice 8)
+         1789880625.661 11796 13433 I VoiceEngine: start 1 ms
+         1789880625.723 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880625.731 11796 13973 D nativeloader: Load /data/app/~~z_pyCfxpL1b34UPg7nJlvg==/com.kivan.motoparty-UXzFMYuF3O060L5IY1asbQ==/base.apk!/lib/arm64-v8a/libmotoparty_opus.so using class loader ns clns-9 (caller=/data/app/~~z_pyCfxpL1b34UPg7nJlvg==/com.kivan.motoparty-UXzFMYuF3O060L5IY1asbQ==/base.apk!classes7.dex): ok
+         1789880625.870 11796 13973 I VoiceEngine: playback up 205 ms (AudioTrack 34, play 169, first write 0)
+         1789880626.827 11796 13972 I VoiceEngine: capture up 1162 ms (AudioRecord 141, effects+encoder 35, startRecording 942, first frame 43)
+         1789880626.829 11796 11796 I Motoparty: live cue: session 1, capture up +1367 ms, sco +263 ms, fired +1367 ms (both)
+         1789880633.445 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880633.449 11796 13972 I VoiceEngine: capture: read 331 frames in 6665 ms (333 expected), device 332 frames, slowest encode+send 6 ms, longest read wait 25 ms
+         1789880633.455 11796 13973 I VoiceEngine: playback: wrote 349 frames in 7586 ms (379 expected), 0 re-anchors
+         1789880633.456 11796 13973 D AudioTrack: stop(20629): called with 111680 frames delivered
+         1789880633.496 11796 13433 I VoiceEngine: talk stats: tx 331 sent of 331 captured (0 DTX), rx 389 received, 344 played, 0 lost, 5 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789880633.497 11796 13433 I VoiceEngine: stop 50 ms (join capture 46, join playback 0)
+         1789880633.525 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880634.259 11796 13433 I AudioRouter: back to media mode
+         1789880634.260 11796 13433 I AudioRouter: exitCall 762 ms (clearCommunicationDevice 16, setMode 746)
+         1789880637.451 11796 11796 I Motoparty: talk open (by client)
+         1789880637.922 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880637.922 11796 13433 I AudioRouter: enterCall 469 ms (setMode 2, devices 455, setCommunicationDevice 10)
+         1789880637.923 11796 13433 I VoiceEngine: start 1 ms
+         1789880638.001 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880638.077 11796 13997 I VoiceEngine: playback up 151 ms (AudioTrack 56, play 91, first write 0)
+         1789880639.985 11796 13996 I VoiceEngine: capture up 2060 ms (AudioRecord 58, effects+encoder 48, startRecording 1901, first frame 51)
+         1789880639.987 11796 11796 I Motoparty: live cue: session 2, capture up +2534 ms, sco +550 ms, fired +2534 ms (both)
+         1789880639.996 11796 13768 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1929ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789880645.437 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880645.443 11796 13996 I VoiceEngine: capture: read 273 frames in 5510 ms (275 expected), device 274 frames, slowest encode+send 4 ms, longest read wait 23 ms
+         1789880645.453 11796 13997 I VoiceEngine: playback: wrote 341 frames in 7379 ms (368 expected), 1 re-anchors
+         1789880645.453 11796 13997 D AudioTrack: stop(20640): called with 109120 frames delivered
+         1789880645.491 11796 13433 I VoiceEngine: talk stats: tx 273 sent of 273 captured (0 DTX), rx 376 received, 327 played, 0 lost, 6 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789880645.492 11796 13433 I VoiceEngine: stop 54 ms (join capture 54, join playback 0)
+         1789880645.509 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880646.207 11796 13433 I AudioRouter: back to media mode
+         1789880646.207 11796 13433 I AudioRouter: exitCall 715 ms (clearCommunicationDevice 4, setMode 710)
+         1789880649.447 11796 11796 I Motoparty: talk open (by client)
+         1789880649.877 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880649.878 11796 13433 I AudioRouter: enterCall 429 ms (setMode 1, devices 425, setCommunicationDevice 1)
+         1789880649.881 11796 13433 I VoiceEngine: start 3 ms
+         1789880649.906 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880650.867 11796 14039 I VoiceEngine: playback up 985 ms (AudioTrack 22, play 962, first write 0)
+         1789880651.734 11796 14037 I VoiceEngine: capture up 1835 ms (AudioRecord 906, effects+encoder 18, startRecording 859, first frame 50)
+         1789880651.736 11796 11796 I Motoparty: live cue: session 3, capture up +2288 ms, sco +459 ms, fired +2288 ms (both)
+         1789880651.864 11796 13768 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1074ms. Data bytes: 552 Reply bytes: 0 Flags: 17
+         1789880657.468 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880657.475 11796 14037 I VoiceEngine: capture: read 287 frames in 5791 ms (289 expected), device 288 frames, slowest encode+send 6 ms, longest read wait 22 ms
+         1789880657.480 11796 14039 I VoiceEngine: playback: wrote 291 frames in 6613 ms (330 expected), 0 re-anchors
+         1789880657.480 11796 14039 D AudioTrack: stop(20649): called with 93120 frames delivered
+         1789880657.544 11796 13433 I VoiceEngine: talk stats: tx 287 sent of 287 captured (0 DTX), rx 379 received, 291 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789880657.544 11796 13433 I VoiceEngine: stop 75 ms (join capture 74, join playback 0)
+         1789880657.556 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880658.279 11796 13433 I AudioRouter: back to media mode
+         1789880658.280 11796 13433 I AudioRouter: exitCall 734 ms (clearCommunicationDevice 2, setMode 731)
+         1789880661.472 11796 11796 I Motoparty: talk open (by client)
+         1789880661.919 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880661.919 11796 13433 I AudioRouter: enterCall 446 ms (setMode 0, devices 431, setCommunicationDevice 13)
+         1789880661.920 11796 13433 I VoiceEngine: start 1 ms
+         1789880662.008 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880662.061 11796 14060 I VoiceEngine: playback up 137 ms (AudioTrack 70, play 66, first write 0)
+         1789880662.209 11796 14059 I VoiceEngine: capture up 287 ms (AudioRecord 62, effects+encoder 39, startRecording 93, first frame 92)
+         1789880662.211 11796 11796 I Motoparty: live cue: session 4, capture up +738 ms, sco +536 ms, fired +738 ms (both)
+         1789880664.180 11796 11869 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 2123ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789880669.456 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880669.462 11796 14060 I VoiceEngine: playback: wrote 345 frames in 7401 ms (370 expected), 1 re-anchors
+         1789880669.463 11796 14060 D AudioTrack: stop(20659): called with 110400 frames delivered
+         1789880669.468 11796 14059 I VoiceEngine: capture: read 363 frames in 7351 ms (367 expected), device 364 frames, slowest encode+send 4 ms, longest read wait 117 ms
+         1789880669.507 11796 13433 I VoiceEngine: talk stats: tx 77 sent of 363 captured (286 DTX), rx 376 received, 331 played, 0 lost, 6 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789880669.507 11796 13433 I VoiceEngine: stop 51 ms (join capture 50, join playback 0)
+         1789880669.511 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880670.283 11796 13433 I AudioRouter: back to media mode
+         1789880670.284 11796 13433 I AudioRouter: exitCall 776 ms (clearCommunicationDevice 0, setMode 775)
+         1789880671.416 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880673.069 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880673.518 11796 11796 I Motoparty: talk open (by client)
+         1789880674.682 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880674.682 11796 13433 I AudioRouter: enterCall 1163 ms (setMode 1135, devices 24, setCommunicationDevice 2)
+         1789880674.684 11796 13433 I VoiceEngine: start 1 ms
+         1789880674.701 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880675.006 11796 14128 I VoiceEngine: playback up 319 ms (AudioTrack 46, play 270, first write 1)
+         1789880675.869 11796 14127 I VoiceEngine: capture up 1183 ms (AudioRecord 252, effects+encoder 34, startRecording 84, first frame 812)
+         1789880675.871 11796 11796 I Motoparty: live cue: session 5, capture up +2351 ms, sco +1183 ms, fired +2351 ms (both)
+         1789880676.050 11796 11818 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1149ms. Data bytes: 552 Reply bytes: 0 Flags: 17
+         1789880681.484 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880681.489 11796 14127 I VoiceEngine: capture: read 281 frames in 6433 ms (321 expected), device 282 frames, slowest encode+send 9 ms, longest read wait 23 ms
+         1789880681.503 11796 14128 I VoiceEngine: playback: wrote 291 frames in 6498 ms (324 expected), 0 re-anchors
+         1789880681.503 11796 14128 D AudioTrack: stop(20666): called with 93120 frames delivered
+         1789880681.611 11796 13433 I VoiceEngine: talk stats: tx 281 sent of 281 captured (0 DTX), rx 340 received, 291 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789880681.613 11796 13433 I VoiceEngine: stop 128 ms (join capture 126, join playback 0)
+         1789880681.642 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880682.473 11796 13433 I AudioRouter: back to media mode
+         1789880682.473 11796 13433 I AudioRouter: exitCall 860 ms (clearCommunicationDevice 11, setMode 843)
+         1789880685.488 11796 11796 I Motoparty: talk open (by client)
+         1789880686.016 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880686.017 11796 13433 I AudioRouter: enterCall 528 ms (setMode 1, devices 485, setCommunicationDevice 40)
+         1789880686.018 11796 13433 I VoiceEngine: start 0 ms
+         1789880686.067 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880686.162 11796 14146 I VoiceEngine: playback up 140 ms (AudioTrack 49, play 90, first write 0)
+         1789880687.579 11796 14145 I VoiceEngine: capture up 1558 ms (AudioRecord 49, effects+encoder 35, startRecording 1441, first frame 31)
+         1789880687.581 11796 11796 I Motoparty: live cue: session 6, capture up +2091 ms, sco +575 ms, fired +2091 ms (both)
+         1789880687.789 11796 14153 W libbinder.Binder: Binder transaction to android.media.IAudioFlingerClient, function: ioConfigChanged, code: 1, took 1637ms. Data bytes: 516 Reply bytes: 0 Flags: 17
+         1789880693.481 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880693.496 11796 14146 I VoiceEngine: playback: wrote 354 frames in 7334 ms (366 expected), 1 re-anchors
+         1789880693.496 11796 14146 D AudioTrack: stop(20675): called with 113280 frames delivered
+         1789880693.499 11796 14145 I VoiceEngine: capture: read 296 frames in 5952 ms (297 expected), device 297 frames, slowest encode+send 4 ms, longest read wait 26 ms
+         1789880693.588 11796 13433 I VoiceEngine: talk stats: tx 296 sent of 296 captured (0 DTX), rx 372 received, 337 played, 0 lost, 6 late, 0 FEC, 3 PLC, 0 keepalives, jitter target 60 ms
+         1789880693.589 11796 13433 I VoiceEngine: stop 107 ms (join capture 104, join playback 0)
+         1789880693.606 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880694.333 11796 13433 I AudioRouter: back to media mode
+         1789880694.333 11796 13433 I AudioRouter: exitCall 744 ms (clearCommunicationDevice 3, setMode 740)
+         1789880697.478 11796 11796 I Motoparty: talk open (by client)
+         1789880697.765 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880697.980 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880697.980 11796 13433 I AudioRouter: enterCall 501 ms (setMode 1, devices 490, setCommunicationDevice 10)
+         1789880697.982 11796 13433 I VoiceEngine: start 1 ms
+         1789880698.091 11796 11796 I Motoparty: talk open (by client)
+         1789880698.123 11796 14169 I VoiceEngine: playback: wrote 0 frames in 0 ms (0 expected), 0 re-anchors
+         1789880698.123 11796 14169 D AudioTrack: stop(20683): called with 0 frames delivered
+         1789880698.180 11796 14168 I VoiceEngine: capture: read 0 frames in 0 ms (0 expected), device -1 frames, slowest encode+send 0 ms, longest read wait 0 ms
+         1789880698.232 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880698.484 11796 13433 I VoiceEngine: talk stats: tx 0 sent of 0 captured (0 DTX), rx 0 received, 0 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789880698.484 11796 13433 I VoiceEngine: stop 500 ms (join capture 500, join playback 0), still running: voice-capture
+         1789880698.484 11796 13433 I TalkAudio: re-open during teardown: call route kept (session 8)
+         1789880698.486 11796 13433 I VoiceEngine: start 1 ms
+         1789880699.147 11796 14179 I VoiceEngine: playback up 660 ms (AudioTrack 509, play 149, first write 1)
+         1789880699.264 11796 14178 I VoiceEngine: capture up 777 ms (AudioRecord 653, effects+encoder 46, startRecording 32, first frame 44)
+         1789880699.267 11796 11796 I Motoparty: live cue: session 8, capture up +1173 ms, sco +141 ms, fired +1173 ms (both)
+         1789880702.090 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880702.104 11796 14178 I VoiceEngine: capture: read 142 frames in 2884 ms (144 expected), device 143 frames, slowest encode+send 5 ms, longest read wait 22 ms
+         1789880702.105 11796 14179 I VoiceEngine: playback: wrote 152 frames in 2959 ms (147 expected), 0 re-anchors
+         1789880702.105 11796 14179 D AudioTrack: stop(20686): called with 48640 frames delivered
+         1789880702.210 11796 13433 I VoiceEngine: talk stats: tx 84 sent of 142 captured (58 DTX), rx 180 received, 152 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789880702.210 11796 13433 I VoiceEngine: stop 119 ms (join capture 118, join playback 0)
+         1789880702.257 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880702.963 11796 13433 I AudioRouter: back to media mode
+         1789880702.980 11796 13433 I AudioRouter: exitCall 745 ms (clearCommunicationDevice 19, setMode 726)
+         1789880706.096 11796 11796 I Motoparty: talk open (by client)
+         1789880706.648 11796 13433 I AudioRouter: communication device AirPods Pro (type 7): true
+         1789880706.652 11796 13433 I AudioRouter: enterCall 551 ms (setMode 4, devices 532, setCommunicationDevice 14)
+         1789880706.654 11796 13433 I VoiceEngine: start 1 ms
+         1789880706.692 11796 11886 I ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880707.443 11796 14196 I VoiceEngine: playback up 774 ms (AudioTrack 55, play 718, first write 1)
+         1789880708.060 11796 14195 I VoiceEngine: capture up 1404 ms (AudioRecord 723, effects+encoder 34, startRecording 611, first frame 35)
+         1789880708.063 11796 11796 I Motoparty: live cue: session 9, capture up +1964 ms, sco +596 ms, fired +1964 ms (both)
+         1789880726.101 11796 11796 I Motoparty: talk closed (by client, trigger)
+         1789880726.117 11796 14196 I VoiceEngine: playback: wrote 921 frames in 18675 ms (933 expected), 0 re-anchors
+         1789880726.117 11796 14196 D AudioTrack: stop(20694): called with 294720 frames delivered
+         1789880726.123 11796 14195 I VoiceEngine: capture: read 903 frames in 18098 ms (904 expected), device 904 frames, slowest encode+send 6 ms, longest read wait 21 ms
+         1789880726.197 11796 13433 I VoiceEngine: talk stats: tx 822 sent of 903 captured (81 DTX), rx 972 received, 921 played, 0 lost, 0 late, 0 FEC, 0 PLC, 0 keepalives, jitter target 40 ms
+         1789880726.197 11796 13433 I VoiceEngine: stop 96 ms (join capture 94, join playback 0)
+         1789880726.248 11796 11886 I ScoWatch: sco disconnected (ACTION_SCO_AUDIO_STATE_UPDATED)
+         1789880726.937 11796 13433 I AudioRouter: back to media mode
+         1789880726.939 11796 13433 I AudioRouter: exitCall 740 ms (clearCommunicationDevice 8, setMode 731)
+         1789880730.075 11796 11880 I ControlServer: #1 closed: closed by peer
+         1789880730.081 11796 11796 I Motoparty: client gone: closed by peer

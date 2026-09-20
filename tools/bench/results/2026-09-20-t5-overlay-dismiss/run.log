@@ -1,0 +1,24 @@
+08:24:45.683 overlay_rotation.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-20-t5-overlay-dismiss
+08:24:46.386 phone: mWakefulness=Awake, top: bitpit.launcher/.ui.HomeActivity
+08:24:46.519 app pid: 11796
+08:24:46.763 bluetooth:   mActiveDevice: XX:XX:XX:XX:EC:2F   === A2dpStateMachine for XX:XX:XX:XX:EC:2F (Active) ===
+08:24:47.918 display 1080x2400, rotation settings were accelerometer=1 user=0
+08:24:50.727 overlay at start: 766 393 1080 957, fractions: name="fx" value="1.0" name="fy" value="0.15904936" 
+08:25:03.876 rot 0 fractions after release: name="fx" value="0.0" name="fy" value="1.0" 
+08:25:19.376 rot 1 fractions after release: name="fx" value="1.0" name="fy" value="0.0" 
+08:25:34.866 rot 2 fractions after release: name="fx" value="0.0" name="fy" value="1.0" 
+08:25:50.621 rot 3 fractions after release: name="fx" value="1.0" name="fy" value="0.0" 
+08:25:59.358 overlay at end: 766 390 1080 954 (start: 766 393 1080 957), fractions: name="fx" value="1.0" name="fy" value="0.15722121" 
+08:25:59.699 dismiss: buttons at 766 390 1080 954, fractions name="fx" value="1.0" name="fy" value="0.15722121" ; dragging (923,531) -> (540,2380) over 5 s
+08:26:04.011 dismiss: mid-drag buttons at 463 1773 777 2337, X target at 393 2012 687 2306
+08:26:07.545 dismiss: after release buttons=none, overlayEnabled=false, fractions name="fx" value="1.0" name="fy" value="0.15722121" , trigger MUSIC x0 TALK x0, 'hidden by drag' x1
+08:26:07.866 restore: am start-service SHOW_OVERLAY -> Starting service: Intent { act=com.kivan.motoparty.SHOW_OVERLAY cmp=com.kivan.motoparty/.LinkService } Error: Requires permission not exported from uid 10700 
+08:26:10.496 restore: settings.xml says name="overlayEnabled" value="true"
+08:26:16.824 app restarted, pid 16723
+08:26:17.017 restore: the buttons are back
+08:26:17.348 dismiss: restored to 766 390 1080 954 (was 766 390 1080 954), fractions name="fx" value="1.0" name="fy" value="0.15722121" 
+08:26:19.092 cleanup: restore_overlay
+08:26:19.259 cleanup: kill 392043 2>/dev/null
+08:26:19.261 cleanup: sh1 input keyevent KEYCODE_HOME
+08:26:19.376 cleanup: sh1 settings put system accelerometer_rotation 1; sh1 settings put system user_rotation 0
+08:26:19.608 cleanup: kill 391996 2>/dev/null

@@ -1,0 +1,22 @@
+1789881365.020 08:16:05.019 connecting to 192.168.1.100:47800
+1789881365.021 08:16:05.020 commands: talk | say <text> | pause | resume | next | previous | vol+ | vol- (local) |
+1789881365.021           unavailable (toggle "my mic is dead") | stats | raw <json> (send unvalidated) | quit
+1789881365.039 08:16:05.038 connected to 192.168.1.100:47800
+1789881365.039 08:16:05.038 << {"t":"hello","proto":1,"role":"host","name":"Pixel 8","voicePort":47801,"httpPort":47802}
+1789881365.042 08:16:05.042 << {"t":"state","talk":false,"queue":[]}
+1789881365.058 08:16:05.057 << pong id=1 rtt=11ms offset=2291804542.5ms | estimate offset=2291804542.5ms (rtt 11ms)
+1789881367.067 08:16:07.066 << pong id=2 rtt=19ms offset=2291804544.5ms | estimate offset=2291804542.5ms (rtt 11ms)
+1789881369.062 08:16:09.061 << pong id=3 rtt=13ms offset=2291804542.5ms | estimate offset=2291804542.5ms (rtt 11ms)
+1789881370.823 08:16:10.822 << {"t":"talk.open","by":"host"}
+1789881370.823 08:16:10.823    MIC UNAVAILABLE: refusing talk (the host asked, so it plays the error earcon)
+1789881370.823 08:16:10.823 >> {"t":"talk.close","by":"client","reason":"unavailable"}
+1789881370.823 08:16:10.823 << {"t":"state","talk":true,"queue":[]}
+1789881370.836 08:16:10.835 << {"t":"talk.close","by":"client","reason":"unavailable"}
+1789881370.836 08:16:10.835    TALK REFUSED by client: microphone unavailable (talk never opened, state.talk stays false) [earcon error]
+1789881370.839 08:16:10.838 << {"t":"state","talk":false,"queue":[]}
+1789881371.074 08:16:11.074 << pong id=4 rtt=23ms offset=2291804535.5ms | estimate offset=2291804542.5ms (rtt 11ms)
+1789881373.056 08:16:13.056 << pong id=5 rtt=8ms offset=2291804541.0ms | estimate offset=2291804541.0ms (rtt 8ms)
+1789881375.060 08:16:15.060 << pong id=6 rtt=13ms offset=2291804539.5ms | estimate offset=2291804541.0ms (rtt 8ms)
+1789881376.856 08:16:16.856 >> {"t":"bye","reason":"user"}
+1789881376.856 08:16:16.856 voice (final): rx=0 ka=12 played=0 fec=0 plc=0 late=0 dup=0 dtx=0 starved=0 underruns=0 trimmed=0 depth=0ms target=40ms
+1789881376.856 08:16:16.856 bye

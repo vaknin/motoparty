@@ -13,11 +13,19 @@ package com.kivan.motoparty.audio
  *  b. **the route is really up** — for a Bluetooth SCO device the SCO audio link is connected
  *     ([scoConnected], or already connected when the route came up, which is what a fast re-open
  *     that kept the route looks like). Any other route (earpiece, speaker, wired, BLE headset)
- *     is up as soon as [route] says so.
+ *     is up as soon as [route] says so. Since F8 "connected" means the audio framework has routed
+ *     call audio to the SCO device ([ScoWatch] / [ScoRule]); the "SCO connected" broadcast F7 used
+ *     turned out to fire 0.5–1.1 s before the link existed.
+ *  c. **the headset's own microphone signal is arriving** — [micLive], i.e. [MicLive]'s run of
+ *     non-silent frames on the SCO *input* (F9a). Like (b) this is only required when the route
+ *     needs SCO; on any other route it holds as soon as (a) does.
  *
- * Neither alone is enough: in the bench's second cycle the first captured frame arrived 0.76 s
+ * None alone is enough: in the bench's second cycle the first captured frame arrived 0.76 s
  * *before* SCO was up (the mic was delivering something, not the rider's voice), and the SCO link
- * comes up 1.17–1.38 s after the press while the first frame follows 62–166 ms later.
+ * comes up 1.17–1.38 s after the press while the first frame follows 62–166 ms later. (a) and (b)
+ * together were still too early: everything they describe happens on *this* phone, and the AirPods
+ * start rendering call audio a varying time later, which is why F9a added (c) — the only signal that
+ * has actually travelled back from the earpieces.
  *
  * [tick] is the safety net: ~[TIMEOUT_MS] after the open the beep is played anyway and logged as
  * `fallback`, so a missing signal can cost a late beep but never a silent one.
@@ -38,20 +46,25 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
         val captureUpMs: Long?,
         /** SCO connected, ms after the open; null = not seen. Meaningless unless [needsSco]. */
         val scoMs: Long?,
+        /** The headset's mic signal established, ms after the open; null = not seen (see [MicLive]). */
+        val micMs: Long?,
         /** Whether this talk's route is a Bluetooth SCO one; null = the route never reported. */
         val needsSco: Boolean?,
         val firedMs: Long,
-        /** The timer fired it: one of the two conditions never arrived. */
+        /** The timer fired it: one of the conditions never arrived. */
         val fallback: Boolean,
     ) {
         fun line(): String =
             "live cue: session $session, capture up ${offset(captureUpMs)}, sco ${sco()}, " +
-                "fired +$firedMs ms (${if (fallback) "fallback" else "both"})"
+                "mic ${forSco(micMs)}, fired +$firedMs ms (${if (fallback) "fallback" else "both"})"
 
-        private fun sco(): String = when (needsSco) {
+        private fun sco(): String = forSco(scoMs)
+
+        /** A signal that only an SCO route has: `n/a` off SCO, `unknown` before the route reports. */
+        private fun forSco(v: Long?): String = when (needsSco) {
             null -> "unknown"
             false -> "n/a"
-            true -> offset(scoMs)
+            true -> offset(v)
         }
 
         private fun offset(v: Long?): String = if (v == null) "none" else "+$v ms"
@@ -61,6 +74,7 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
     private var openedAt = 0L
     private var captureAt: Long? = null
     private var scoAt: Long? = null
+    private var micAt: Long? = null
     private var needsSco: Boolean? = null
     private var fired = false
 
@@ -70,6 +84,7 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
         openedAt = atMs
         captureAt = null
         scoAt = null
+        micAt = null
         needsSco = null
         fired = false
     }
@@ -102,6 +117,17 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
     }
 
     /**
+     * The headset's own microphone signal of [session] is established ([MicLive], reported once per
+     * [VoiceEngine.start]; a re-open that kept the engine asks for the carried value, exactly like
+     * [captureUp]).
+     */
+    fun micLive(session: Int, atMs: Long): Fire? {
+        if (session != this.session) return null
+        if (micAt == null) micAt = maxOf(atMs, openedAt)
+        return ready(atMs)
+    }
+
+    /**
      * The SCO audio link came up. A system-wide signal, so it carries no session and applies to
      * whichever talk is open.
      */
@@ -111,7 +137,12 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
         return ready(atMs)
     }
 
-    /** The SCO link dropped. Before the beep that undoes condition (b); after it, nothing. */
+    /**
+     * The SCO link dropped. Before the beep that undoes condition (b); after it, nothing. Condition
+     * (c) is deliberately **not** undone: [MicLive] reports once per engine, so a cleared [micAt]
+     * could never be filled again and every flapping talk would beep on the timer instead. A flap
+     * is honestly covered by (b), which the link's return re-establishes.
+     */
     fun scoDisconnected() {
         if (fired) return
         scoAt = null
@@ -126,12 +157,11 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
 
     private fun ready(atMs: Long): Fire? {
         if (fired) return null
-        val routeUp = when (needsSco) {
-            null -> false // the route has not reported yet
-            false -> true
-            true -> scoAt != null
-        }
-        if (!routeUp || captureAt == null) return null
+        val needs = needsSco ?: return null // the route has not reported yet
+        // Off SCO both route conditions hold as soon as the route reports: there is no link to wait
+        // for and no headset whose mic could lag behind it.
+        if (needs && (scoAt == null || micAt == null)) return null
+        if (captureAt == null) return null
         return fire(atMs, fallback = false)
     }
 
@@ -141,6 +171,7 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
             session = session!!,
             captureUpMs = captureAt?.minus(openedAt),
             scoMs = scoAt?.minus(openedAt),
+            micMs = micAt?.minus(openedAt),
             needsSco = needsSco,
             firedMs = maxOf(0L, atMs - openedAt),
             fallback = fallback,
@@ -149,6 +180,6 @@ class LiveCue(private val timeoutMs: Long = TIMEOUT_MS) {
 
     companion object {
         /** The beep can be late, never missing: after this it is played whatever the signals say. */
-        const val TIMEOUT_MS = 2_500L
+        const val TIMEOUT_MS = 3_500L
     }
 }

@@ -1,0 +1,15 @@
+08:15:23.781 beeps.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-20-t4-beeps
+08:15:24.407 phone: mWakefulness=Awake, top: bitpit.launcher/.ui.HomeActivity
+08:15:24.520 app pid: 11796
+08:15:24.783 bluetooth:   mActiveDevice: XX:XX:XX:XX:EC:2F   === A2dpStateMachine for XX:XX:XX:XX:EC:2F (Active) ===
+08:15:24.960 audio device:   Active communication device: AudioDeviceAttributes: role:output type:bt_a2dp addr:XX:XX:XX:XX:EC:2F name:AirPods Pro p
+08:15:25.685 (1) talk opened and closed by the peer
+08:15:28.690 NOW: the peer opens talk -> the 'live' beep (low then high) a moment after the headset switches
+08:15:33.695 NOW: the peer closes talk -> the 'closed' beep (high then low)
+08:15:36.735 (2) talk opened by the peer, nobody speaks: the host closes on silence
+08:15:39.740 NOW: the peer opens talk and stays silent -> the 'live' beep, then nothing for 20s
+08:15:59.745 NOW: 20s of silence are up -> the 'closed' beep (no beep = the host did not close)
+08:16:04.786 (3) client mic unavailable, TALK pressed on the host
+08:16:10.852 NOW: the client refuses (its mic is unavailable) -> the 'error' beep (two low tones), no talk
+08:16:18.647 cleanup: kill 386442 2>/dev/null
+08:16:18.650 cleanup: kill 386428 2>/dev/null

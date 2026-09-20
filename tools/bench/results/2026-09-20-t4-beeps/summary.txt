@@ -1,0 +1,17 @@
+beeps, in the order you should have heard them:
+08:15:28.690 NOW: the peer opens talk -> the 'live' beep (low then high) a moment after the headset switches
+08:15:33.695 NOW: the peer closes talk -> the 'closed' beep (high then low)
+08:15:39.740 NOW: the peer opens talk and stays silent -> the 'live' beep, then nothing for 20s
+08:15:59.745 NOW: 20s of silence are up -> the 'closed' beep (no beep = the host did not close)
+08:16:10.852 NOW: the client refuses (its mic is unavailable) -> the 'error' beep (two low tones), no talk
+
+logcat (earcons themselves are not logged; these are the lines they follow):
+  08:15:29 Motoparty: talk open (by client)
+  08:15:34 Motoparty: talk closed (by client, trigger)
+  08:15:40 Motoparty: talk open (by client)
+  08:16:05 Motoparty: talk closed (by host, link)
+  08:16:11 Motoparty: talk open (by host)
+  08:16:11 Motoparty: talk closed (by client, unavailable)
+  08:16:11 Motoparty: client microphone unavailable
+
+VERDICT: ASK YOUR EARS (5 beeps expected: live, closed, live, closed, error)

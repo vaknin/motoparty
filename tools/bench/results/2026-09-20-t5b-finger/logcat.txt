@@ -1,0 +1,19 @@
+--------- beginning of system
+09-20 08:26:13.694 16723 16739 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+09-20 08:26:13.829 16723 16753 E ActivityThread: Failed to find provider info for androidx.car.app.connection
+09-20 08:26:14.317 16723 16723 D InsetsController: hide(ime())
+09-20 08:26:14.317 16723 16723 I ImeTracker: com.kivan.motoparty:73f9bc2c: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+--------- beginning of main
+09-20 08:29:51.759 16723 16723 I Surface : Creating surface for consumer unnamed-16723-2 with slotExpansion=1 for 64 slots
+09-20 08:29:51.759 16723 16723 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#2(BLAST Consumer)2 with slotExpansion=1 for 64 slots
+09-20 08:29:54.583 16723 16723 I Motoparty: overlay: hidden by drag to the X (Show buttons on the notification)
+09-20 08:30:04.548 16723 16723 I Surface : Creating surface for consumer unnamed-16723-3 with slotExpansion=1 for 64 slots
+09-20 08:30:04.549 16723 16723 I Surface : Creating surface for consumer VRI[motoparty:buttons]#3(BLAST Consumer)3 with slotExpansion=1 for 64 slots
+09-20 08:30:04.555 16723 16723 I ContentCaptureHelper: Setting logging level to OFF
+09-20 08:30:17.427 16723 16723 I Surface : Creating surface for consumer unnamed-16723-4 with slotExpansion=1 for 64 slots
+09-20 08:30:17.428 16723 16723 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#4(BLAST Consumer)4 with slotExpansion=1 for 64 slots
+09-20 08:30:26.218 16723 16723 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+09-20 08:30:26.221 16723 16723 D ViewRootImpl: Skipping stats log for color mode
+09-20 08:30:31.274 16723 16723 I Surface : Creating surface for consumer unnamed-16723-5 with slotExpansion=1 for 64 slots
+09-20 08:30:31.275 16723 16723 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#5(BLAST Consumer)5 with slotExpansion=1 for 64 slots
+09-20 08:30:34.535 16723 16723 I Motoparty: overlay: hidden by drag to the X (Show buttons on the notification)

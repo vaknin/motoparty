@@ -1,0 +1,114 @@
+         1789881895.665 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881895.667 11796 11796 I Motoparty: talk: no client connected
+         1789881898.012 11796 11796 I Surface : Creating surface for consumer unnamed-11796-3 with slotExpansion=1 for 64 slots
+         1789881898.012 11796 11796 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#3(BLAST Consumer)3 with slotExpansion=1 for 64 slots
+         1789881905.166 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881905.167 11796 11796 I Motoparty: talk: no client connected
+         1789881907.669 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789881907.673 11796 11796 D ViewRootImpl: Skipping stats log for color mode
+         1789881907.682 11796 11796 I ContentCaptureHelper: Setting logging level to OFF
+         1789881907.701 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@152ef7a
+         1789881907.782 11796 11796 D VRI[MainActivity]: WindowInsets changed: 2400x1080 statusBars:[0,74,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,74,0,84] 
+         1789881907.831 11796 11796 I Surface : Creating surface for consumer unnamed-11796-4 with slotExpansion=1 for 64 slots
+         1789881907.831 11796 11796 I Surface : Creating surface for consumer VRI[MainActivity]#4(BLAST Consumer)4 with slotExpansion=1 for 64 slots
+         1789881907.914 11796 11796 D InsetsController: hide(ime())
+         1789881907.914 11796 11796 I ImeTracker: com.kivan.motoparty:d51daa4c: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789881911.169 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881911.172 11796 11796 I Motoparty: talk: no client connected
+         1789881913.503 11796 11796 I Surface : Creating surface for consumer unnamed-11796-5 with slotExpansion=1 for 64 slots
+         1789881913.504 11796 11796 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#5(BLAST Consumer)5 with slotExpansion=1 for 64 slots
+         1789881920.640 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881920.641 11796 11796 I Motoparty: talk: no client connected
+         1789881923.153 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789881923.156 11796 11796 D ViewRootImpl: Skipping stats log for color mode
+         1789881923.165 11796 11796 I ContentCaptureHelper: Setting logging level to OFF
+         1789881923.183 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@d5915fd
+         1789881923.252 11796 11796 D VRI[MainActivity]: WindowInsets changed: 1080x2400 statusBars:[0,74,0,0] navigationBars:[0,0,0,132] mandatorySystemGestures:[0,74,0,132] 
+         1789881923.304 11796 11796 I Surface : Creating surface for consumer unnamed-11796-6 with slotExpansion=1 for 64 slots
+         1789881923.305 11796 11796 I Surface : Creating surface for consumer VRI[MainActivity]#6(BLAST Consumer)6 with slotExpansion=1 for 64 slots
+         1789881923.399 11796 11796 D InsetsController: hide(ime())
+         1789881923.399 11796 11796 I ImeTracker: com.kivan.motoparty:736ac145: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789881926.689 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881926.692 11796 11796 I Motoparty: talk: no client connected
+         1789881929.011 11796 11796 I Surface : Creating surface for consumer unnamed-11796-7 with slotExpansion=1 for 64 slots
+         1789881929.011 11796 11796 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#7(BLAST Consumer)7 with slotExpansion=1 for 64 slots
+         1789881936.202 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881936.205 11796 11796 I Motoparty: talk: no client connected
+         1789881938.760 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789881938.763 11796 11796 D ViewRootImpl: Skipping stats log for color mode
+         1789881938.770 11796 11796 I ContentCaptureHelper: Setting logging level to OFF
+         1789881938.783 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@c6242a4
+         1789881938.842 11796 11796 D VRI[MainActivity]: WindowInsets changed: 2400x1080 statusBars:[0,74,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,74,0,84] 
+         1789881938.867 11796 11809 W kivan.motoparty: Cleared Reference was only reachable from finalizer (only reported once)
+         1789881938.894 11796 11796 I Surface : Creating surface for consumer unnamed-11796-8 with slotExpansion=1 for 64 slots
+         1789881938.895 11796 11796 I Surface : Creating surface for consumer VRI[MainActivity]#8(BLAST Consumer)8 with slotExpansion=1 for 64 slots
+         1789881938.963 11796 11796 D InsetsController: hide(ime())
+         1789881938.963 11796 11796 I ImeTracker: com.kivan.motoparty:1d6989c3: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789881942.443 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881942.444 11796 11796 I Motoparty: talk: no client connected
+         1789881944.702 11796 11796 I Surface : Creating surface for consumer unnamed-11796-9 with slotExpansion=1 for 64 slots
+         1789881944.703 11796 11796 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#9(BLAST Consumer)9 with slotExpansion=1 for 64 slots
+         1789881951.921 11796 11796 I Motoparty: trigger TALK from OVERLAY
+         1789881951.923 11796 11796 I Motoparty: talk: no client connected
+         1789881953.973 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): null
+         1789881953.977 11796 11796 D ViewRootImpl: Skipping stats log for color mode
+         1789881953.985 11796 11796 I ContentCaptureHelper: Setting logging level to OFF
+         1789881954.002 11796 11796 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@fb8361d
+         1789881954.059 11796 11796 D VRI[MainActivity]: WindowInsets changed: 1080x2400 statusBars:[0,132,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,164,0,84] 
+         1789881954.101 11796 11796 I Surface : Creating surface for consumer unnamed-11796-10 with slotExpansion=1 for 64 slots
+         1789881954.101 11796 11796 I Surface : Creating surface for consumer VRI[MainActivity]#10(BLAST Consumer)10 with slotExpansion=1 for 64 slots
+         1789881954.182 11796 11796 D InsetsController: hide(ime())
+         1789881954.182 11796 11796 I ImeTracker: com.kivan.motoparty:1feaae4: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789881957.404 11796 11796 I Surface : Creating surface for consumer unnamed-11796-11 with slotExpansion=1 for 64 slots
+         1789881957.405 11796 11796 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#11(BLAST Consumer)11 with slotExpansion=1 for 64 slots
+         1789881960.807 11796 11796 I Surface : Creating surface for consumer unnamed-11796-12 with slotExpansion=1 for 64 slots
+         1789881960.808 11796 11796 I Surface : Creating surface for consumer VRI[MotopartyDismiss]#12(BLAST Consumer)12 with slotExpansion=1 for 64 slots
+         1789881965.683 11796 11796 I Motoparty: overlay: hidden by drag to the X (Show buttons on the notification)
+         1789881973.459 16723 16723 I libprocessgroup: Created cgroup /sys/fs/cgroup/apps/uid_10700/pid_16723
+         1789881973.464 16723 16723 I Zygote  : Process 16723 created for com.kivan.motoparty
+         1789881973.464 16723 16723 I kivan.motoparty: Late-enabling -Xcheck:jni
+         1789881973.500 16723 16723 I kivan.motoparty: Using generational CollectorTypeCMC GC.
+         1789881973.505 16723 16723 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+         1789881973.521 16723 16723 D CompatChangeReporter: Compat change id reported: 333566037; UID 10700; state: ENABLED
+         1789881973.522 16723 16723 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+         1789881973.522 16723 16723 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+         1789881973.659 16723 16723 D nativeloader: Configuring clns-9 for other apk /data/app/~~z_pyCfxpL1b34UPg7nJlvg==/com.kivan.motoparty-UXzFMYuF3O060L5IY1asbQ==/base.apk. target_sdk_version=37, uses_libraries=, library_path=/data/app/~~z_pyCfxpL1b34UPg7nJlvg==/com.kivan.motoparty-UXzFMYuF3O060L5IY1asbQ==/lib/arm64:/data/app/~~z_pyCfxpL1b34UPg7nJlvg==/com.kivan.motoparty-UXzFMYuF3O060L5IY1asbQ==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.kivan.motoparty
+         1789881973.665 16723 16723 V GraphicsEnvironment: Currently set values for:
+         1789881973.665 16723 16723 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[com.android.angle]
+         1789881973.665 16723 16723 V GraphicsEnvironment:   angle_gl_driver_selection_values=[angle]
+         1789881973.665 16723 16723 V GraphicsEnvironment: com.kivan.motoparty is not listed in per-application setting
+         1789881973.665 16723 16723 V GraphicsEnvironment: No special selections for ANGLE, returning default driver choice
+         1789881973.665 16723 16723 V GraphicsEnvironment: Neither updatable production driver nor prerelease driver is supported.
+         1789881973.667 16723 16723 D CompatChangeReporter: Compat change id reported: 407952621; UID 10700; state: ENABLED
+         1789881973.667 16723 16723 D CompatChangeReporter: Compat change id reported: 419020719; UID 10700; state: ENABLED
+         1789881973.687 16723 16723 D CompatChangeReporter: Compat change id reported: 418924588; UID 10700; state: ENABLED
+         1789881973.692 16723 16723 D CompatChangeReporter: Compat change id reported: 458413887; UID 10700; state: ENABLED
+         1789881973.694 16723 16739 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+         1789881973.694 16723 16739 D vulkan  : searching for layers in '/data/app/~~z_pyCfxpL1b34UPg7nJlvg==/com.kivan.motoparty-UXzFMYuF3O060L5IY1asbQ==/lib/arm64'
+         1789881973.694 16723 16739 D vulkan  : searching for layers in '/data/app/~~z_pyCfxpL1b34UPg7nJlvg==/com.kivan.motoparty-UXzFMYuF3O060L5IY1asbQ==/base.apk!/lib/arm64-v8a'
+         1789881973.724 16723 16723 I ContentCaptureHelper: Setting logging level to OFF
+         1789881973.790 16723 16723 I ExoPlayerImpl: Init 93fcd77 [AndroidXMedia3/1.11.1] [shiba, Pixel 8, Google, 37]
+         1789881973.814 16723 16723 I MediaSessionImpl: Init b0cf46f [AndroidXMedia3/1.11.1] [shiba, Pixel 8, Google, 37]
+         1789881973.821 16723 16723 I MediaSessionCompat: Couldn't find a unique registered media button receiver in the given context.
+         1789881973.822 16723 16754 D AudioSystem: onNewServiceWithAdapter: media.audio_flinger service obtained 0xb400007533db0680
+         1789881973.822 16723 16754 D AudioSystem: getService: IAudioFlingerService retrieved: 0xb400007593df5250  IAudioFlinger cached: 0xb400007533db0680
+         1789881973.829 16723 16753 E ActivityThread: Failed to find provider info for androidx.car.app.connection
+         1789881973.845 16723 16723 D DesktopExperienceFlags: Toggle override initialized to: false
+         1789881973.847 16723 16723 I TextToSpeech: Sucessfully bound to com.google.android.tts
+         1789881973.849 16723 16735 I TextToSpeech: Connected to TTS engine
+         1789881973.853 16723 16756 I TextToSpeech: Setting up the connection to TTS engine...
+         1789881973.855 16723 16723 I Motoparty: host up as "Pixel 8"
+         1789881973.867 16723 16723 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@46e02e5
+         1789881974.057 16723 16723 D VRI[MainActivity]: WindowInsets changed: 1080x2400 statusBars:[0,132,0,0] navigationBars:[0,0,0,63] mandatorySystemGestures:[0,164,0,84] 
+         1789881974.070 16723 16723 I HWUI    : Using FreeType backend (prop=Auto)
+         1789881974.135 16723 16723 I Surface : Creating surface for consumer unnamed-16723-0 with slotExpansion=1 for 64 slots
+         1789881974.135 16723 16723 I Surface : Creating surface for consumer VRI[MainActivity]#0(BLAST Consumer)0 with slotExpansion=1 for 64 slots
+         1789881974.192 16723 16723 I kivan.motoparty: hiddenapi: Accessing hidden method Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/compose/ui/platform/AndroidComposeView$Companion; (domain=app, TargetSdkVersion=37) using reflection: allowed
+         1789881974.243 16723 16723 I Surface : Creating surface for consumer unnamed-16723-1 with slotExpansion=1 for 64 slots
+         1789881974.244 16723 16723 I Surface : Creating surface for consumer VRI[motoparty:buttons]#1(BLAST Consumer)1 with slotExpansion=1 for 64 slots
+         1789881974.250 16723 16723 I ContentCaptureHelper: Setting logging level to OFF
+         1789881974.317 16723 16723 D InsetsController: hide(ime())
+         1789881974.317 16723 16723 I ImeTracker: com.kivan.motoparty:73f9bc2c: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+         1789881974.338 16723 16729 I kivan.motoparty: Compiler allocated 5303KB to compile void android.view.ViewRootImpl.performTraversals(long)
+         1789881974.723 16723 16755 I Discovery: registered Pixel 8
+         1789881978.808 16723 16809 D ProfileInstaller: Installing profile for com.kivan.motoparty

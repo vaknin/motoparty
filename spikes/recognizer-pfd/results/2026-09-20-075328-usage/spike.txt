@@ -1,0 +1,16 @@
+--------- beginning of main
+09-20 07:53:34.610 13059 13059 I Spike   : spike ready: Pixel 8, SDK 37
+09-20 07:53:34.677 13059 13092 I Spike   : === USAGE test ===
+09-20 07:53:34.678 13059 13092 I Spike   : usage: AudioManager.mode = MODE_NORMAL (0) -- not changed by this test
+09-20 07:53:34.709 13059 13092 I Spike   : usage: output device BUILTIN_EARPIECE "Pixel 8" id=2 rates=48000 sink=true
+09-20 07:53:34.709 13059 13092 I Spike   : usage: output device BUILTIN_SPEAKER "Pixel 8" id=3 rates=48000 sink=true
+09-20 07:53:34.709 13059 13092 I Spike   : usage: output device BLUETOOTH_SCO "AirPods Pro" id=20565 rates=48000 sink=true
+09-20 07:53:34.709 13059 13092 I Spike   : usage: output device BLUETOOTH_A2DP "AirPods Pro" id=20560 rates=48000 sink=true
+09-20 07:53:34.709 13059 13092 I Spike   : usage: output device TELEPHONY "Pixel 8" id=18 rates=48000 sink=true
+09-20 07:53:34.709 13059 13092 I Spike   : usage: output device BUILTIN_SPEAKER_SAFE "Pixel 8" id=4 rates=48000 sink=true
+09-20 07:53:34.861 13059 13092 I Spike   : usage: USAGE_MEDIA playing (1000 ms, 440 Hz, amplitude 0.2)
+09-20 07:53:35.161 13059 13092 I Spike   : usage: USAGE_MEDIA getRoutedDevice() = BLUETOOTH_A2DP "AirPods Pro" id=20560
+09-20 07:53:37.056 13059 13092 I Spike   : usage: USAGE_VOICE_COMMUNICATION playing (1000 ms, 440 Hz, amplitude 0.2)
+09-20 07:53:37.359 13059 13092 I Spike   : usage: USAGE_VOICE_COMMUNICATION getRoutedDevice() = BLUETOOTH_A2DP "AirPods Pro" id=20560
+09-20 07:53:38.067 13059 13092 I Spike   : USAGE VERDICT: media -> BLUETOOTH_A2DP "AirPods Pro", voice_communication -> BLUETOOTH_A2DP "AirPods Pro"
+09-20 07:53:38.067 13059 13092 I Spike   : --- done: usage ---

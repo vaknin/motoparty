@@ -1,0 +1,114 @@
+Activity Resolver Table:
+  Non-Data Actions:
+      android.intent.action.MAIN:
+        bc5e711 com.kivan.motoparty.spike/.MainActivity filter 7d0c076
+          Action: "android.intent.action.MAIN"
+          Category: "android.intent.category.LAUNCHER"
+
+Domain verification status:
+
+Key Set Manager:
+  [com.kivan.motoparty.spike]
+      Signing KeySets: 533
+
+Packages:
+  Package [com.kivan.motoparty.spike] (d321268):
+    appId=10701
+    pccId=-1
+    pkg=Package{79c61de com.kivan.motoparty.spike}
+    codePath=/data/app/~~M38m2_1zzTqfdD48Xjd7lA==/com.kivan.motoparty.spike-_DxBiUX65t1Wx2MKWo6C0w==
+    resourcePath=/data/app/~~M38m2_1zzTqfdD48Xjd7lA==/com.kivan.motoparty.spike-_DxBiUX65t1Wx2MKWo6C0w==
+    legacyNativeLibraryDir=/data/app/~~M38m2_1zzTqfdD48Xjd7lA==/com.kivan.motoparty.spike-_DxBiUX65t1Wx2MKWo6C0w==/lib
+    extractNativeLibs=false
+    primaryCpuAbi=null
+    secondaryCpuAbi=null
+    cpuAbiOverride=null
+    versionCode=1 minSdk=29 targetSdk=37
+    minExtensionVersions=[]
+    versionName=0.1.0
+    hiddenApiEnforcementPolicy=2
+    usesNonSdkApi=false
+    splits=[base]
+    apkSigningVersion=2
+    flags=[ DEBUGGABLE HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    forceQueryable=false
+    pageSizeCompat=0
+    queriesIntents=[Intent { act=android.speech.RecognitionService }, Intent { act=android.intent.action.TTS_SERVICE }]
+    scannedAsStoppedSystemApp=false
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2026-09-20 07:54:13
+    lastUpdateTime=2026-09-20 07:54:14
+    installerPackageName=null
+    installerPackageUid=-1
+    initiatingPackageName=com.android.shell
+    originatingPackageName=null
+    packageSource=1
+    appMetadataFilePath=null
+    appMetadataSource=0
+    signatures=PackageSignatures{25e0073 version:2, signatures:[6ec8971a], past signatures:[]}
+    installPermissionsFixed=false
+    pkgFlags=[ DEBUGGABLE HAS_CODE ALLOW_CLEAR_USER_DATA ]
+    privatePkgFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PRIVATE_FLAG_ALLOW_NATIVE_HEAP_POINTER_TAGGING ]
+    apexModuleName=null
+    requested permissions:
+      android.permission.RECORD_AUDIO
+    User 0: ceDataInode=843331 deDataInode=768930 pccCeDataInode=0 pccDeDataInode=0 installed=true hidden=false suspended=false appLockEnabled=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false quarantined=false
+      installReason=0
+      dataDir=/data/user/0/com.kivan.motoparty.spike
+      firstInstallTime=2026-09-20 07:52:02
+      uninstallReason=0
+      overlay paths:
+        /product/overlay/NavigationBarModeGestural/NavigationBarModeGesturalOverlay.apk
+        /data/resource-cache/com.android.systemui-neutral-nzsD.frro
+        /data/resource-cache/com.android.systemui-accent-5S57.frro
+        /data/resource-cache/com.android.systemui-dynamic-0sqJ.frro
+      legacy overlay paths:
+        /product/overlay/NavigationBarModeGestural/NavigationBarModeGesturalOverlay.apk
+      runtime permissions:
+        android.permission.RECORD_AUDIO: granted=true, flags=[ USER_SENSITIVE_WHEN_GRANTED|USER_SENSITIVE_WHEN_DENIED]
+
+Queries:
+  system apps queryable: false
+  queries via forceQueryable:
+  queries via package name:
+  queries via component:
+    com.google.android.as:
+      com.kivan.motoparty.spike
+    com.google.android.settings.intelligence:
+      com.kivan.motoparty.spike
+    com.google.android.as.oss:
+      com.kivan.motoparty.spike
+    com.google.android.apps.diagnosticstool:
+      com.kivan.motoparty.spike
+    com.google.android.apps.camera.services:
+      com.kivan.motoparty.spike
+    com.google.android.apps.accessibility.voiceaccess:
+      com.kivan.motoparty.spike
+    com.verizon.mips.services:
+      com.kivan.motoparty.spike
+    com.whatsapp:
+      com.kivan.motoparty.spike
+    com.trianguloy.openInWhatsapp:
+      com.kivan.motoparty.spike
+    com.facebook.orca:
+      com.kivan.motoparty.spike
+    us.zoom.videomeetings:
+      com.kivan.motoparty.spike
+    com.instagram.android:
+      com.kivan.motoparty.spike
+    com.microsoft.office.outlook:
+      com.kivan.motoparty.spike
+    com.kivan.motoparty.spike:
+      com.google.android.as
+      com.google.android.googlequicksearchbox
+      com.anthropic.claude
+  queryable via interaction:
+    User 0:
+  queryable via uses-library:
+
+Dexopt state:
+  [com.kivan.motoparty.spike]
+    path: /data/app/~~M38m2_1zzTqfdD48Xjd7lA==/com.kivan.motoparty.spike-_DxBiUX65t1Wx2MKWo6C0w==/base.apk
+      arm64: [status=run-from-apk] [reason=unknown] [primary-abi]
+        [location is error]

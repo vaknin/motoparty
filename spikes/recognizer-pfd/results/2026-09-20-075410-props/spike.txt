@@ -1,0 +1,12 @@
+--------- beginning of main
+09-20 07:54:14.568 13236 13236 I Spike   : spike ready: Pixel 8, SDK 37
+09-20 07:54:14.589 13236 13266 I Spike   : === PROPS test ===
+09-20 07:54:14.590 13236 13266 I Spike   : props: Build Google Pixel 8 (shiba), Android 17, SDK_INT=37
+09-20 07:54:14.590 13236 13266 I Spike   : props: PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED = false (null or "false" means MediaRecorder.AudioSource.UNPROCESSED is not usable)
+09-20 07:54:14.594 13236 13266 I Spike   : props: PROPERTY_OUTPUT_SAMPLE_RATE = 48000
+09-20 07:54:14.594 13236 13266 I Spike   : props: PROPERTY_OUTPUT_FRAMES_PER_BUFFER = 240
+09-20 07:54:14.595 13236 13266 I Spike   : props: AudioManager.mode = MODE_NORMAL
+09-20 07:54:14.596 13236 13266 I Spike   : props: SpeechRecognizer.isRecognitionAvailable = true
+09-20 07:54:14.596 13236 13266 I Spike   : props: SpeechRecognizer.isOnDeviceRecognitionAvailable = true
+09-20 07:54:14.597 13236 13266 I Spike   : PROPS VERDICT: unprocessed=false, sdk=37, onDeviceRecognizer=true
+09-20 07:54:14.597 13236 13266 I Spike   : --- done: props ---

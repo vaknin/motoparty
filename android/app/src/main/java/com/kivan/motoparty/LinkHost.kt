@@ -80,7 +80,9 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         AndroidSettings.Global.getString(context.contentResolver, AndroidSettings.Global.DEVICE_NAME) ?: Build.MODEL
 
     private val talk: TalkController = TalkController(clock)
-    private val router = AudioRouter(context)
+    // The route teardown invalidates the cached link state at once, so a talk opened in the window
+    // before the framework reports the teardown cannot see a stale "connected" (F8).
+    private val router = AudioRouter(context, onRouteReleased = { sco.onRouteReleased() })
     /** Every route change and voice start/stop, in order, off Main. Failures come back on Main. */
     private val audio = AudioThread(scope) { what, e -> Hub.log("$what failed: $e") }
     private val http = OkHttpClient.Builder()
@@ -98,6 +100,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         onActivity = talk::noteActivity,
         // From the capture thread, on its first frame: never block it, hop to Main.
         onCaptureUp = { atMs -> scope.launch { onCaptureUp(atMs) } },
+        // Same thread, same rule: the headset's own mic signal is arriving (F9a).
+        onMicLive = { atMs -> scope.launch { onMicLive(atMs) } },
     )
     /** Route + voice engine for talk, collapsed to the latest open/close (see [TalkAudio]). */
     private val talkAudio = TalkAudio(
@@ -127,7 +131,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private val audioManager = context.getSystemService(AudioManager::class.java)
     /** `AudioManager.getMode()` cached off Main; see [AudioModeWatch] and [micAvailable]. */
     private val audioMode = AudioModeWatch(context)
-    /** The Bluetooth SCO link state, cached off Main: the other half of the live earcon's truth. */
+    /**
+     * Is call audio really flowing over the Bluetooth link? Cached off Main: the other half of the
+     * live earcon's truth. Since F8 that is the framework's communication device, not a broadcast.
+     */
     private val sco = ScoWatch(context) { connected, atMs -> scope.launch { onScoState(connected, atMs) } }
     /** Decides when the "live" earcon may be played (F7). Touched on Main only. */
     private val liveCue = LiveCue()
@@ -337,8 +344,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 scope.launch {
                     // The route is decided once this returns; the SCO link is not up yet.
                     opened.join()
-                    // A collapsed re-open kept a running engine, whose first frame is behind us.
+                    // A collapsed re-open kept a running engine, whose first frame — and whose
+                    // established headset mic (F9a) — are behind us; no new callback will come.
                     voice.captureUpAtMs?.let { fireLive(liveCue.captureUp(session, it)) }
+                    voice.micLiveAtMs?.let { fireLive(liveCue.micLive(session, it)) }
+                    // `sco.connected` can only still be true here if the route was never released
+                    // (a re-open that kept it), which is exactly when it may count — see F8 and
+                    // ScoWatch.onRouteReleased.
                     fireLive(liveCue.route(session, router.needsSco, sco.connected, clock()))
                 }
                 scope.launch {
@@ -379,7 +391,20 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         fireLive(liveCue.captureUp(talkAudio.ownerSession, atMs))
     }
 
-    /** The SCO link came up or dropped ([ScoWatch], on Main). The other half. */
+    /**
+     * The headset's own microphone signal is arriving (on Main, via [VoiceEngine.onMicLive] /
+     * [MicLive]): the last third of the "live" earcon's truth, and the only one of the three that
+     * has travelled back from the earpieces (F9a).
+     */
+    private fun onMicLive(atMs: Long) {
+        fireLive(liveCue.micLive(talkAudio.ownerSession, atMs))
+    }
+
+    /**
+     * Bluetooth call audio started or stopped flowing ([ScoWatch], on Main). The other half. Since
+     * F8 this is the audio framework's communication device becoming (or ceasing to be) `bt_sco`,
+     * which the bench shows landing after the SCO link is really open.
+     */
     private fun onScoState(connected: Boolean, atMs: Long) {
         if (connected) fireLive(liveCue.scoConnected(atMs)) else liveCue.scoDisconnected()
     }
@@ -390,7 +415,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * still the same talk — because [LiveCue]'s decision is made from events that travel.
      *
      * One line per talk for the bench, e.g.
-     * `live cue: session 8, capture up +1310 ms, sco +1240 ms, fired +1312 ms (both)`.
+     * `live cue: session 8, capture up +1310 ms, sco +1240 ms, mic +1502 ms, fired +1502 ms (both)`.
      */
     private fun fireLive(fire: LiveCue.Fire?) {
         if (fire == null) return

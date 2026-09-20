@@ -22,10 +22,11 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `link/Discovery.kt` | done (NSD `_motoparty._tcp`, TXT proto/voice/http) |
 | `audio/opus_jni.c` + `cpp/CMakeLists.txt` + `audio/Opus.kt` | done. libopus 1.5.2 static, VOIP/24 kbps/FEC 10 %/DTX/complexity 8 |
 | `core/TalkStats.kt` | done. Pure: the `talk stats` loss arithmetic and the exact line format (layer 2) |
-| `audio/VoiceEngine.kt` | done. Logs one `talk stats:` line per talk at `stop` (built by `TalkStats`). Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity. `start`/`stop` belong on the audio thread. Each `start(onFailed)` is a session (an `AtomicReference`, not a `running` flag): a loop that outlives `stop`'s 500 ms join cannot carry on under the next `start`, and only the first failure of a still-current session reports, to that session's `onFailed` |
+| `audio/VoiceEngine.kt` | done. Since F9a the capture loop also measures each raw frame's peak, drives `MicLive` (routing listener on its own `voice-route` thread + a `routedDevice` re-read every 25 frames while the input is not SCO yet), reports `onMicLive` once per `start` and keeps `micLiveAtMs` (carried across a collapsed re-open like `captureUpAtMs`), and prints the `mic trace:` / `capture routed to …` diagnostics — section 2, "F9a". Logs one `talk stats:` line per talk at `stop` (built by `TalkStats`). Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity. `start`/`stop` belong on the audio thread. Each `start(onFailed)` is a session (an `AtomicReference`, not a `running` flag): a loop that outlives `stop`'s 500 ms join cannot carry on under the next `start`, and only the first failure of a still-current session reports, to that session's `onFailed` |
 | `audio/AudioRouter.kt` | done (ref-counted MODE_IN_COMMUNICATION + setCommunicationDevice, prefers BLE headset > SCO > wired > USB). Audio-thread only; `selectedDevice` is published from there instead of queried from Main. `enterCall` counts itself before it can throw, so every caller pairs it with `exitCall` regardless; `exitCall` sets `MODE_NORMAL` in a `finally`; `exitAll` is the shutdown backstop |
-| `audio/LiveCue.kt` | done, unit-tested (`LiveCueTest`, 10). Pure: when the "live" earcon may play — first captured frame **and** the route really up (SCO connected for a Bluetooth headset), one fire per open, 2.5 s fallback timer. See section 2, "F7" |
-| `audio/ScoWatch.kt` | done, device-unverified. The Bluetooth SCO link state cached off Main (two broadcasts; Android 17 may have retired the classic one — section 2, "F7") |
+| `audio/LiveCue.kt` | done, unit-tested (`LiveCueTest`, 12). Pure: when the "live" earcon may play — first captured frame **and** the route really up (Bluetooth call audio really flowing, for an SCO headset) **and**, since F9a, the headset's own mic signal arriving (`MicLive`); the last two only for an SCO route. One fire per open, 3.5 s fallback timer (2.5 s until F8). See section 2, "F7", "F8" and "F9a" |
+| `audio/MicLive.kt` | done, unit-tested (`MicLiveTest`, 8). Pure: the F9a condition (c) — the recorder is routed to a Bluetooth SCO *input* and, after that moment, `FRAMES_NEEDED` = 10 consecutive 20 ms frames have a peak above `PEAK_THRESHOLD` = 16. Fed by `VoiceEngine`'s capture loop; the only live-earcon signal that has travelled back from the earpieces. Constants to be tuned from the `mic trace:` line — section 2, "F9a" |
+| `audio/ScoWatch.kt` + `audio/ScoRule.kt` | done. Is Bluetooth call audio really flowing? Cached off Main. Since F8 (device-measured) the source on API 31+ is `addOnCommunicationDeviceChangedListener` (`type == TYPE_BLUETOOTH_SCO`), seeded once from `getCommunicationDevice()`, invalidated synchronously when `exitCall` clears the route (`onRouteReleased`); the legacy broadcasts are logged `[not used]` there and only drive below API 31. `ScoRule` is the pure part (which API level, which device types, the log spelling), unit-tested (`ScoRuleTest`, 4) — section 2, "F8" |
 | `audio/AudioThread.kt` | done, reviewed, unit-tested (`AudioThreadTest`). The single serial thread every route change and voice start/stop runs on (section 4, "Talk no longer blocks Main"). Not yet run on the device |
 | `audio/Earcons.kt` | done (generated tones: LIVE, CLOSED, OK, ERROR, LISTEN) |
 | `music/Catalog.kt`, `OkHttpDownloader.kt` | done (NewPipeExtractor v0.26.5; YT Music songs/albums/playlists, artist = top 20 songs; falls back to plain YouTube search; resolves progressive M4A, itag 140 preferred) |
@@ -44,13 +45,20 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `Settings.kt`, `Hub.kt`, `MotopartyApp.kt` | done |
 | `tools/fetch_opus.sh` | done |
 
-Tests (`app/src/test/...`), 139 in all by the last run (the list may lag), 2 skipped: `CodecTest` (14), `ClockEstimatorTest` (1),
+Tests (`app/src/test/...`), 153 in all by the last run (the list may lag), 2 skipped: `CodecTest` (14), `ClockEstimatorTest` (1),
 `VoicePacketTest` (3), `CommandParserTest` (2), `JitterBufferTest` (20), `TalkStatsTest` (4),
 `TalkControllerTest` (8, incl. the 20 s silence close), `ControlServerTest` (7, real loopback sockets), `TrackServerTest` (5),
 `SyncControllerTest` (23), `MainLagTest` (3), `StepTimerTest` (2), `TalkAudioTest` (7),
-`LiveCueTest` (10: the F7 live-earcon rule — normal order, capture before SCO, SCO before the
-route, an SCO flap, a non-Bluetooth route, the timeout fallback, close before ready, stale
-sessions, a collapsed re-open, and the exact `live cue:` line),
+`LiveCueTest` (12: the live-earcon rule — normal order, capture before the link, the link before the
+route, all three signals in each arrival order, an SCO flap, a non-Bluetooth route (needs neither
+link nor mic signal), the timeout fallback, a headset whose mic signal never arrives, close before
+ready, stale sessions, a collapsed re-open, and the exact `live cue:` line),
+`MicLiveTest` (8: the F9a "the headset's own mic is delivering" run — silence then signal, signal
+before the SCO-routed moment does not count, one silent frame restarts the run, the threshold itself
+is silence, fires once and survives a later flap, a route that leaves SCO before the mic was live
+starts over, `reset` is a new engine, and the tunable K/threshold),
+`ScoRuleTest` (4: the F8 source per API level, only a routed `TYPE_BLUETOOTH_SCO` counts as
+connected, a BLE headset does not, and the device spelling in the log line),
 `OverlayPlacementTest` (22: travel/clamp/fraction round-trips, the usable area from bounds + insets,
 the D4 far corner on screen in all four rotations, and the F6 X target — where it sits, that a
 drop at the bottom centre hits it in portrait *and* in landscape, where the window is more than
@@ -63,9 +71,9 @@ none is silently skipped.
 
 ## 2. Verified, and how
 
-- `./gradlew assembleDebug testDebugUnitTest` -> BUILD OK, 139 tests, 137 pass, 2 skipped
-  (network), 0 fail (after F7, 2026-09-20; was 128 after F6, 123 before it, 115 after the D1-bench-4
-  Main-blocking fix, 111 after the D2 filtered-drift fix).
+- `./gradlew assembleDebug testDebugUnitTest` -> BUILD OK, 153 tests, 151 pass, 2 skipped
+  (network), 0 fail (after F9a, 2026-09-20; was 143 after F8, 139 after F7, 128 after F6, 123 before
+  it, 115 after the D1-bench-4 Main-blocking fix, 111 after the D2 filtered-drift fix).
 - `./gradlew :app:testDebugUnitTest -Pnetwork --tests '*CatalogNetworkTest*'` (laptop, live
   YouTube) -> pass: song/album/artist/playlist search; Bohemian Rhapsody resolved itag 140,
   5.7 MB downloaded in 2.2 s, `ftyp` box.
@@ -380,7 +388,10 @@ flap before the beep (cycle 1 — one beep, at the second connect), a non-Blueto
 timeout, close before ready (no beep at all), stale-session events, and a collapsed fast re-open.
 
 **Wiring:**
-- **`audio/ScoWatch.kt`** (new, next to `AudioModeWatch`): the SCO link state cached off Main, on
+- **`audio/ScoWatch.kt`** (new, next to `AudioModeWatch`). **Its source is superseded by F8 below:
+  the classic broadcast turned out to be the only one that fires here, and it fires 534–1100 ms
+  *before* the link exists, so on API 31+ the communication-device listener drives the earcon and
+  the broadcasts are only logged `[not used]`.** As built in F7 it was the SCO link state cached off Main, on
   its own daemon thread `motoparty-sco` (the registration itself is posted there too). It listens
   to **two** broadcasts, because one of them may not exist on this phone:
   `AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED` (`SCO_AUDIO_STATE_CONNECTED`) — the classic
@@ -430,7 +441,8 @@ this talk opened, i.e. a re-open that kept the route.
    line in `logcat_all`) and never before it. Speaking right after the beep must be heard by the
    other phone in full — that is the whole point.
 3. `ScoWatch: sco connected (…)` appears at all, and the source in the brackets tells which
-   broadcast survives on Android 17 — note it in this file.
+   broadcast survives on Android 17 — note it in this file. **Answered:** only
+   `ACTION_SCO_AUDIO_STATE_UPDATED`, 18/18, and it is too early to be trusted (F8).
 4. Fast re-open (talk close + open ~300 ms apart, the `TalkAudio: re-open …: call route kept`
    case): **exactly one** beep per open, the second one immediately (`capture up +0 ms,
    sco +0 ms`), never two beeps for one open and never a silent open.
@@ -439,6 +451,206 @@ this talk opened, i.e. a re-open that kept the route.
 6. An SCO flap inside one talk still beeps once.
 7. The closed / error / OK / LISTEN earcons are unchanged (still one `AudioTrack: stop(..)` line
    each, F5).
+
+(Run on the device this morning: every talk did say `(both)` and `ScoWatch: sco connected
+(ACTION_SCO_AUDIO_STATE_UPDATED)` did appear — but item 2 failed, the beep was still before the
+link. *Why* is F8, next.)
+
+### F8 (2026-09-20) — the live beep waits for the communication device, not the SCO broadcast
+
+F7's gate was honest in shape and wrong in its input. Device run
+`tools/bench/results/2026-09-20-t3-talk-f7` (Pixel 8 / Android 17 / AirPods Pro,
+coordinator-verified):
+
+- `ACTION_SCO_AUDIO_STATE_UPDATED` is the **only** source that ever appeared (18/18); the
+  Bluetooth-stack broadcast never fired. But its "connected" arrives **534–1100 ms before** the
+  stack's `SCO_state_change … ->[BTA_AG_SCO_OPEN_ST(0x06)]` in 9/9 talks: it reports the audio
+  framework's *intent* to build a link, not the link. One talk beeped 648 ms before the first
+  `OPEN_ST` and 1630 ms before the link that stayed up
+  (`live cue: session 4, capture up +738 ms, sco +536 ms, fired +738 ms (both)`).
+- In **5 of 8 talks the stack flaps**: `OPEN_ST` → `CLOSING` 27–47 ms later → `OPEN_ST` again
+  ~0.8–1.0 s later. `ScoWatch` saw none of it.
+- The honest signal is the framework's own dispatch, `AS.AudioDeviceBroker: Dispatch
+  onCommunicationDeviceChanged: AudioDeviceInfo: type: bt_sco …`, which lands **+184…+530 ms after
+  the LAST `OPEN_ST`, never before it, in every talk**; a non-SCO type (`earpiece`, …) follows every
+  close. Timeline of one talk (s): open 661.472 · broadcast "connected" 662.008 · `OPEN_ST` 662.859 ·
+  `CLOSING` 662.886 · `OPEN_ST` 663.841 · `onCommunicationDeviceChanged bt_sco` 664.290.
+
+**What changed.** `LiveCue` and its rule are untouched (still: first captured frame **and** the
+route really up, one fire per open, 2.5 s fallback, same 10 tests) — only what feeds "the route is
+really up" changed.
+
+- **`audio/ScoWatch.kt`**: on API 31+ the state comes from
+  `AudioManager.addOnCommunicationDeviceChangedListener(executor, listener)` — connected = the
+  reported device is non-null and `type == TYPE_BLUETOOTH_SCO`; anything else (null, earpiece,
+  speaker, A2DP…) = disconnected. The executor is the `motoparty-sco` watcher thread's own handler,
+  so nothing lands on Main and the registration (a binder call) is posted there as well. The two
+  broadcasts are still registered and **logged only**, as
+  `ScoWatch: broadcast sco connected (ACTION_SCO_AUDIO_STATE_UPDATED) [not used]`, so a bench run
+  can keep lining the two timelines up; below API 31 they still drive, unchanged (minSdk 29, where
+  `AudioRouter` also uses legacy `startBluetoothSco()`).
+- **`audio/ScoRule.kt`** (new, pure, `ScoRuleTest`, 4 tests): which API level uses which source
+  (`COMMUNICATION_DEVICE_SDK = 31`), which device types count as connected, and the device spelling
+  used in the log line. **`TYPE_BLE_HEADSET` deliberately does not count as connected**: the flag is
+  read only through `LiveCue`'s `needsSco` gate, which is on exactly when the selected route *is*
+  `TYPE_BLUETOOTH_SCO` (`AudioRouter.needsSco`); a BLE headset, like every non-SCO route, is up as
+  soon as `enterCall` returns and never consults the flag, so counting it here could only open an
+  SCO talk's gate with a device that is not its link.
+- **Initial state** (there is no callback for the state that already holds at registration): the
+  watcher reads `getCommunicationDevice()` once, on the watcher thread, right after registering.
+  Because the listener reports on that same handler, a change racing with the registration is queued
+  *behind* that read, so it cannot be lost or applied out of order.
+- **Stale state at the open edge** (`LinkHost` polls `sco.connected` when the route reports):
+  `AudioRouter` now takes an `onRouteReleased` callback, invoked on the audio thread in `exitCall`'s
+  `finally` right after `clearCommunicationDevice()`, and `ScoWatch.onRouteReleased()` sets the flag
+  to false **synchronously** (`update` is `@Synchronized`, as two threads now reach it) and logs
+  `ScoWatch: sco disconnected (call route released)`. The framework's own `earpiece` dispatch for
+  that teardown arrives hundreds of ms later — possibly after the *next* talk's `enterCall` has
+  already returned — which is the old "quick close→open that did not collapse may see the old link
+  still connected" edge. Nothing sets the flag on `enterCall`: selecting the device is precisely the
+  intent-not-link signal this entry removes.
+- **The kept-route fast re-open is unaffected**, by construction: `TalkAudio: re-open …: call route
+  kept` never calls `exitCall`, so the flag stays true from the link that is genuinely still up, and
+  the re-opened talk beeps at once (`capture up +0 ms, sco +0 ms`), still exactly once.
+- `LinkHost` wiring is otherwise unchanged (same `(connected, atMs)` callback shape), and the
+  `live cue: …` line format is byte-for-byte the F7 one.
+
+**Known consequence — the fallback may now win a flapping talk.** The honest signal is later than
+the one it replaces: without a flap it should land ~1.6–1.9 s after the talk open (last `OPEN_ST`
+≈ +1.4 s, dispatch +184…530 ms), but in the 5-of-8 flapping talks the last `OPEN_ST` is ~1 s later,
+i.e. the dispatch is at ~2.4–2.9 s — the bench's one full example was **+2818 ms**, past
+`LiveCue.TIMEOUT_MS` (2.5 s). Such a talk will beep on the timer and say `(fallback)`, i.e. slightly
+early again. **Coordinator, same day: `TIMEOUT_MS` raised to 3.5 s** (from test 3's own numbers the
+dispatch was +2.31…+2.82 s after the open in the flapping talks, +1.19 s without a flap; `LiveCueTest`
+adjusted, 143 tests pass). The timer stays the "never silent" guarantee; a talk that only beeps after
+~2.8 s is the flap's cost, and fixing the flap itself is not in scope here.
+
+**Verify on the device (F8):**
+
+1. Every talk's `live cue: …` line says **`(both)`** — see the caveat above; if a talk says
+   `(fallback)`, check whether its SCO flapped and note the numbers here.
+2. `ScoWatch: sco connected (communication device bt_sco)` appears once per talk and is **never
+   earlier than the last `->[BTA_AG_SCO_OPEN_ST` of that talk** in `logcat_all` (expect
+   +184…+530 ms after it).
+3. The `live cue:` line, and the beep, come **after** that `ScoWatch` line.
+4. One beep per open, never two, never none. The fast re-open (`TalkAudio: re-open …: call route
+   kept`) still beeps immediately, `capture up +0 ms, sco +0 ms`.
+5. Speaking right after the beep is heard by the other phone in full — the whole point.
+6. `ScoWatch: broadcast sco connected (…) [not used]` lines are still there and still early; they
+   are the comparison, not the source.
+7. After each close, `ScoWatch: sco disconnected (call route released)` (or a `communication device
+   earpiece|none` line) shows up, and no talk ever starts with a stale `sco +0 ms` unless its route
+   was really kept.
+
+### F9a (2026-09-20) — the live beep also waits for the headset's mic signal
+
+**Why.** F8's gate is honest about *this phone* and that is not enough. Device run
+`tools/bench/results/2026-09-20-t3b-talk-f8` (Pixel 8 / Android 17 / AirPods Pro,
+coordinator-verified): the cue fires **+329…+598 ms after the Bluetooth stack's last
+`BTA_AG_SCO_OPEN_ST`**, and on the phone's side everything is ready **0.3–0.5 s before the beep** —
+the HAL path `voip-playback-0 -> bluetooth-sco-default` is applied, the stream is started, nothing
+re-routes during the beep. The user **still hears the beep cut off in some talks**, typically the
+ones where the beep comes before the passenger's voice becomes audible. So the AirPods start
+rendering call audio a varying time *after* the phone starts sending it, and the phone is told
+nothing about that. The same HAL log also shows some talks starting capture on the **built-in** mic
+(`(null) => microphones -> voip-capture-0`) and being moved to `bluetooth-sco-headset-microphones`
+~0.1 s later — so "the first captured frame" (condition (a)) is not "the first frame from the
+headset" either.
+
+The one thing that really travels back from the earpieces is their **microphone**. User's
+requirement, verbatim: *"we need to async await for talk mode to be fully ready somehow. I'm fine
+with a small delay, not 'sleep' delay, but real async delay. I want 0 cutoffs."* — so no fixed delay
+anywhere; the only timer is the old "never silent" safety net.
+
+**The rule now.** LIVE fires when **all three** hold: (a) the first captured frame of this talk, (b)
+the route really up (F8, the framework's communication device = `bt_sco`), **(c) the headset's own
+mic signal is arriving**. (b) and (c) are required only when the route needs SCO
+(`AudioRouter.needsSco`); on any other route (earpiece, speaker, wired, BLE headset) the cue still
+fires as soon as (a) and the route report are in. One fire per open, never after the close, same
+`LiveCue.TIMEOUT_MS` = **3.5 s** fallback logged `(fallback)`.
+
+- **`audio/MicLive.kt`** (new, pure, `MicLiveTest`, 8 tests) decides (c): the recorder is routed to a
+  Bluetooth SCO **input**, and *after that moment* **`FRAMES_NEEDED` = 10** consecutive 20 ms frames
+  (200 ms) have a peak |sample| **above `PEAK_THRESHOLD` = 16** (−66 dBFS). A frame read before the
+  SCO moment never counts however loud it was (that is the built-in mic, or bike noise on it); one
+  silent frame inside the run restarts the count, so a single click of switching noise cannot open the
+  gate. It reports once per engine; leaving the SCO input *before* the mic was established starts it
+  over, *after* it changes nothing. **Both constants are first guesses, to be tuned from the
+  `mic trace:` line of the next device run.**
+- **`audio/VoiceEngine.kt`**: the capture loop computes each raw frame's peak **before** the encoder
+  (one pass over 320 shorts, no allocation), feeds `MicLive`, and calls the new
+  **`onMicLive(atMs)`** callback once per `start` — same contract as `onCaptureUp` (capture thread,
+  `elapsedRealtime`, must not block; `LinkHost` hops to Main itself). The routed device comes from
+  `AudioRecord.addOnRoutingChangedListener` (API 24+) registered on a dedicated `voice-route`
+  `HandlerThread` (never Main, which a talk open can block) — the listener only hands a
+  `(type, atMs)` report over and the capture loop applies it on its next frame, so the loop stays the
+  single owner of that state. Backstops: `routedDevice` is read once right after `startRecording()`,
+  and re-read every **`ROUTE_RECHECK_FRAMES` = 25** frames (~500 ms) *while the input is still not
+  SCO* — a getter inside a loop that already runs, not a sleep. `micLiveAtMs` is kept and cleared by
+  `start` only, so an engine **carried across a collapsed close/open keeps it** and the re-opened
+  talk counts it as +0 ms, exactly like `captureUpAtMs`.
+- **`LiveCue`**: new `micLive(session, atMs)` event and `Fire.micMs`; `ready()` requires
+  `micAt != null` when `needsSco`. `scoDisconnected()` deliberately does **not** clear `micAt`: the
+  mic signal is reported once per engine, so clearing it could never be undone and every flapping
+  talk would fall back to the timer. The flap's honesty is condition (b), which the link's return
+  re-establishes.
+- **`LinkHost`**: `onMicLive = { atMs -> scope.launch { onMicLive(atMs) } }` next to `onCaptureUp`,
+  `onMicLive` on Main does `liveCue.micLive(talkAudio.ownerSession, atMs)`, and the talk-open job
+  polls `voice.micLiveAtMs` right after `voice.captureUpAtMs` for the kept-route re-open.
+- Untouched, by instruction: the CLOSED/ERROR earcons, the voice-command path (`listenForCommand`,
+  `SCO_SETTLE_MS`), `ScoWatch`/`ScoRule`/`AudioRouter`, the overlay, the protocol, DTX/`onActivity`.
+  No new dependencies. The SCO flap itself is still not addressed.
+
+**The log lines.** The `live cue:` line gains one field, before the bracket (`tools/bench/bench.py`
+parses nothing of this line today — grep says it never mentions `live cue`, so nothing breaks; the
+words `(both)` and `(fallback)` are unchanged for old greps). `Motoparty:` tag via `Hub.log`, pinned
+by `LiveCueTest.the log line is what the bench parses`:
+
+    live cue: session <n>, capture up <+N ms|none>, sco <+N ms|n/a|unknown>, mic <+N ms|n/a|unknown>, fired +<N> ms (both|fallback)
+
+e.g. `live cue: session 8, capture up +1310 ms, sco +1240 ms, mic +1502 ms, fired +1502 ms (both)`.
+`mic` reads like `sco`: `n/a` = not an SCO route (nothing to wait for), `unknown` = the route never
+reported, `none` = an SCO route whose headset mic was never established, `+0 ms` = carried from an
+engine that was already live (a re-open that kept the route).
+
+Two new `VoiceEngine:` lines per talk, the tuning data for the next run:
+
+    VoiceEngine: capture routed to <builtin_mic|bt_sco|…|none> +<N> ms
+    VoiceEngine: mic trace: session-start +0 ms routed=<type>@+<A> ms, sco@+<B> ms, live@+<C> ms, peaks/100ms: 0 0 0 0 3 5 812 1033 …
+
+`capture routed to …` is one line per change of the recorder's input device (offsets from the capture
+thread's start). `mic trace:` is one line per talk, printed at 4 s of capture or at the engine's stop,
+whichever comes first: `routed=` is the **first** input device reported (`none` if the framework never
+said), `sco@` the moment `MicLive` accepted an SCO input, `live@` the moment (c) fired, then the
+**loudest sample per 100 ms bucket** for up to 40 buckets (4 s). Nothing else is logged per frame.
+(An engine carried across a collapsed re-open traces only its first 4 s, i.e. the first talk's.)
+
+**Verify on the device (F9a):**
+
+1. Every talk's `live cue: …` line says **`(both)`**, and `mic +M ms` is present and plausible: at or
+   after `sco` by roughly 200 ms + the headset's own lag (expect ~+200…+800 ms after `sco`), and
+   `fired` = `mic` in most talks. `mic` far *before* `sco` means the SCO input was routed long before
+   the framework's communication device — note the numbers, it changes which signal is the late one.
+2. **The beep is no longer cut off** — the whole point. Speaking immediately after it must be heard
+   by the other phone in full, and the beep itself must be heard whole.
+3. Beep latency after the press: note it per talk (F8 measured ~1.6–2.9 s to the cue; F9a adds the
+   headset's render lag + 200 ms). If the user finds it too long, `FRAMES_NEEDED` is the knob.
+4. The `mic trace:` peaks show **zeros (or tiny values) until the headset is really live, then real
+   level**. If the buckets between `sco@` and `live@` show a steady low level (a hiss, not zeros), the
+   SCO input is delivering before the earpieces are in the call: raise `PEAK_THRESHOLD` above that
+   level and/or `FRAMES_NEEDED`. If `live@` lands long after the first real level, lower
+   `FRAMES_NEEDED`. If the trace shows level *before* `sco@`, that is the built-in mic and is already
+   ignored — no change needed.
+5. `capture routed to builtin_mic …` then `capture routed to bt_sco …` confirms the HAL finding; how
+   often each talk starts on the built-in mic, and how late the SCO input arrives, belongs in this
+   file after the run.
+6. No talk says `(fallback)` with AirPods. If one does, read its `mic trace:`: `live@none` with real
+   peaks means the run/threshold are wrong; `sco@none` means the routing listener never reported (and
+   the 25-frame re-read did not help either) — then `AudioRecord.getRoutedDevice()` is useless here
+   and (c) needs a different source.
+7. One beep per open, never two, never none; the fast re-open (`TalkAudio: re-open …: call route
+   kept`) still beeps immediately with `capture up +0 ms, sco +0 ms, mic +0 ms`.
+8. The CLOSED / ERROR / OK / LISTEN earcons and the voice-command path are unchanged.
 
 
 ## 3. Not done, in priority order

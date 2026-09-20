@@ -2,13 +2,17 @@ package com.kivan.motoparty.audio
 
 import android.annotation.SuppressLint
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.AudioRouting
 import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -36,9 +40,19 @@ class VoiceEngine(
      * hops to Main itself.
      */
     private val onCaptureUp: (atMs: Long) -> Unit = {},
+    /**
+     * The **headset's own** microphone signal is arriving: the recorder is routed to a Bluetooth SCO
+     * input and has delivered a run of non-silent frames ([MicLive]; F9a: the last third of what the
+     * "live" earcon means). Same contract as [onCaptureUp] — once per [start], from the capture
+     * thread with its `elapsedRealtime`, must not block.
+     */
+    private val onMicLive: (atMs: Long) -> Unit = {},
 ) {
     /** One [start]..[stop]. Only [onFailed] of the talk that failed is told. */
     private class Session(val onFailed: (what: String, e: Throwable) -> Unit)
+
+    /** One `AudioRecord` routing report, handed from the routing thread to the capture loop. */
+    private class RouteReport(val type: Int?, val atMs: Long)
 
     private val jitter = JitterBuffer { SystemClock.elapsedRealtime() }
     /**
@@ -61,6 +75,14 @@ class VoiceEngine(
      * live and no new [onCaptureUp] will ever come.
      */
     @Volatile var captureUpAtMs: Long? = null; private set
+    /**
+     * When the running engine established the headset's own mic signal (`elapsedRealtime`), or null
+     * before that. Carried across a collapsed close/open exactly like [captureUpAtMs]: the earpieces
+     * are already in the call, and no new [onMicLive] will ever come.
+     */
+    @Volatile var micLiveAtMs: Long? = null; private set
+    /** F9a's condition (c), fed by the capture loop; only that loop and [start] touch it. */
+    private val micLive = MicLive()
     private var underrunsAtStart = 0
 
     /** A session is running (false after [stop], or after a loop failed on its own). */
@@ -98,6 +120,8 @@ class VoiceEngine(
         framesPlayed = 0
         framesCaptured = 0
         captureUpAtMs = null
+        micLiveAtMs = null
+        micLive.reset()
         val s = Session(onFailed)
         session.set(s)
         captureThread = thread(name = "voice-capture") { runCatching { captureLoop(s) }.onFailure { fail(s, "capture", it) } }
@@ -148,6 +172,8 @@ class VoiceEngine(
     private fun captureLoop(s: Session) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         val t = StepTimer()
+        // Everything the F9a diagnostics print is measured from here ("session-start +0 ms").
+        val startedAtMs = SystemClock.elapsedRealtime()
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         // 200 ms of slack (was 80): read() still returns as soon as one frame is there, so this
         // adds no latency, but a loop that stalls (GC, a blocked send) no longer overruns it.
@@ -168,11 +194,49 @@ class VoiceEngine(
         var readStartNanos = 0L
         var slowestWorkNanos = 0L
         var longestReadNanos = 0L
+        // F9a diagnostics: the loudest sample per 100 ms of the first 4 s, and the input's route
+        // story. One line per talk, at 4 s or at stop — whichever comes first.
+        val peaks = IntArray(TRACE_BUCKETS)
+        var bucketsFilled = 0
+        var traceLogged = false
+        var firstRoutedType: Int? = null
+        var firstRoutedAtMs = 0L
+        var lastRoutedType: Int? = null
+        var routeSeen = false
+        /**
+         * A routing report, from either source. The capture thread is the only one that gets here,
+         * so the counters above need no lock.
+         */
+        fun noteRouted(type: Int?, atMs: Long) {
+            if (routeSeen && type == lastRoutedType) return
+            routeSeen = true
+            lastRoutedType = type
+            Log.i(TAG, "capture routed to ${inputName(type)} +${atMs - startedAtMs} ms")
+            if (firstRoutedType == null && type != null) {
+                firstRoutedType = type
+                firstRoutedAtMs = atMs
+            }
+            // null = the framework has not said yet, which is not "somewhere else".
+            if (type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) micLive.routedToSco(atMs)
+            else if (type != null) micLive.routedElsewhere()
+        }
+        // The routing listener (API 24+) runs on its own thread — never Main, which a talk open can
+        // block — and only hands the report over; the capture loop picks it up on its next frame.
+        val routeReport = AtomicReference<RouteReport?>(null)
+        val routeListener = AudioRouting.OnRoutingChangedListener { routing ->
+            routeReport.set(RouteReport(routing.routedDevice?.type, SystemClock.elapsedRealtime()))
+        }
+        val routeThread = HandlerThread("voice-route")
         try {
+            routeThread.start()
+            record.addOnRoutingChangedListener(routeListener, Handler(routeThread.looper))
             record.startRecording()
             t.step("startRecording")
             // A route that cannot give us the mic (a phone call took it) fails here, not above.
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "AudioRecord did not start" }
+            // The route is often already known here; if it is not, the listener and the periodic
+            // re-read below answer for it.
+            noteRouted(record.routedDevice?.type, SystemClock.elapsedRealtime())
             readStartNanos = System.nanoTime()
             while (session.get() === s) {
                 val readFrom = System.nanoTime()
@@ -184,6 +248,33 @@ class VoiceEngine(
                 }
                 if (session.get() !== s) break
                 val workFrom = System.nanoTime()
+                val atMs = SystemClock.elapsedRealtime()
+                // The raw frame's loudest sample, before the encoder touches it: one pass over 320
+                // shorts, no allocation. This is F9a's "is the headset's mic really delivering".
+                var peak = 0
+                for (v in pcm) {
+                    val a = if (v < 0) -v.toInt() else v.toInt()
+                    if (a > peak) peak = a
+                }
+                routeReport.getAndSet(null)?.let { noteRouted(it.type, it.atMs) }
+                // Backstop while the input device is still unknown: a getter read inside a loop that
+                // runs anyway (every ~500 ms), never a sleep.
+                if (micLive.scoRoutedAtMs == null && framesCaptured % ROUTE_RECHECK_FRAMES == 0L) {
+                    noteRouted(record.routedDevice?.type, atMs)
+                }
+                micLive.frame(peak, atMs)?.let { at ->
+                    micLiveAtMs = at
+                    // Only posts to Main, exactly like onCaptureUp.
+                    runCatching { onMicLive(at) }.onFailure { Log.w(TAG, "onMicLive failed: $it") }
+                }
+                val bucket = ((atMs - startedAtMs) / TRACE_BUCKET_MS).toInt()
+                if (bucket < TRACE_BUCKETS) {
+                    if (peak > peaks[bucket]) peaks[bucket] = peak
+                    bucketsFilled = maxOf(bucketsFilled, bucket + 1)
+                } else if (!traceLogged) {
+                    Log.i(TAG, micTrace(startedAtMs, firstRoutedType, firstRoutedAtMs, peaks, bucketsFilled))
+                    traceLogged = true
+                }
                 if (framesCaptured == 0L) {
                     t.step("first frame")
                     Log.i(TAG, t.line("capture up"))
@@ -207,7 +298,14 @@ class VoiceEngine(
                 slowestWorkNanos = maxOf(slowestWorkNanos, System.nanoTime() - workFrom)
             }
         } finally {
-            if (readStartNanos != 0L) Log.i(TAG, captureLine(record, readStartNanos, slowestWorkNanos, longestReadNanos))
+            runCatching { record.removeOnRoutingChangedListener(routeListener) }
+            routeThread.quitSafely() // safe on a thread that never started (no looper)
+            if (readStartNanos != 0L) {
+                Log.i(TAG, captureLine(record, readStartNanos, slowestWorkNanos, longestReadNanos))
+                if (!traceLogged) {
+                    Log.i(TAG, micTrace(startedAtMs, firstRoutedType, firstRoutedAtMs, peaks, bucketsFilled))
+                }
+            }
             runCatching { record.stop() }
             record.release()
             aec?.release()
@@ -229,6 +327,33 @@ class VoiceEngine(
         val device = if (record.getTimestamp(stamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) stamp.framePosition / FRAME else -1L
         return "capture: read $framesCaptured frames in $ms ms (${ms / VoicePacket.FRAME_MS} expected), device $device frames, " +
             "slowest encode+send ${workNanos / 1_000_000} ms, longest read wait ${readNanos / 1_000_000} ms"
+    }
+
+    /**
+     * One line per talk, for the next device run (F9a): what the input was routed to and when, when
+     * the headset's mic signal was established, and the level the mic actually delivered over the
+     * first [TRACE_BUCKETS] × [TRACE_BUCKET_MS] ms — the loudest sample per bucket, e.g.
+     *
+     *     mic trace: session-start +0 ms routed=builtin_mic@+31 ms, sco@+142 ms, live@+388 ms,
+     *     peaks/100ms: 0 0 0 4 7 812 1033 …
+     *
+     * Zeros until the earpieces join the call and level from then on is what this fix assumes; level
+     * *before* `sco@` is the built-in mic and is ignored by [MicLive]; low level between `sco@` and
+     * real speech is the case that needs [MicLive.PEAK_THRESHOLD] raised.
+     */
+    private fun micTrace(startedAtMs: Long, routedType: Int?, routedAtMs: Long, peaks: IntArray, filled: Int): String {
+        fun off(v: Long?): String = if (v == null) "none" else "+${v - startedAtMs} ms"
+        val routed = if (routedType == null) "none" else "${inputName(routedType)}@${off(routedAtMs)}"
+        return "mic trace: session-start +0 ms routed=$routed, sco@${off(micLive.scoRoutedAtMs)}, " +
+            "live@${off(micLive.liveAtMs)}, peaks/${TRACE_BUCKET_MS}ms: " +
+            (0 until filled).joinToString(" ") { peaks[it].toString() }
+    }
+
+    /** The input device for the F9a log lines, in [ScoRule]'s spelling where it has one. */
+    private fun inputName(type: Int?): String = when (type) {
+        null -> "none"
+        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "builtin_mic"
+        else -> ScoRule.describe(type)
     }
 
     private fun playbackLoop(s: Session) {
@@ -295,5 +420,16 @@ class VoiceEngine(
         const val FRAME = VoicePacket.FRAME_SAMPLES
         private const val TAG = "VoiceEngine"
         private const val CAPTURE_BUFFER_FRAMES = 10
+
+        /** `mic trace:` covers the first [TRACE_BUCKETS] × [TRACE_BUCKET_MS] ms = 4 s of capture. */
+        private const val TRACE_BUCKET_MS = 100L
+        private const val TRACE_BUCKETS = 40
+
+        /**
+         * How often the capture loop re-reads `AudioRecord.getRoutedDevice()` while the input device
+         * is still not a Bluetooth SCO one: 25 frames = ~500 ms. Only a backstop for a routing
+         * callback that never comes (F9a) — the listener is the real source.
+         */
+        private const val ROUTE_RECHECK_FRAMES = 25L
     }
 }

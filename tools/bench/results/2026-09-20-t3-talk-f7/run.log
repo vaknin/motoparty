@@ -1,0 +1,8 @@
+08:03:38.306 talk_cycles.sh DRY=0 host=192.168.1.100 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-20-t3-talk-f7
+08:03:38.831 phone: mWakefulness=Awake, top: bitpit.launcher/.ui.HomeActivity
+08:03:38.958 app pid: 11796
+08:03:39.273 bluetooth:   mActiveDevice: XX:XX:XX:XX:EC:2F   === A2dpStateMachine for XX:XX:XX:XX:EC:2F (Active) ===
+08:03:39.416 audio device:   Active communication device: AudioDeviceAttributes: role:output type:bt_a2dp addr:XX:XX:XX:XX:EC:2F name:AirPods Pro p
+08:03:39.655 running 6 cycles of 8s, a fast re-open, one 20s talk
+08:05:29.334 client exited
+08:05:31.548 cleanup: kill 384653 2>/dev/null

@@ -16,7 +16,16 @@ import android.util.Log
  * talk and the recognizer overlap (the announcer speaks with USAGE_ASSISTANT and never enters
  * call mode). The `@Synchronized` below is belt and braces.
  */
-class AudioRouter(context: Context) {
+class AudioRouter(
+    context: Context,
+    /**
+     * Called on the audio thread right after the communication device was cleared, i.e. when this
+     * app's call route is gone. [ScoWatch.onRouteReleased] hangs on it: the framework's own
+     * "communication device changed" callback for the teardown arrives hundreds of ms later, and a
+     * talk opened in that window must not see the old link as still up (F8).
+     */
+    private val onRouteReleased: () -> Unit = {},
+) {
     private val am = context.getSystemService(AudioManager::class.java)
     private var depth = 0
 
@@ -106,6 +115,8 @@ class AudioRouter(context: Context) {
             t.step("setMode")
             selectedDevice = null
             selectedType = null
+            // Whether or not the clear above threw: this app no longer holds a call route.
+            runCatching { onRouteReleased() }
             Log.i(TAG, "back to media mode")
             Log.i(TAG, t.line("exitCall"))
         }

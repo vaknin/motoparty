@@ -1,0 +1,47 @@
+--------- beginning of main
+09-20 07:52:46.846 12610 12610 I Spike   : spike ready: Pixel 8, SDK 37
+09-20 07:52:46.918 12610 12675 I Spike   : === PFD test (recognizer=on-device) ===
+09-20 07:52:46.918 12610 12675 I Spike   : pfd: RECORD_AUDIO declared in manifest, granted=true (the app never records; this only tests whether SpeechRecognizer demands it)
+09-20 07:52:46.919 12610 12675 I Spike   : pfd: isRecognitionAvailable=true
+09-20 07:52:46.919 12610 12675 I Spike   : pfd: isOnDeviceRecognitionAvailable=true
+09-20 07:52:46.960 12610 12675 I Spike   : tts: engine=com.google.android.tts
+09-20 07:52:47.161 12610 12675 I Spike   : tts: setLanguage(en-US) -> 1 (0=OK, 1=fallback, -1=missing, -2=unsupported)
+09-20 07:52:47.238 12610 12675 I Spike   : tts: utt1 24000 Hz 1411 ms peak=16226, utt2 24000 Hz 1522 ms peak=17792
+09-20 07:52:47.271 12610 12675 I Spike   : tts: prompt 86947 samples = 5434 ms @ 16000 Hz mono PCM16, peak=17665
+09-20 07:52:47.286 12610 12675 I Spike   : pfd: extras = AUDIO_SOURCE=<pipe read end>, CHANNEL_COUNT=1, ENCODING=ENCODING_PCM_16BIT, SAMPLING_RATE=16000, SEGMENTED_SESSION=EXTRA_AUDIO_SOURCE, LANGUAGE=en-US, PARTIAL_RESULTS=true, BIASING_STRINGS=[motoparty, next, play album]
+09-20 07:52:47.287 12610 12675 I Spike   : t=    4 ms rec-watch[baseline]: no active recordings
+09-20 07:52:47.288 12610 12675 I Spike   : t=    5 ms pfd: startListening()
+09-20 07:52:47.314 12610 12610 I Spike   : t=   31 ms cb onReadyForSpeech
+09-20 07:52:47.945 12610 12610 I Spike   : t=  662 ms cb onBeginningOfSpeech
+09-20 07:52:48.495 12610 12610 I Spike   : t= 1212 ms cb onPartialResults: "Mo"
+09-20 07:52:48.565 12610 12610 I Spike   : t= 1282 ms cb onPartialResults: "Moto"
+09-20 07:52:48.847 12610 12610 I Spike   : t= 1564 ms cb onPartialResults: "Motopart"
+09-20 07:52:49.067 12610 12610 I Spike   : t= 1784 ms cb onPartialResults: "Motoparty"
+09-20 07:52:49.071 12610 12610 I Spike   : t= 1788 ms cb onPartialResults: "Motoparty"
+09-20 07:52:49.248 12610 12610 I Spike   : t= 1965 ms cb onPartialResults: "Motoparty"
+09-20 07:52:49.253 12610 12610 I Spike   : t= 1970 ms cb onPartialResults: "Motoparty next"
+09-20 07:52:49.427 12610 12610 I Spike   : t= 2144 ms cb onPartialResults: "Motoparty next"
+09-20 07:52:49.756 12610 12610 I Spike   : t= 2473 ms cb onEndOfSpeech
+09-20 07:52:49.804 12610 12610 I Spike   : t= 2521 ms cb onPartialResults: "Motoparty next"
+09-20 07:52:50.212 12610 12610 I Spike   : t= 2929 ms cb onSegmentResults: "Moto party next"
+09-20 07:52:50.953 12610 12610 I Spike   : t= 3670 ms cb onBeginningOfSpeech
+09-20 07:52:51.469 12610 12610 I Spike   : t= 4186 ms cb onPartialResults: "Play"
+09-20 07:52:51.693 12610 12610 I Spike   : t= 4410 ms cb onPartialResults: "Play album"
+09-20 07:52:51.968 12610 12610 I Spike   : t= 4685 ms cb onPartialResults: "Play album Ab"
+09-20 07:52:52.047 12610 12610 I Spike   : t= 4764 ms cb onPartialResults: "Play album Ab"
+09-20 07:52:52.104 12610 12610 I Spike   : t= 4821 ms cb onPartialResults: "Play album Abbe"
+09-20 07:52:52.189 12610 12610 I Spike   : t= 4906 ms cb onPartialResults: "Play album Abbey"
+09-20 07:52:52.306 12610 12610 I Spike   : t= 5023 ms cb onPartialResults: "Play album Abbey"
+09-20 07:52:52.311 12610 12610 I Spike   : t= 5028 ms cb onPartialResults: "Play album Abbey Road"
+09-20 07:52:52.533 12610 12610 I Spike   : t= 5250 ms cb onPartialResults: "Play album Abbey Road"
+09-20 07:52:52.650 12610 12610 I Spike   : t= 5367 ms cb onPartialResults: "Play album Abbey Road"
+09-20 07:52:52.742 12610 12777 I Spike   : t= 5458 ms pfd: wrote 173894/173894 bytes in 272 chunks (maxWrite=2 ms); closing write end = EOF
+09-20 07:52:53.122 12610 12610 I Spike   : t= 5839 ms cb onEndOfSpeech
+09-20 07:52:53.130 12610 12610 I Spike   : t= 5847 ms cb onPartialResults: "Play album Abbey Road"
+09-20 07:52:53.131 12610 12610 I Spike   : t= 5849 ms cb onSegmentResults: " Play album Abbey Road"
+09-20 07:52:53.134 12610 12610 I Spike   : t= 5851 ms cb onEndOfSegmentedSession
+09-20 07:52:54.143 12610 12675 I Spike   : t= 6860 ms rec-watch[final]: no active recordings
+09-20 07:52:54.157 12610 12675 I Spike   : PFD PIPE: audio=5434 ms, wrote=173894/173894 bytes, maxWriteBlock=2 ms, eofAt=5460 ms, drained=true
+09-20 07:52:54.157 12610 12675 I Spike   : PFD CALLBACKS: onReadyForSpeech=true, onBeginningOfSpeech=true, segments=2, onEndOfSegmentedSession=true, micOpened=false
+09-20 07:52:54.157 12610 12675 I Spike   : PFD VERDICT: Moto party next |  Play album Abbey Road
+09-20 07:52:54.157 12610 12675 I Spike   : --- done: pfd ---
