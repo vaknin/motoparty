@@ -83,6 +83,12 @@ final class AppModel: ObservableObject {
     /// late answer cannot open (or refuse) a talk that is already over.
     private var talkOpenPending = false
     private var statsTimer: Timer?
+    /// Local monotonic time this talk opened, while its "live" earcon is still
+    /// owed; nil once it has been played or the talk is over, so it is played
+    /// at most once per talk open (Android's `LiveCue`, F7/F8/F9a).
+    private var liveCueOpenedAtMs: Double?
+    /// Safety net for the cue: a talk whose capture never delivers still beeps.
+    private var liveCueTimer: Timer?
 
     // MARK: - Lifecycle
 
@@ -133,6 +139,10 @@ final class AppModel: ObservableObject {
             // The mic is gone mid-talk: same answer as failing to open it.
             self?.talkUnavailable(error.localizedDescription, weAsked: false)
         }
+
+        // The capture sink delivered its first buffer: the mic is live, so the
+        // earcon may mean it (Android F7 — never a fixed delay).
+        voiceEngine.onCaptureUp = { [weak self] in self?.playLiveCue(fallback: false) }
 
         player.onDrift = { [weak self] drift in self?.driftMs = drift }
 
@@ -403,7 +413,7 @@ final class AppModel: ObservableObject {
                 skipFrame: { [weak self] in self?.voice?.skipFrame() }
             )
             session.armMuteGesture()
-            earcons.play("live")
+            armLiveCue()
         } catch {
             // A call in progress, a route that failed, an engine that would
             // not start: this phone cannot talk.
@@ -414,6 +424,39 @@ final class AppModel: ObservableObject {
         updateNowPlaying()
     }
 
+    /// The fallback's delay, Android's `LiveCue.TIMEOUT_MS` (F9a).
+    private static let liveCueTimeout: TimeInterval = 3.5
+
+    /// The "live" earcon is owed from now on. It is played when the capture
+    /// sink delivers its first buffer — the beep means "your mic is live, talk
+    /// now", so it may never be a fixed delay (Android F7/F8/F9a) — and at the
+    /// latest `liveCueTimeout` later, so a missing signal costs a late beep
+    /// but never a silent one.
+    private func armLiveCue() {
+        liveCueTimer?.invalidate()
+        liveCueOpenedAtMs = MonotonicClock.nowMs()
+        liveCueTimer = Timer.scheduledTimer(withTimeInterval: Self.liveCueTimeout, repeats: false) { [weak self] _ in
+            self?.playLiveCue(fallback: true)
+        }
+    }
+
+    /// Whichever of the two came first wins; the talk beeps once or not at all.
+    private func playLiveCue(fallback: Bool) {
+        guard talkOpen, let openedAtMs = liveCueOpenedAtMs else { return }
+        cancelLiveCue()
+        let ms = Int((MonotonicClock.nowMs() - openedAtMs).rounded())
+        let why = fallback ? "fallback" : "capture up"
+        Log.audio.info("live cue: fired +\(ms) ms (\(why, privacy: .public))")
+        earcons.play("live")
+    }
+
+    /// A talk that ended before its microphone was live never gets its beep.
+    private func cancelLiveCue() {
+        liveCueTimer?.invalidate()
+        liveCueTimer = nil
+        liveCueOpenedAtMs = nil
+    }
+
     /// This phone cannot open its microphone (PROTOCOL.md "Talk flow" step 1).
     /// Tell the host — which then closes talk — and go straight back to the
     /// music session. Talk is not negotiable: this is only ever "cannot".
@@ -421,6 +464,7 @@ final class AppModel: ObservableObject {
         problem = "Could not open the mic: \(why)"
         Log.audio.error("talk unavailable: \(why, privacy: .public)")
         micUnavailable = true
+        cancelLiveCue()
         send(.talkClose(TalkClose(by: .client, reason: .unavailable)))
         if weAsked { earcons.play("error") }
         talkRequested = false
@@ -441,6 +485,7 @@ final class AppModel: ObservableObject {
         talkRequested = false
         guard talkOpen else { return }
         talkOpen = false
+        cancelLiveCue()
         session.disarmMuteGesture()
         voiceEngine.stop()
         restoreMediaRoute()

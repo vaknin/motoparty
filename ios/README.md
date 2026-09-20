@@ -81,7 +81,7 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 66 tests: fixtures, command parser, jitter buffer, Opus, drift controller
+swift test            # 69 tests: fixtures, command parser, jitter buffer, Opus, drift controller
 ```
 
 Opus prints "compiling without optimization" in debug builds. That is expected. Use
@@ -217,6 +217,24 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   least 100 ms per buffer. Frames flagged by `OPUS_GET_IN_DTX` are not sent. Playback goes
   jitter buffer → Opus → AVAudioSourceNode. On `talk.close` the app switches back to
   `.playback` (A2DP), and the host resumes music with `music.play`.
+- **The "live" earcon fires on a real signal, never on a delay** (Android's F7/F8/F9a rule,
+  `LiveCue`). `VoiceEngine.onCaptureUp` is called on the main queue from the first buffer the
+  capture sink delivers — exactly once per `start`, re-armed by the next one, and it never
+  blocks the sink thread (it flips a flag under an unfair lock and hops to Main). `AppModel`
+  arms the cue when the voice engine starts and plays it on that callback, at most once per
+  talk open, with a 3.5 s fallback timer (the same number as Android's `LiveCue.TIMEOUT_MS`)
+  so a talk whose capture never delivers still beeps. Which one fired is logged as
+  `live cue: fired +<n> ms (capture up|fallback)` in the `audio` category. A talk that ends
+  before the mic was live never beeps. Android's SCO/`MicLive` conditions are deliberately
+  **not** ported: iOS gives no equivalent route signal, and the sink's first buffer is the
+  honest one this platform has.
+- **Jitter buffer backlog cap.** Besides the adaptive target of PROTOCOL.md ("Voice"), `pull`
+  holds at most `maxTargetMs + backlogSlackMs` = 400 ms = 20 frames, the same hard cap as
+  Android's `MAX_MS + BACKLOG_SLACK_MS`. A burst the output never drained (a route switch, a
+  Wi-Fi stall) used to sit there as up to 2 s of delay until the next pause; now the oldest
+  frames go and the playout cursor moves right behind the last one dropped (`lastSeq`, `nextTs`),
+  so they are not counted as loss and the following frame plays in the same spurt. Only
+  `stats.dropped` records them. The 100-packet insert cap stays, exactly as on Android.
 - **Talk is not negotiable** (PROTOCOL.md "Talk flow"), so there is no decline button and none
   may be added. There is only *cannot*: if the record permission is denied, or activating the
   `.talk` session fails (a cellular call holds the input), or the voice engine will not start,

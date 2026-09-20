@@ -28,6 +28,10 @@ public enum PlayoutAction: Equatable, Sendable {
 ///   Target changes apply at the start of the next spurt.
 /// - Within a spurt, a `seq` gap is loss: FEC from the successor if it has
 ///   arrived, otherwise PLC.
+/// - Backlog cap: `pull` never holds more than
+///   `maxTargetMs + backlogSlackMs` (400 ms = 20 frames) of audio. Anything
+///   older is dropped and the playout cursor jumps behind it, so a burst that
+///   the output never drained costs those frames instead of that much delay.
 ///
 /// Not thread-safe; call from one queue (or under a lock).
 public struct JitterBuffer: Sendable {
@@ -43,6 +47,10 @@ public struct JitterBuffer: Sendable {
         public var idleAfterMs = 2_000
         /// Maximum packets held.
         public var capacity = 100
+        /// How far the backlog may exceed `maxTargetMs` before `pull` drops its
+        /// oldest frames (Android's `BACKLOG_SLACK_MS`): the hard cap is
+        /// `maxTargetMs + backlogSlackMs` = 400 ms = 20 packets.
+        public var backlogSlackMs = 200
 
         public init() {}
     }
@@ -171,6 +179,20 @@ public struct JitterBuffer: Sendable {
         if nowMs - lastUnderrunMs >= config.decreaseAfterMs {
             if targetMs > config.minTargetMs { targetMs = max(config.minTargetMs, targetMs - config.stepMs) }
             lastUnderrunMs = nowMs
+        }
+
+        // Hard cap on the backlog, the same rule as Android's
+        // `MAX_MS + BACKLOG_SLACK_MS`: a burst the output never drained (or
+        // clock drift over a very long spurt) would otherwise sit in the buffer
+        // as delay until the next pause. Drop the oldest frames and put the
+        // cursor right behind the last one dropped, so they are not counted as
+        // loss and the next pull plays what is left. Normal target changes still
+        // wait for the next spurt.
+        while packets.count * Self.frameMs > config.maxTargetMs + config.backlogSlackMs,
+              let oldest = packets.keys.min(), let entry = packets.removeValue(forKey: oldest) {
+            lastSeq = entry.seq
+            nextTs = oldest + Self.frameSamples
+            stats.dropped += 1
         }
 
         switch phase {

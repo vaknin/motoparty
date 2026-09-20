@@ -242,6 +242,46 @@ final class JitterBufferTests: XCTestCase {
         XCTAssertEqual(jb.stats.late, 0)
     }
 
+    func testBacklogOverCapIsTrimmedAndCursorFollows() {
+        var jb = JitterBuffer()
+        // 30 frames (600 ms) land in one burst: over the 400 ms hard cap
+        // (maxTargetMs + backlogSlackMs), so the oldest 10 go and the playout
+        // cursor jumps behind them instead of the delay being carried along.
+        let actions = run(&jb, (0..<30).map { a($0, 0) }, to: 440)
+        XCTAssertEqual(jb.stats.dropped, 10)
+        XCTAssertEqual(decoded(actions), Array(10..<30))
+        // nextTs/lastSeq moved with the drop: the next frame is a plain decode
+        // in the same spurt, and nothing dropped is counted as loss.
+        XCTAssertEqual(jb.stats.lost, 0)
+        XCTAssertEqual(jb.stats.concealed, 0)
+        XCTAssertEqual(jb.stats.spurts, 1)
+        XCTAssertEqual(jb.bufferedPackets, 0)
+    }
+
+    func testTrimmedBacklogKeepsSilenceGapASilenceGap() {
+        var jb = JitterBuffer()
+        // 10 frames, then (contiguous seq) a spurt 90 frames of silence later,
+        // all arriving at once. The cap drops exactly the first 10, so `lastSeq`
+        // must end on frame 9: otherwise the gap looks like 10 lost packets.
+        let arrivals = (0..<10).map { a($0, 0) } + (10..<30).map { a($0, 0, ts: (90 + $0) * 320) }
+        let actions = run(&jb, arrivals, to: 440)
+        XCTAssertEqual(jb.stats.dropped, 10)
+        XCTAssertEqual(decoded(actions), Array(10..<30))
+        XCTAssertEqual(jb.stats.lost, 0)
+        XCTAssertEqual(jb.stats.concealed, 0)
+        XCTAssertEqual(jb.stats.spurts, 2, "the frame after the gap starts a new spurt")
+    }
+
+    func testBacklogAtCapIsNotTrimmed() {
+        var jb = JitterBuffer()
+        // Exactly 400 ms buffered: at the cap, not over it — nothing is dropped.
+        let actions = run(&jb, (0..<20).map { a($0, 0) }, to: 440)
+        XCTAssertEqual(jb.stats.dropped, 0)
+        XCTAssertEqual(decoded(actions), Array(0..<20))
+        XCTAssertEqual(jb.stats.lost, 0)
+        XCTAssertEqual(jb.stats.spurts, 1)
+    }
+
     func testEmptyBufferDuringSilenceIsNotUnderrun() {
         var jb = JitterBuffer()
         // Long pause (1.5 s, < idle) between spurts: no underrun, no loss.

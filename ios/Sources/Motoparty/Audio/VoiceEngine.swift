@@ -20,6 +20,11 @@ final class VoiceEngine {
 
     /// Called on the main queue if the engine had to be restarted or died.
     var onFailure: ((Error) -> Void)?
+    /// The capture sink delivered its first buffer of this `start`: the
+    /// microphone is really delivering, which is what the "live" earcon means
+    /// (Android F7/F9a, `LiveCue`). Called on the main queue, exactly once per
+    /// `start` and re-armed by the next one.
+    var onCaptureUp: (() -> Void)?
 
     private var engine: AVAudioEngine?
     private var configObserver: NSObjectProtocol?
@@ -45,6 +50,10 @@ final class VoiceEngine {
         var readIndex = 0
     }
     private let rx = OSAllocatedUnfairLock(uncheckedState: Rx())
+
+    /// False until the sink node of the running `start` has delivered a buffer.
+    /// Read and set on the audio thread, cleared on the main queue by `start`.
+    private let captureUp = OSAllocatedUnfairLock(initialState: false)
 
     var isRunning: Bool { engine?.isRunning ?? false }
 
@@ -72,11 +81,13 @@ final class VoiceEngine {
             self.fifo.removeAll()
         }
         rx.withLockUnchecked { $0 = Rx(running: true, jitter: JitterBuffer(), decoder: decoder) }
+        captureUp.withLock { $0 = false }
 
         let interleaved = inFormat.isInterleaved
         let channels = Int(inFormat.channelCount)
         let sink = AVAudioSinkNode { [weak self] _, frameCount, audioBufferList in
             guard let self else { return noErr }
+            self.noteCaptureUp()
             let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: audioBufferList))
             guard let first = buffers.first, let raw = first.mData else { return noErr }
             let n = Int(frameCount)
@@ -132,7 +143,21 @@ final class VoiceEngine {
         rx.withLockUnchecked { ($0.jitter.targetMs, $0.jitter.stats) }
     }
 
-    // MARK: - Capture (captureQueue)
+    // MARK: - Capture (sink thread, then captureQueue)
+
+    /// First buffer of this `start`, on the audio sink's thread: the microphone
+    /// is delivering. Must never block that thread, so it only flips a flag and
+    /// hops to the main queue — `onCaptureUp` is read and run there, like
+    /// `onFailure` (Android does the same in `VoiceEngine.onCaptureUp`).
+    private func noteCaptureUp() {
+        let first = captureUp.withLock { up -> Bool in
+            if up { return false }
+            up = true
+            return true
+        }
+        guard first else { return }
+        DispatchQueue.main.async { [weak self] in self?.onCaptureUp?() }
+    }
 
     private func process(_ samples: [Float]) {
         guard let converter, let mono = captureMonoFormat, let encoder else { return }
