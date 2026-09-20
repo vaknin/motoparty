@@ -17,9 +17,14 @@ EPOCH = re.compile(r"^\s*(\d+\.\d+)\s+\d+\s+\d+\s+([VDIWEF])\s+(.+?)\s*: (.*)$")
 THREADTIME = re.compile(r"^\d\d-\d\d (\d\d):(\d\d):(\d\d\.\d+)\s+\d+\s+\d+\s+([VDIWEF])\s+(.+?)\s*: (.*)$")
 
 
-def logcat(out):
-    """[(t, level, tag, msg)] from logcat.txt, [] if there is none (dry run)."""
-    p = f"{out}/logcat.txt"
+def logcat(out, name="logcat.txt"):
+    """[(t, level, tag, msg)] from <name>, [] if there is none (dry run).
+
+    `name="logcat_all.txt"` reads the unfiltered whole-phone dump, which is where the Bluetooth
+    stack's own lines live. It is gitignored, so a stored result dir may not have one: callers
+    must cope with [].
+    """
+    p = f"{out}/{name}"
     if not os.path.exists(p):
         return []
     ev = []
@@ -56,8 +61,8 @@ def client(out, name="client.log"):
 # (`E ActivityThread: Failed to find provider info for androidx.car.app.connection`) that say
 # nothing about the run: they are printed, not counted.
 APP_TAGS = {"Motoparty", "LinkService", "LinkHost", "VoiceEngine", "VoiceSocket", "AudioRouter",
-            "AudioThread", "AudioModeWatch", "TalkAudio", "SyncController", "MusicController",
-            "ControlServer", "Discovery", "Transcriber", "Announcer"}
+            "AudioThread", "AudioModeWatch", "TalkAudio", "ScoWatch", "SyncController",
+            "MusicController", "ControlServer", "Discovery", "Transcriber", "Announcer"}
 
 
 def errors(ev, out):
@@ -95,6 +100,25 @@ STATS = re.compile(r"tx (\d+) sent of (\d+) captured \((-?\d+) DTX\), rx (\d+) r
 # wrong yardstick for a short cycle (8 s reads 76-84 %). Its `expected` is the right one.
 CAPREAD = re.compile(r"capture: read (\d+) frames in \d+ ms \((\d+) expected\)")
 
+# The go-beep gate (F7 -> F8 -> F9a). Every offset may be a word instead of `+N ms`: `n/a` (the
+# condition does not apply to this route), `none` (it never happened), `unknown`. `mic` only
+# exists from F9a, so it is optional and older result dirs still parse.
+_OFF = r"(?:\+(-?\d+) ms|(n/a|none|unknown))"
+LIVE_CUE = re.compile(rf"live cue: session (\d+), capture up {_OFF}, sco {_OFF}"
+                      rf"(?:, mic {_OFF})?, fired {_OFF} \((both|fallback)\)")
+# ScoWatch's own verdict. Anchored, so the F8 `broadcast sco … [not used]` lines - kept only so a
+# run can be compared with the pre-F8 signal - never match.
+SCO_WATCH = re.compile(r"^sco (connected|disconnected) \((.+)\)$")
+CAP_ROUTE = re.compile(r"capture routed to (\S+) \+(\d+) ms")
+# The Bluetooth stack's own "the link is up" transition, in logcat_all.txt only. The other lines
+# that merely mention the state as context must not count.
+OPEN_ST = re.compile(r"SCO_state_change: \[.*?\]->\[BTA_AG_SCO_OPEN_ST")
+
+
+def _off(m, i):
+    """One `+N ms | n/a | none | unknown` field of a cue line: ms as int, or the word, or None."""
+    return int(m[i]) if m[i] else m[i + 1]
+
 
 def talk_cycles(ev):
     cycles = []
@@ -103,9 +127,18 @@ def talk_cycles(ev):
         if tag == "Motoparty" and (m := re.match(r"talk open \(by (\w+)\)", msg)):
             cycles.append(dict(open=t, by=m[1], hfp=None, dev=None, close=None, reason=None,
                                media=None, stats=None, read=None, uses=0, kept=False,
-                               collapsed=False, detail=[]))
+                               collapsed=False, detail=[], cue=None, routed=None, openst=[]))
         elif c is None:
             continue
+        elif tag == "Motoparty" and (m := LIVE_CUE.search(msg)):
+            # F7/F8/F9a: one per talk that beeped. A talk closed before the beep has none.
+            c["cue"] = dict(session=int(m[1]), capture=_off(m, 2), sco=_off(m, 4),
+                            mic=_off(m, 6), fired=_off(m, 8), how=m[10], at=t)
+        elif tag == "ScoWatch" and (m := SCO_WATCH.match(msg)) and c["close"] is None:
+            c["detail"].append(f"{tag}: {msg}")
+        elif tag == "VoiceEngine" and (m := CAP_ROUTE.match(msg)):
+            c["routed"] = (m[1], int(m[2]))
+            c["detail"].append(f"{tag}: {msg}")
         elif tag == "AudioRouter" and msg.startswith("communication device") and c["close"] is None:
             c["uses"] += 1
             if c["hfp"] is None:
@@ -132,6 +165,65 @@ def talk_cycles(ev):
     return cycles
 
 
+def attach_open_st(out, cycles):
+    """Per cycle, the times the BT stack really opened the SCO link (logcat_all.txt).
+
+    This is the only ground truth for "the call link is up": ScoWatch's `broadcast` signal fired
+    0.5-1.1 s too early (test 3), which is what F8 replaced. A second open inside one talk is the
+    SCO flap (OPEN -> CLOSING after ~30 ms -> OPEN ~0.8 s later). Returns False when there is no
+    whole-phone dump to read, in which case the table simply has no OPEN_ST column.
+    """
+    ev = logcat(out, "logcat_all.txt")
+    if not ev:
+        return False
+    for t, _lvl, _tag, msg in ev:
+        if not OPEN_ST.search(msg):
+            continue
+        for c in cycles:
+            if c["open"] <= t and (c["close"] is None or t <= c["close"]):
+                c["openst"].append(t)
+    return True
+
+
+def cue_table(cycles, have_open_st):
+    """The go-beep gate per talk: everything the beep waited for, as offsets from `talk open`.
+
+    Returns the number of talks that beeped on the timer although they were on a Bluetooth route
+    - i.e. a real signal was expected and never came, which is exactly what F7/F8/F9a are for.
+    """
+    if not any(c["cue"] or c["openst"] for c in cycles):
+        return 0
+    head = f"\nlive beep gate (ms from `talk open`){'; OPEN_ST from logcat_all.txt' if have_open_st else ''}:"
+    print(head)
+    print(f"{'#':>2} {'sess':>4} {'OPEN_ST 1st':>11} {'last':>6} {'flaps':>5} {'capture':>7} "
+          f"{'comm dev':>8} {'mic':>6} {'fired':>6} {'−OPEN_ST':>8}  route / gate")
+    suspect = 0
+    for i, c in enumerate(cycles, 1):
+        cue, st = c["cue"], c["openst"]
+        rel = [f"{(t - c['open']) * 1000:.0f}" for t in st]
+        # A cue field is an int (ms) or a word (`n/a`, `none`, `unknown`); `-` means no cue line.
+        f = (lambda k: "-" if not cue else str(cue[k]) if cue[k] is not None else "-")
+        # The number the F8 work is judged by: never negative, or the beep promised a link that
+        # was not up yet. Only meaningful against the link the talk ended up keeping = the last.
+        # Both sides are logcat timestamps - the cue's own `fired +Z ms` is measured from the
+        # app's internal open, ~2 ms before the `talk open` line, and must not be mixed in here.
+        delta = f"{(cue['at'] - st[-1]) * 1000:+.0f}" if cue and st else "-"
+        route = c["routed"][0] if c["routed"] else "-"
+        gate = cue["how"] if cue else ("no beep" if c["close"] else "-")
+        print(f"{i:>2} {f('session'):>4} {(rel[0] if rel else '-'):>11} {(rel[-1] if rel else '-'):>6} "
+              f"{max(0, len(st) - 1):>5} {f('capture'):>7} {f('sco'):>8} {f('mic'):>6} "
+              f"{f('fired'):>6} {delta:>8}  {route} / {gate}")
+        # `(fallback)` means the timer won. On the earpiece that is impossible (no SCO condition
+        # applies); on a Bluetooth route it means the signal the gate waits for never arrived.
+        if cue and cue["how"] == "fallback" and (st or route.startswith("bt")
+                                                 or isinstance(cue["sco"], int)):
+            suspect += 1
+    if suspect:
+        print(f"  {suspect} talk(s) beeped on the fallback timer although the route was Bluetooth:"
+              " the gate's signal never arrived")
+    return suspect
+
+
 def peer_answers(cev):
     """Our talk.open / talk.close requests and how long the host took to answer each."""
     rows, pending = [], None
@@ -152,7 +244,12 @@ def peer_answers(cev):
 def cmd_talk(out):
     ev, cev = logcat(out), client(out)
     cycles = talk_cycles(ev)
-    print(f"talk cycles in logcat: {len(cycles)}")
+    have_open_st = attach_open_st(out, cycles)
+    # A run on the phone's own earpiece (NO_BT=1, no headset) never switches the communication
+    # device, so there is no HFP marker to miss and a missing one is not an incomplete cycle.
+    bt_run = any(c["hfp"] for c in cycles) or any(c["openst"] for c in cycles) \
+        or any(tag == "ScoWatch" and SCO_WATCH.match(msg) for _t, _l, tag, msg in ev)
+    print(f"talk cycles in logcat: {len(cycles)}" + ("" if bt_run else " (no Bluetooth route in this run)"))
     if cycles:
         print(f"{'#':>2} {'by':6} {'open→HFP':>8} {'close→media':>11} {'dur s':>6} {'captured':>8} "
               f"{'exp':>5} {'sent':>5} {'DTX':>5} {'rx':>5} {'lost':>4} {'late':>4} {'FEC':>3} {'PLC':>3}  capture / reason")
@@ -160,7 +257,8 @@ def cmd_talk(out):
     for i, c in enumerate(cycles, 1):
         dur = (c["close"] - c["open"]) if c["close"] else None
         s = STATS.search(c["stats"] or "")
-        cols = ["kept" if c["kept"] and not c["hfp"] else ms(c["open"], c["hfp"]),
+        cols = ["kept" if c["kept"] and not c["hfp"] else "n/a" if not bt_run and not c["hfp"]
+                else ms(c["open"], c["hfp"]),
                 "collapsed" if c["collapsed"] and not c["media"] else ms(c["close"], c["media"])]
         note = c["reason"] or "NOT CLOSED"
         if c["collapsed"] and not c["stats"]:
@@ -181,13 +279,14 @@ def cmd_talk(out):
                   f"{'(no talk stats line)':>40}  {note}")
         # A collapsed cycle (closed and re-opened before its route was up) has neither an HFP nor a
         # media line of its own, by design: the next cycle kept the route.
-        if (c["hfp"] is None and not c["kept"] and not c["collapsed"]) \
+        if (c["hfp"] is None and bt_run and not c["kept"] and not c["collapsed"]) \
                 or (c["media"] is None and not c["collapsed"]) or c["close"] is None:
             bad += 1
         if c["dev"] and not c["dev"].endswith(": true"):
             print(f"   route: {c['dev']}")
         for d in c["detail"]:
             print(f"      {d[:150]}")
+    cue_bad = cue_table(cycles, have_open_st)
     rows = peer_answers(cev)
     if rows:
         print("\npeer requests (host answer time, ms):")
@@ -214,8 +313,8 @@ def cmd_talk(out):
     if not ev:
         print("\nVERDICT: NO LOGCAT (dry run, or the dump failed): only the peer side above")
         return
-    print(f"\nVERDICT: {'CLEAN' if ev and not bad and not nerr else 'LOOK AT THE ROWS ABOVE'}"
-          f" ({bad} incomplete cycles, {nerr} errors)")
+    print(f"\nVERDICT: {'CLEAN' if ev and not bad and not nerr and not cue_bad else 'LOOK AT THE ROWS ABOVE'}"
+          f" ({bad} incomplete cycles, {nerr} errors, {cue_bad} live beeps on the fallback timer)")
 
 
 # ---------------------------------------------------------------------------------------- music
