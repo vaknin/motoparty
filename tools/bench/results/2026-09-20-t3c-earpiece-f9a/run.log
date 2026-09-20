@@ -1,0 +1,7 @@
+17:04:02.018 talk_cycles.sh DRY=0 host=192.168.13.3 out=/home/kivan/Work/motoparty/tools/bench/results/2026-09-20-t3c-earpiece-f9a
+17:04:02.429 phone: mWakefulness=Awake, top: bitpit.launcher/.ui.HomeActivity
+17:04:02.559 app pid: 20440
+17:04:02.651 bluetooth: 
+17:04:02.876 running 6 cycles of 8s, a fast re-open, one 20s talk
+17:05:52.609 client exited
+17:05:54.667 cleanup: kill 29717 2>/dev/null

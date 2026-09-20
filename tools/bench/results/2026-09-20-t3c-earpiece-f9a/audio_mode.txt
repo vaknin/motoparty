@@ -1,0 +1,3 @@
+    Mode owner token: null
+  Active communication device: AudioDeviceAttributes: role:output type:earpiece addr: name:Pixel 8 profiles:[{ENCODING_PCM_FLOAT, sampling rates=[48000], channel masks=0x04, encapsulation type=0}] descriptors:[]
+  mAudioModeOwner: AudioDeviceBroker$AudioModeInfo[mMode=0, mPid=0, mUid=0, mToken=null]

@@ -19,7 +19,9 @@ tools/bench/talk_cycles.sh ~/bench/2026-09-20-talk && cat ~/bench/2026-09-20-tal
 python3 tools/bench/bench.py talk <out-dir>     # re-run a summary on an existing out-dir
 ```
 
-Env: `PHONE` (adb serial, default `192.168.1.100:5555`), per-script knobs in each header
+Env: `PHONE` (adb serial, default `192.168.1.100:5555`), `HOST_IP` (the phone's address on the
+peer's network; derived from `PHONE`, so it must be set when the serial is not `ip:port` — a USB
+or mDNS serial such as `adb-…._adb-tls-connect._tcp`), per-script knobs in each header
 (`CYCLES`, `TALK_S`, `MUSIC_CMD`, `POST_S`, `ROTATIONS`, …).
 
 **Safety.** Every adb call is `timeout 30 adb -s $PHONE`. Before injecting input the scripts

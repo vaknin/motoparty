@@ -1,9 +1,11 @@
 # Shared by the device bench scripts in tools/bench/. Source it, don't run it.
 #
 # Env for every script:
-#   PHONE  adb serial of the Pixel (default 192.168.1.100:5555; always -s, adb lists it twice)
-#   DRY=1  no phone: start `motoparty-peer host` on 127.0.0.1 and run the same peer-side steps
-#          against it. Checks the script and the summary, not the app.
+#   PHONE   adb serial of the Pixel (default 192.168.1.100:5555; always -s, adb lists it twice)
+#   HOST_IP the phone's address on the peer's network. Derived from PHONE, which only works for an
+#           `ip:port` serial — with a USB or mDNS serial (`adb-…._adb-tls-connect._tcp`) set it.
+#   DRY=1   no phone: start `motoparty-peer host` on 127.0.0.1 and run the same peer-side steps
+#           against it. Checks the script and the summary, not the app.
 #
 # Every adb call goes through `timeout 30`: an offline transport makes plain adb block for ever.
 set -u
@@ -13,7 +15,7 @@ PKG=com.kivan.motoparty
 PHONE=${PHONE:-192.168.1.100:5555}
 DRY=${DRY:-0}
 ADB="timeout 30 adb -s $PHONE"
-if [ "$DRY" = 1 ]; then HOST_IP=127.0.0.1; else HOST_IP=${PHONE%:*}; fi
+if [ "$DRY" = 1 ]; then HOST_IP=127.0.0.1; else HOST_IP=${HOST_IP:-${PHONE%:*}}; fi
 
 # bench_init <out-dir>: OUT (absolute: the peer runs with cwd = tools/peer), run.log.
 bench_init() {
