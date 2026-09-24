@@ -44,6 +44,12 @@ object ScoRule {
     /**
      * The device type for the log line, in the framework's own spelling (`AS.AudioDeviceBroker:
      * Dispatch onCommunicationDeviceChanged: … type: bt_sco`), so a bench run can line the two up.
+     *
+     * The names below the headsets are here for [DeviceRoster], which lists *every* device the
+     * phone has, not just the one a call route picked — a roster full of `type 18` would be unusable
+     * as the bench-readable inventory Stage A of the wired-mic plan asks for. `type N` is still the
+     * honest answer for anything unknown: it is the number to look up in `AudioDeviceInfo`, which is
+     * exactly what Stage B has to do for the dongle.
      */
     fun describe(deviceType: Int?): String = when (deviceType) {
         null -> "none"
@@ -52,10 +58,18 @@ object ScoRule {
         AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt_a2dp"
         AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> "speaker_safe"
+        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "builtin_mic"
         AudioDeviceInfo.TYPE_WIRED_HEADSET -> "wired_headset"
         AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired_headphones"
+        // The three shapes a USB-C audio dongle can present itself as; which one it is decides the
+        // Stage C routing code, and nothing but plugging it in can tell us.
         AudioDeviceInfo.TYPE_USB_HEADSET -> "usb_headset"
+        AudioDeviceInfo.TYPE_USB_DEVICE -> "usb_device"
+        AudioDeviceInfo.TYPE_USB_ACCESSORY -> "usb_accessory"
         AudioDeviceInfo.TYPE_HEARING_AID -> "hearing_aid"
+        AudioDeviceInfo.TYPE_TELEPHONY -> "telephony"
+        AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> "remote_submix"
         else -> "type $deviceType"
     }
 }

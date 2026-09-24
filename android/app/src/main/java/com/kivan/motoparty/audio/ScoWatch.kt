@@ -54,6 +54,14 @@ import java.util.concurrent.Executor
 class ScoWatch(
     private val context: Context,
     private val clock: () -> Long = SystemClock::elapsedRealtime,
+    /**
+     * **Every** communication-device report, raw, off Main, before [update] de-duplicates it
+     * (F9b). [MediaCue] needs exactly this: the `earpiece|none` dispatch that follows a teardown is
+     * swallowed by the dedupe below, because [onRouteReleased] has already set `connected` to
+     * false — so the sound waiting for the media route would never see its signal. Null = the
+     * framework reports no communication device. API 31+ only, the source F8 settled on.
+     */
+    private val onDevice: (type: Int?, atMs: Long) -> Unit = { _, _ -> },
     /** Off Main, only when the state really changed. */
     private val onChange: (connected: Boolean, atMs: Long) -> Unit,
 ) {
@@ -181,17 +189,24 @@ class ScoWatch(
     private fun startCommunicationDevice(handler: Handler) {
         val am = context.getSystemService(AudioManager::class.java) ?: return
         val executor = Executor { command -> handler.post(command) }
-        val listener = AudioManager.OnCommunicationDeviceChangedListener { device -> onDevice(device?.type) }
+        val listener = AudioManager.OnCommunicationDeviceChangedListener { device -> reportDevice(device?.type) }
         runCatching { am.addOnCommunicationDeviceChangedListener(executor, listener) }
             .onSuccess { deviceListener = listener }
             .onFailure { Log.w(TAG, "communication device listener refused: $it") }
         runCatching { am.communicationDevice }
-            .onSuccess { onDevice(it?.type) }
+            .onSuccess { reportDevice(it?.type) }
             .onFailure { Log.w(TAG, "communication device unreadable: $it") }
     }
 
-    private fun onDevice(type: Int?) {
-        update(ScoRule.connected(type), clock(), "communication device ${ScoRule.describe(type)}")
+    /**
+     * One report from the framework. The raw [onDevice] callback comes **first and every time**,
+     * including for the reports [update] drops as "no change" — that is the whole point of it
+     * (F9b); [update] then applies F8's rule, unchanged.
+     */
+    private fun reportDevice(type: Int?) {
+        val at = clock()
+        runCatching { onDevice(type, at) }.onFailure { Log.w(TAG, "device listener failed: $it") }
+        update(ScoRule.connected(type), at, "communication device ${ScoRule.describe(type)}")
     }
 
     /** Synchronized: the watcher thread and the audio thread ([onRouteReleased]) both get here. */

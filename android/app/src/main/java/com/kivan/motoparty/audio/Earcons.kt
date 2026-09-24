@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.PI
 import kotlin.math.min
@@ -78,9 +79,16 @@ object Earcons {
             override fun onPeriodicNotification(t: AudioTrack) {}
         }, main)
         track.play()
+        // F9a's lesson: the phone's own view of the route is not what reaches the ears — so say
+        // which device this tone actually went out on. One line per earcon, e.g.
+        // `Earcons: closed routed to earpiece`. `none` = the framework had not decided yet.
+        runCatching {
+            Log.i(TAG, "${kind.name.lowercase()} routed to ${ScoRule.describe(track.routedDevice?.type)}")
+        }
         // A track re-routed mid-tone may never reach its marker: release it regardless.
         main.postDelayed({ release() }, data.size * 1000L / RATE + RELEASE_SLACK_MS)
     }
 
+    private const val TAG = "Earcons"
     private const val RELEASE_SLACK_MS = 1_000L
 }

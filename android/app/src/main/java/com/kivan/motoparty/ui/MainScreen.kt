@@ -132,6 +132,7 @@ private fun LinkCard(s: LinkStatus) = Section("Link") {
     KeyValue("Jitter target", "${s.jitterTargetMs} ms, ${s.underruns} underruns")
     KeyValue("UDP in/out", "${s.udpIn} / ${s.udpOut}")
     KeyValue("Call device", s.audioDevice ?: "–")
+    KeyValue("Audio devices", s.audioDevices ?: "–")
 }
 
 private fun mmss(ms: Long): String = "%d:%02d".format(ms / 60000, (ms / 1000) % 60)
@@ -195,6 +196,9 @@ private fun SettingsCard(settings: Settings, update: ((Settings) -> Settings) ->
         update { it.copy(headsetNext = if (v) "command" else "next") }
     }
     SwitchRow("Floating TALK/MUSIC overlay", settings.overlayEnabled) { v -> update { it.copy(overlayEnabled = v) } }
+    SwitchRow("Debug: record talk mic to WAV (files/captures). With no passenger connected, TALK records solo", settings.captureDump) { v ->
+        update { it.copy(captureDump = v) }
+    }
 }
 
 @Composable

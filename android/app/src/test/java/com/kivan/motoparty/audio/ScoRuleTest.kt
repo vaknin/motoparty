@@ -50,4 +50,17 @@ class ScoRuleTest {
         assertEquals("none", ScoRule.describe(null))
         assertEquals("type 4242", ScoRule.describe(4242))
     }
+
+    @Test
+    fun `the roster's devices have names too, and a USB dongle's three shapes have three`() {
+        // DeviceRoster lists every device the phone has, not just a call route's; and which of
+        // these three a USB-C audio dongle presents itself as is Stage B's first question.
+        assertEquals("usb_headset", ScoRule.describe(AudioDeviceInfo.TYPE_USB_HEADSET))
+        assertEquals("usb_device", ScoRule.describe(AudioDeviceInfo.TYPE_USB_DEVICE))
+        assertEquals("usb_accessory", ScoRule.describe(AudioDeviceInfo.TYPE_USB_ACCESSORY))
+        assertEquals("builtin_mic", ScoRule.describe(AudioDeviceInfo.TYPE_BUILTIN_MIC))
+        assertEquals("speaker_safe", ScoRule.describe(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE))
+        assertEquals("telephony", ScoRule.describe(AudioDeviceInfo.TYPE_TELEPHONY))
+        assertEquals("remote_submix", ScoRule.describe(AudioDeviceInfo.TYPE_REMOTE_SUBMIX))
+    }
 }

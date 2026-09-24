@@ -47,6 +47,13 @@ class VoiceEngine(
      * thread with its `elapsedRealtime`, must not block.
      */
     private val onMicLive: (atMs: Long) -> Unit = {},
+    /**
+     * Opens a WAV dump for this capture session, or returns null when the debug setting is off —
+     * which is what it does on every ride that is not a microphone test (Stage A of the wired-mic
+     * plan). Called once per [start], from the capture thread before the first read; [PcmDump] is
+     * built so that neither this call nor a frame ever blocks that thread.
+     */
+    private val openDump: () -> PcmDump? = { null },
 ) {
     /** One [start]..[stop]. Only [onFailed] of the talk that failed is told. */
     private class Session(val onFailed: (what: String, e: Throwable) -> Unit)
@@ -186,6 +193,9 @@ class VoiceEngine(
         val aec = if (AcousticEchoCanceler.isAvailable()) AcousticEchoCanceler.create(record.audioSessionId)?.apply { enabled = true } else null
         val ns = if (NoiseSuppressor.isAvailable()) NoiseSuppressor.create(record.audioSessionId)?.apply { enabled = true } else null
         val encoder = OpusEncoder()
+        // Off by default; when it is on, the file is opened by the dump's own writer thread, so
+        // this costs the capture thread one pool allocation and nothing else.
+        val dump = runCatching { openDump() }.onFailure { Log.w(TAG, "capture dump refused: $it") }.getOrNull()
         t.step("effects+encoder")
         val pcm = ShortArray(FRAME)
         // Continue the running clock; frames then advance it by exactly 320 samples each.
@@ -211,7 +221,7 @@ class VoiceEngine(
             if (routeSeen && type == lastRoutedType) return
             routeSeen = true
             lastRoutedType = type
-            Log.i(TAG, "capture routed to ${inputName(type)} +${atMs - startedAtMs} ms")
+            Log.i(TAG, "capture routed to ${ScoRule.describe(type)} +${atMs - startedAtMs} ms")
             if (firstRoutedType == null && type != null) {
                 firstRoutedType = type
                 firstRoutedAtMs = atMs
@@ -256,6 +266,9 @@ class VoiceEngine(
                     val a = if (v < 0) -v.toInt() else v.toInt()
                     if (a > peak) peak = a
                 }
+                // The frame exactly as the microphone delivered it, before the encoder or anything
+                // else touches it: that is the recording an A/B of two microphones is made from.
+                dump?.offer(pcm)
                 routeReport.getAndSet(null)?.let { noteRouted(it.type, it.atMs) }
                 // Backstop while the input device is still unknown: a getter read inside a loop that
                 // runs anyway (every ~500 ms), never a sleep.
@@ -298,6 +311,9 @@ class VoiceEngine(
                 slowestWorkNanos = maxOf(slowestWorkNanos, System.nanoTime() - workFrom)
             }
         } finally {
+            // Returns at once: the writer drains what is queued and closes the file by itself,
+            // because this teardown has 500 ms before [stop] gives up on it.
+            dump?.close()
             runCatching { record.removeOnRoutingChangedListener(routeListener) }
             routeThread.quitSafely() // safe on a thread that never started (no looper)
             if (readStartNanos != 0L) {
@@ -343,17 +359,10 @@ class VoiceEngine(
      */
     private fun micTrace(startedAtMs: Long, routedType: Int?, routedAtMs: Long, peaks: IntArray, filled: Int): String {
         fun off(v: Long?): String = if (v == null) "none" else "+${v - startedAtMs} ms"
-        val routed = if (routedType == null) "none" else "${inputName(routedType)}@${off(routedAtMs)}"
+        val routed = if (routedType == null) "none" else "${ScoRule.describe(routedType)}@${off(routedAtMs)}"
         return "mic trace: session-start +0 ms routed=$routed, sco@${off(micLive.scoRoutedAtMs)}, " +
             "live@${off(micLive.liveAtMs)}, peaks/${TRACE_BUCKET_MS}ms: " +
             (0 until filled).joinToString(" ") { peaks[it].toString() }
-    }
-
-    /** The input device for the F9a log lines, in [ScoRule]'s spelling where it has one. */
-    private fun inputName(type: Int?): String = when (type) {
-        null -> "none"
-        AudioDeviceInfo.TYPE_BUILTIN_MIC -> "builtin_mic"
-        else -> ScoRule.describe(type)
     }
 
     private fun playbackLoop(s: Session) {

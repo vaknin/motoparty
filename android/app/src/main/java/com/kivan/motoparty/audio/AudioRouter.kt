@@ -19,12 +19,22 @@ import android.util.Log
 class AudioRouter(
     context: Context,
     /**
+     * Called on the audio thread when this app takes a call route ([enterCall] at nesting depth
+     * 0 → 1), before the blocking work. [MediaCue] uses it to know that a sound on the media route
+     * has something to wait for, and that a CLOSED earcon still waiting has gone stale (F9b).
+     */
+    private val onRouteHeld: () -> Unit = {},
+    /**
      * Called on the audio thread right after the communication device was cleared, i.e. when this
      * app's call route is gone. [ScoWatch.onRouteReleased] hangs on it: the framework's own
      * "communication device changed" callback for the teardown arrives hundreds of ms later, and a
      * talk opened in that window must not see the old link as still up (F8).
+     *
+     * `wasSco` is whether the route just given up was a Bluetooth SCO one — captured before
+     * [selectedType] is cleared, because only an SCO teardown takes real time and only then does
+     * a media-route sound have to wait for the framework's next device (F9b, [MediaCue]).
      */
-    private val onRouteReleased: () -> Unit = {},
+    private val onRouteReleased: (wasSco: Boolean) -> Unit = {},
 ) {
     private val am = context.getSystemService(AudioManager::class.java)
     private var depth = 0
@@ -58,6 +68,9 @@ class AudioRouter(
     @Synchronized
     fun enterCall() {
         if (depth++ > 0) return
+        // Before anything blocking: from here on this app is in call mode, whether or not the
+        // device selection below succeeds, and a media-route sound has to wait for the release.
+        runCatching { onRouteHeld() }
         val t = StepTimer()
         try {
             am.mode = AudioManager.MODE_IN_COMMUNICATION
@@ -97,6 +110,9 @@ class AudioRouter(
     @Synchronized
     fun exitCall() {
         if (depth == 0 || --depth > 0) return
+        // Read it before the clear below nulls it: only an SCO teardown makes a media-route sound
+        // wait for the framework's next communication device (F9b).
+        val wasSco = needsSco
         val t = StepTimer()
         try {
             if (Build.VERSION.SDK_INT >= 31) {
@@ -116,7 +132,7 @@ class AudioRouter(
             selectedDevice = null
             selectedType = null
             // Whether or not the clear above threw: this app no longer holds a call route.
-            runCatching { onRouteReleased() }
+            runCatching { onRouteReleased(wasSco) }
             Log.i(TAG, "back to media mode")
             Log.i(TAG, t.line("exitCall"))
         }

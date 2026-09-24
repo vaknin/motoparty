@@ -19,6 +19,15 @@ data class Settings(
     /** Headset next (AirPods double press): "command" starts a voice command, "next" skips. */
     val headsetNext: String = "command",
     val overlayEnabled: Boolean = true,
+    /**
+     * Debug: write every talk's captured microphone PCM to a WAV file under
+     * `Android/data/com.kivan.motoparty/files/captures/` (see [com.kivan.motoparty.audio.PcmDump]).
+     * Off by default and meant to be turned on for one ride: it is how one microphone is compared
+     * with another (Stage A of the wired-mic plan, 2026-09-20). While it is on, a talk trigger
+     * with no client connected opens a solo talk instead of being refused, so a microphone can be
+     * recorded on a ride alone.
+     */
+    val captureDump: Boolean = false,
 )
 
 class SettingsStore(context: Context) {
@@ -37,6 +46,7 @@ class SettingsStore(context: Context) {
             headsetPlayPause = prefs.getString("headsetPlayPause", d.headsetPlayPause) ?: d.headsetPlayPause,
             headsetNext = prefs.getString("headsetNext", d.headsetNext) ?: d.headsetNext,
             overlayEnabled = prefs.getBoolean("overlayEnabled", d.overlayEnabled),
+            captureDump = prefs.getBoolean("captureDump", d.captureDump),
         )
     }
 
@@ -50,6 +60,7 @@ class SettingsStore(context: Context) {
             .putString("headsetPlayPause", s.headsetPlayPause)
             .putString("headsetNext", s.headsetNext)
             .putBoolean("overlayEnabled", s.overlayEnabled)
+            .putBoolean("captureDump", s.captureDump)
             .apply()
         _flow.value = load()
     }

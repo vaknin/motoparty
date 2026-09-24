@@ -20,7 +20,10 @@ data class LinkStatus(
     val underruns: Int = 0,
     val udpIn: Long = 0,
     val udpOut: Long = 0,
+    /** What our own call route picked, or null while no call route is held. */
     val audioDevice: String? = null,
+    /** Every audio device the phone has, in short ([com.kivan.motoparty.audio.DeviceRoster]). */
+    val audioDevices: String? = null,
     val nowPlaying: Track? = null,
     val playing: Boolean = false,
     val positionMs: Long = 0,
