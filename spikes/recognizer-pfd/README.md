@@ -3,9 +3,9 @@
 **This whole directory is throwaway.** It is a separate Gradle project with its own
 applicationId (`com.kivan.motoparty.spike`), no dependencies, and no connection to `android/`.
 Delete it once the three questions below are answered and the answers are written into
-`RESEARCH.md`.
+`../../research/RESEARCH.md`.
 
-It exists to settle three device questions from `RESEARCH.md` in one install, with no
+It exists to settle three device questions from `../../research/RESEARCH.md` in one install, with no
 microphone involved and nothing to tap on the phone.
 
 ## The questions

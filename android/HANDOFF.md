@@ -23,10 +23,13 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `audio/opus_jni.c` + `cpp/CMakeLists.txt` + `audio/Opus.kt` | done. libopus 1.5.2 static, VOIP/24 kbps/FEC 10 %/DTX/complexity 8 |
 | `core/TalkStats.kt` | done. Pure: the `talk stats` loss arithmetic and the exact line format (layer 2) |
 | `audio/VoiceEngine.kt` | done. Since F9a the capture loop also measures each raw frame's peak, drives `MicLive` (routing listener on its own `voice-route` thread + a `routedDevice` re-read every 25 frames while the input is not SCO yet), reports `onMicLive` once per `start` and keeps `micLiveAtMs` (carried across a collapsed re-open like `captureUpAtMs`), and prints the `mic trace:` / `capture routed to …` diagnostics — section 2, "F9a". Logs one `talk stats:` line per talk at `stop` (built by `TalkStats`). Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity. `start`/`stop` belong on the audio thread. Each `start(onFailed)` is a session (an `AtomicReference`, not a `running` flag): a loop that outlives `stop`'s 500 ms join cannot carry on under the next `start`, and only the first failure of a still-current session reports, to that session's `onFailed` |
-| `audio/AudioRouter.kt` | done (ref-counted MODE_IN_COMMUNICATION + setCommunicationDevice, prefers BLE headset > SCO > wired > USB). Audio-thread only; `selectedDevice` is published from there instead of queried from Main. `enterCall` counts itself before it can throw, so every caller pairs it with `exitCall` regardless; `exitCall` sets `MODE_NORMAL` in a `finally`; `exitAll` is the shutdown backstop |
+| `audio/AudioRouter.kt` | done (ref-counted MODE_IN_COMMUNICATION + setCommunicationDevice, prefers BLE headset > SCO > wired > USB). Audio-thread only; `selectedDevice` is published from there instead of queried from Main. `enterCall` counts itself before it can throw, so every caller pairs it with `exitCall` regardless; `exitCall` sets `MODE_NORMAL` in a `finally`; `exitAll` is the shutdown backstop. Two callbacks on the audio thread: `onRouteHeld` (depth 0 → 1, before the blocking work) and `onRouteReleased(wasSco)` — F8's invalidation and F9b's two edges. **Stage C will have to change `preference()`**: it ranks wired (2) and USB headset (3) *below* both Bluetooth types, and has no entry at all for `TYPE_USB_DEVICE` / `TYPE_USB_ACCESSORY` |
 | `audio/LiveCue.kt` | done, unit-tested (`LiveCueTest`, 12). Pure: when the "live" earcon may play — first captured frame **and** the route really up (Bluetooth call audio really flowing, for an SCO headset) **and**, since F9a, the headset's own mic signal arriving (`MicLive`); the last two only for an SCO route. One fire per open, 3.5 s fallback timer (2.5 s until F8). See section 2, "F7", "F8" and "F9a" |
 | `audio/MicLive.kt` | done, unit-tested (`MicLiveTest`, 8). Pure: the F9a condition (c) — the recorder is routed to a Bluetooth SCO *input* and, after that moment, `FRAMES_NEEDED` = 10 consecutive 20 ms frames have a peak above `PEAK_THRESHOLD` = 16. Fed by `VoiceEngine`'s capture loop; the only live-earcon signal that has travelled back from the earpieces. Constants to be tuned from the `mic trace:` line — section 2, "F9a" |
-| `audio/ScoWatch.kt` + `audio/ScoRule.kt` | done. Is Bluetooth call audio really flowing? Cached off Main. Since F8 (device-measured) the source on API 31+ is `addOnCommunicationDeviceChangedListener` (`type == TYPE_BLUETOOTH_SCO`), seeded once from `getCommunicationDevice()`, invalidated synchronously when `exitCall` clears the route (`onRouteReleased`); the legacy broadcasts are logged `[not used]` there and only drive below API 31. `ScoRule` is the pure part (which API level, which device types, the log spelling), unit-tested (`ScoRuleTest`, 4) — section 2, "F8" |
+| `audio/ScoWatch.kt` + `audio/ScoRule.kt` | done. Is Bluetooth call audio really flowing? Cached off Main. Since F8 (device-measured) the source on API 31+ is `addOnCommunicationDeviceChangedListener` (`type == TYPE_BLUETOOTH_SCO`), seeded once from `getCommunicationDevice()`, invalidated synchronously when `exitCall` clears the route (`onRouteReleased`); the legacy broadcasts are logged `[not used]` there and only drive below API 31. Since F9b a second, **raw** `onDevice` callback reports *every* framework dispatch before that dedupe, which is what `MediaCue` waits on. `ScoRule` is the pure part (which API level, which device types, the log spelling — now including the USB and built-in types `DeviceRoster` needs), unit-tested (`ScoRuleTest`, 5) — section 2, "F8" |
+| `audio/MediaCue.kt` | done, unit-tested (`MediaCueTest`, 16). Pure: when a sound that plays on the **media** route may play (F9b) — CLOSED, ERROR, the OK of a local volume change, the spoken replies. `exitCall` returned at depth 0, **and** for an SCO route a communication device other than `bt_sco` reported after it; 2 s fallback; a re-opened talk drops a stale CLOSED; off SCO it plays on the same Main turn (`played +0 ms`). Line: `media cue: closed, released +6 ms, device earpiece +415 ms, played +415 ms (both)` |
+| `audio/PcmDump.kt` + `audio/Wav.kt` | done, unit-tested (`PcmDumpTest` 7 + `WavTest` 4). Stage A of the wired-mic plan: the capture loop's own PCM to a WAV file, one per talk, behind the `captureDump` debug setting (off by default). Pre-allocated pool + bounded queue + private daemon writer thread, **drop and count** on overflow — the `voice-capture` thread never blocks on I/O and never allocates on the frame path; `close()` does not join. Capped at 40 MB. Files under `files/captures/`, pullable without root. Line: `capture dump: <name>.wav, N frames, X.X s, N bytes, N dropped` |
+| `audio/DeviceRoster.kt` + `audio/DeviceWatch.kt` | done, unit-tested (`DeviceRosterTest`, 10). Stage A: `getDevices()` + an `AudioDeviceCallback` on their own daemon thread (never Main — both are binder calls into the audio service). `DeviceRoster` is the pure part: sorted, deduped, ids kept (what `setPreferredDevice` will take in Stage C). Lines `audio devices: in … · out …` and `audio devices +:` / `-:` on every plug, each followed by the full roster; short form in the new "Audio devices" UI row |
 | `audio/AudioThread.kt` | done, reviewed, unit-tested (`AudioThreadTest`). The single serial thread every route change and voice start/stop runs on (section 4, "Talk no longer blocks Main"). Not yet run on the device |
 | `audio/Earcons.kt` | done (generated tones: LIVE, CLOSED, OK, ERROR, LISTEN) |
 | `music/Catalog.kt`, `OkHttpDownloader.kt` | done (NewPipeExtractor v0.26.5; YT Music songs/albums/playlists, artist = top 20 songs; falls back to plain YouTube search; resolves progressive M4A, itag 140 preferred) |
@@ -652,6 +655,56 @@ said), `sco@` the moment `MicLive` accepted an SCO input, `live@` the moment (c)
    kept`) still beeps immediately with `capture up +0 ms, sco +0 ms, mic +0 ms`.
 8. The CLOSED / ERROR / OK / LISTEN earcons and the voice-command path are unchanged.
 
+### F9b (2026-09-20) — sounds on the *media* route wait for the media route
+
+**Why.** `TalkAudio` played CLOSED the instant `exitCall()` returned, and the ERROR earcon, the OK
+of a local volume change and the spoken replies were issued the same way, right behind a route
+teardown. `exitCall` normally blocks 0.7–1.0 s, by which time the media route is back — but
+`tools/bench/results/2026-09-20-t4-beeps` measured it at **6 ms** once, and the user heard that beep
+on the phone speaker *and* the AirPods, cut off. A sound timed by a call that *happens* to block is
+gated on nothing at all. Same disease as F7/F8/F9a, other direction.
+
+**The rule** (pure, `audio/MediaCue.kt`, 16 tests). A media-route sound may play when (a) the call
+route has been released — `exitCall` returned at nesting depth 0 — **and** (b) *only if that route
+was SCO*, the framework has reported a communication device other than `bt_sco` after it. Tearing an
+SCO link down is the part that takes real time, and the framework's own `earpiece`/`none` dispatch is
+the honest end of it. **Off SCO, (b) does not apply and the sound plays on the same Main turn**: the
+t3c earpiece bench had `exitCall` at 5–16 ms and nothing may be added to that. A sound asked for with
+no route held and none draining is instant — the common case. 2 s fallback, so a missing signal costs
+a late sound, never a silent one. A re-opened talk drops a pending CLOSED (it would be a lie); an
+error or a spoken reply is still true and waits for the next release.
+
+**Wiring.** `AudioRouter.onRouteHeld` (depth 0 → 1, before the blocking work) and
+`onRouteReleased(wasSco)` — `wasSco` is read before `selectedType` is cleared. `ScoWatch` gained a
+raw `onDevice(type, atMs)` callback that fires on **every** framework dispatch *before* F8's dedupe:
+the dedupe swallows exactly the `earpiece|none` this needs, because `onRouteReleased` has already
+flipped `connected`. `LinkHost` owns the pending map on Main; `Earcons` now logs which device each
+tone actually went out on (`Earcons: closed routed to earpiece`) — F9a's lesson.
+
+**Verify on the device** (`beeps.sh`, the user listening): 0 cut-off closed beeps; one `media cue:`
+line per sound; `device n/a, played +0 ms` on every non-SCO route (a regression here is audible at
+once); no `(fallback)`.
+
+### Stage A of the wired-mic plan (2026-09-20) — instrumentation
+
+**Why.** `~/.claude/plans/dynamic-bubbling-lemon.md` reverses the AirPods-only decision: at
+100–130 km/h in a full-face helmet, mic *placement* beats codec bandwidth by a wide margin, and the
+AirPods mic is in the ear, in the turbulence. Every stage after this is an A/B of one microphone
+against another — and this app could not record a single sample of its own capture, nor had it ever
+asked the framework what devices the phone has (no `getDevices`, no `AudioDeviceCallback`, no
+`ACTION_HEADSET_PLUG`, no `setPreferredDevice` anywhere).
+
+**What was built.** `audio/PcmDump.kt` + `audio/Wav.kt` (the capture loop's PCM, pre-encode, to a WAV
+per talk, behind the `captureDump` setting) and `audio/DeviceRoster.kt` + `audio/DeviceWatch.kt` (the
+inventory and every plug/unplug). Details in the table in section 1. The rule that shaped `PcmDump`:
+the `voice-capture` thread is `THREAD_PRIORITY_URGENT_AUDIO` and must never block on I/O or allocate
+on the frame path, so frames go to a pool-backed bounded queue and are **dropped and counted** rather
+than waited for, and `close()` does not join.
+
+**Verify on the device:** `captureDump` on → one `capture dump:` line per talk with `0 dropped`, a
+WAV that plays and is the right length, and **no change** to `capture: read N frames … (N expected)`
+or to any `live cue:` timing; `audio devices:` at start-up listing the AirPods and the built-in
+devices, and `+`/`-` lines when a cable goes in (Stage B's first reading).
 
 ## 3. Not done, in priority order
 

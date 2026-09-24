@@ -14,6 +14,8 @@ is good enough for talk; numbers in `HANDOFF.md`, "Hotspot").
 | `ios/` | Client app (SwiftPM, built with xtool from Linux) — see `ios/README.md` |
 | `tools/peer/` | Python peer: fake client or fake host for bench tests — see `tools/peer/README.md` |
 | `tools/bench/` | Device bench scripts (adb + the peer) with a short summary per run — see `tools/bench/README.md` |
+| `TELEMETRY.md` | Agreed with the NX500 telemetry node (`~/Work/Honda`): wired handlebar control box, key-on session start |
+| `research/` | Hardware research held in reserve, read only if the microphone question reopens — see `research/README.md` |
 
 ## Ride setup (once)
 

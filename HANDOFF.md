@@ -1,855 +1,332 @@
-# Coordinator handoff (2026-09-19, ~23:00; fourth coordinator session, Part A of its plan)
+# Coordinator handoff (2026-09-22, tenth session)
 
-For the Claude session that coordinates Motoparty. You own `PROTOCOL.md`, `fixtures/`, the
-root docs, `tools/bench/` and the decisions; component work goes to background subagents, one
-per directory, with a final report back to you; they don't commit. You re-run their tests
-yourself before telling the user anything is done, and keep this file current.
+For the Claude session that coordinates Motoparty. You own `PROTOCOL.md`, `fixtures/`, the root
+docs, `tools/bench/` and the decisions; component work goes to background subagents, one per
+directory, with a final report back to you; they don't commit. You re-run their tests yourself
+before telling the user anything is done, and keep this file current.
+
+**This file is the current state, not a diary.** The session-by-session narrative up to and
+including the seventh session (D1–D4 device runs, the F1–F5 fixes, the superseded "Do now" blocks)
+was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Android detail — every
+F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
+and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
 ## Read first
 
-1. `~/.claude/plans/motorcycle-communication-application-proud-pixel.md`: the approved plan.
-   (Its "5 GHz hotspot" is moot, see "Hotspot" below.) Tonight's coordinator plan (Part A no
-   phone, Part B device sessions D1–D4): `~/.claude/plans/pasted-content-id-4913-you-are-optimized-naur.md`.
+1. `~/.claude/plans/dynamic-bubbling-lemon.md`: the wired-helmet-mic plan, Stages A–E. **Stage A is
+   built; B–E are on hold** pending the ride recording in "Do now", and its "Hardware" table is
+   superseded by `research/MIC.md`.
+   `~/.claude/plans/motorcycle-communication-application-proud-pixel.md`: the original product plan
+   (its "5 GHz hotspot" is moot, see "Hotspot").
 2. `PROTOCOL.md`: the wire contract. It is the source of truth over any code comment.
 3. `fixtures/`: shared test vectors. All three implementations pass the current set.
-4. Component notes: `android/HANDOFF.md` (the most detailed), `android/README.md`,
-   `ios/README.md`, `tools/peer/README.md`, and `tools/bench/README.md`.
+4. Component notes: `android/HANDOFF.md` (the most detailed), `android/README.md`, `ios/README.md`,
+   `tools/peer/README.md`, `tools/bench/README.md`.
+5. **`research/` — do not read it yet.** Four documents (design research, playback, the microphone
+   purchase plan, the AliExpress parts list) that are one costed fallback, worth ~₪300–1,000 of
+   hardware. `research/README.md` says in a page what each answers. They become live **only** if
+   the ride recording below fails; reading them before that is ~3,000 lines of context spent on a
+   purchase that may never happen.
 
-## Do now (2026-09-20 ~09:00, end of the seventh session: device testing; supersedes the ones below)
+## Do now (2026-09-22, tenth session: test the microphone we already own)
 
-Details of everything here: "Seventh coordinator session" further down.
+**The question is one ride long, and nothing can be ordered until it is answered.** Inside a
+full-face helmet at 100–130 km/h wind is 95–105 dB and speech at the mic is 75–85 dB;
+intelligibility lives 300 Hz–4 kHz and wind energy below ~500 Hz, so **mic placement and wind
+shielding beat codec bandwidth by a wide margin**, and the AirPods mic is in the ear, in the
+turbulence. That is the case for a mouth microphone and it is still unmeasured — on this helmet,
+this head, this phone. The ninth session went straight from that reasoning to a purchase plan
+(`research/`); the tenth stopped and built the recorder instead.
 
-**State.** `master` at `68c7bf3` + **uncommitted** work: F8, F9a and the 3.5 s timer in `android/`
-(153 tests pass, coordinator-run), this file, `android/HANDOFF.md`, and the untracked result dirs
-(`tools/bench/results/2026-09-20-t2…t5b`, `spikes/recognizer-pfd/results/`). Nothing committed: the
-user has not said so. No git remote. **On the Pixel: the F8 build** (installed 08:31:49); **F9a is
-built but NOT installed** (the user stopped the session at the install step). Phone left in music
-mode, buttons on (`overlayEnabled=true`, `fx=0.662 fy=0.313` where the user dragged them), the spike
-app still installed (RECORD_AUDIO granted to it).
+**What changed on 2026-09-22, and it is a user decision, not a finding:** the user does **not want
+music and talk at the same time — "it's this or that, never both simultaneously."** That removes
+the cost the whole wired direction was paying to avoid. The A2DP↔HFP switch degrading music during
+a talk is not a defect if music is meant to stop anyway. What is left of the case against
+AirPods-only is **one** thing: whether the in-ear mic delivers intelligible speech at 110 km/h.
+Nothing but a recording answers it.
 
-**Done today on the device:** test 1 spike PASS (single button buildable; no RECORD_AUDIO needed;
-wake word comes back as "Moto party"); test 2 the recognizer hears the user in call mode (§3.3
-settled) but the MUSIC command path is bad (no beep, reply distorted / on the phone speaker); test 3
-talk path CLEAN, F7's broadcast gate dishonest → F8 (verified honest on the phone's side in 3b);
-test 4 beeps: closed beep can leak to the speaker, **the 20 s silence close never fires** (AirPods
-mic is ~never DTX); test 5 + the user's finger: F6 overlay dismiss all good (the ✕ is "a bit ugly",
-parked for the MVP).
+The wire format stays 16 kHz Opus and `PROTOCOL.md` is **out of scope** either way.
 
-**Next, in order (gate first, say what will sound, one ask at a time):**
-1. Install F9a (`cd android && ./gradlew installDebug`, relaunch, HOME), run
-   `tools/bench/talk_cycles.sh tools/bench/results/2026-MM-DD-t3c-talk-f9a` **while the user
-   listens and counts which live beeps are cut**. Read per talk: `live cue: … mic +M ms … (both)`,
-   `VoiceEngine: capture routed to …`, `VoiceEngine: mic trace: … peaks/100ms: …`. Questions: is the
-   SCO input digital silence until the AirPods are live (else raise `MicLive.PEAK_THRESHOLD` from
-   the trace); does the record ever report an SCO route (else every talk `(fallback)` at 3.5 s);
-   does `live@` line up with what the user hears. **The user's requirement: 0 cut-off beeps, gated
-   by real async signals, a small real delay is fine, no sleeps.** If the mic signal is not the
-   right proxy for "the AirPods are rendering", the trace is the data to pick the next one from.
-2. **F9b** (offline `android/`): CLOSED / ERROR earcons and spoken replies (`announce`) wait for the
-   media route to be really back (today: right after `exitCall()` returns, which took 6 ms once →
-   beep on speaker + AirPods, cut). Same "real signal" rule.
-3. **Decision owed by the user: the silence close.** Proposal: the host judges activity by level
-   over a running noise floor on its own PCM and on the decoded received PCM (no wire change);
-   alternative: drop the silence close (talk ends on a press only). Matters more with one button.
-   Then `beeps.sh` must fail its step when no `reason:"silence"` close arrives.
-4. **Single button (test 6), only when the user says go.** Two narrow `android/` agents: (6a) PCM tee
-   in `VoiceEngine.captureLoop` → paced pipe → segmented `Transcriber` (`EXTRA_AUDIO_SOURCE`,
-   RESEARCH §3.2 traps), wake word outside `CommandParser` ("motoparty" | "moto party", trimmed,
-   so PROTOCOL/fixtures stay untouched), replies only on a settled route; (6b) one overlay zone,
-   retire `listenForCommand`'s own route switch. Ask first: should a recognized command close the
-   talk by itself when nothing else was said?
-5. Open, not chased: the SCO flap (OPEN → CLOSING after ~30 ms → OPEN ~0.8 s later; 5/8 then 3/8
-   talks; it is what makes live ~2.1 s instead of ~1.4 s after the press); the pointless SCO bounce
-   on a refused talk; `bench.py talk` parses none of the `live cue` / `ScoWatch` / `mic trace`
-   lines (every table today was made by hand); F8 verify item 4's "+0 ms" wording; two
-   `motoparty-audio` threads seen alive in one process.
+**State.** F9b (finished, see below) and Stage A of the wired-mic plan were uncommitted on top of
+`a1bb7ed` until 2026-09-24, when they were committed (after `d437f73` pause fix and `5fd5ba4` idea #3
+music) and pushed; 194 tests and `lintDebug` 0 errors on that tree. Numbers below are from 09-22: `android`: **191 tests, 0 fail, 2 skipped** (153 → 169 with F9b → 191), fresh
+`assembleDebug testDebugUnitTest --rerun-tasks`, coordinator-run. `tools/peer`: 161 pass. `DRY=1`
+runs of `talk_cycles.sh`, `unavailable.sh`, `music_sync.sh`, `beeps.sh` all behave as recorded, and
+`bench.py talk` still reproduces the stored F7/F8/F9a numbers exactly. **The working tree (F9a, F9b,
+Stage A, solo talk) was installed on the Pixel on 2026-09-22 01:42 and has not been exercised
+there**: all of it is still device-unverified, apart from 2026-09-24's `music_sync.sh` (one talk
+open/close and a cold resume on this tree, 0 errors). To get F8 back, build `dd084d6`.
+**No hardware has been bought.**
 
-Offline, any time: align the iOS jitter backlog cap to Android's 400 ms and gate the iOS LIVE
-earcon on the first capture buffer (`AppModel.swift:406`).
+**F9b is finished, not half-applied** (the eighth session was stopped mid-way and left it in the
+tree). New pure `audio/MediaCue.kt` (16 tests) gates every sound that plays on the *media* route —
+CLOSED, ERROR, the OK of a local volume change, and the spoken replies — on (a) `exitCall` having
+returned at depth 0 and (b), **only for an SCO route**, the framework having reported a
+communication device other than `bt_sco` after it; a 2 s timer is the safety net, a re-opened talk
+drops a stale CLOSED, and off SCO a sound still plays on the same Main turn (`played +0 ms`), which
+the t3c earpiece bench says it must. `AudioRouter` gained `onRouteHeld` and `onRouteReleased(wasSco)`;
+`ScoWatch` gained a raw `onDevice` callback, because F8's dedupe swallows exactly the `earpiece|none`
+report this needs. Bench line: `media cue: closed, released +6 ms, device earpiece +415 ms, played
++415 ms (both)`.
 
-## Do now (2026-09-20, end of the sixth session's offline part; superseded by the one above)
+**Stage A (instrumentation) is built.** It is the thing every later A/B depends on, and none of it
+existed before: the app could not record a single sample of its own capture, and had never asked the
+framework what devices the phone has.
+- `audio/PcmDump.kt` + `audio/Wav.kt` (+ 11 tests): the capture loop's PCM, pre-encode, to a WAV
+  file, one per talk, behind the new `captureDump` debug setting (off by default; switch at the
+  bottom of the app's Settings card). The `voice-capture` thread never blocks and never allocates on
+  the frame path — a pre-allocated pool, a bounded queue, a private daemon writer thread, **drop and
+  count on overflow**; `close()` does not join, because that teardown has 500 ms and the writer may
+  have 2 s of queue plus a header rewrite left. Capped at 40 MB (~20 min). Files land in
+  `/sdcard/Android/data/com.kivan.motoparty/files/captures/capture-<yyyyMMdd-HHmmss>.wav`, which
+  `adb pull` reaches without root. Line: `capture dump: capture-20260920-143012.wav, 1193 frames,
+  23.9 s, 763520 bytes, 0 dropped` — `dropped` is the only number that means something is wrong.
+- **Solo talk (2026-09-22).** With `captureDump` on and **no client connected**, a talk trigger is
+  no longer refused: it opens the ordinary talk path (call route, `VOICE_COMMUNICATION` capture,
+  live beep, the WAV) with no far end, so the baseline ride needs no passenger and no peer. The
+  20 s silence close is skipped while it is solo; it ends on the trigger. `LinkHost.soloTalk`, log
+  line `talk: no client connected, recording solo`. With the switch off the refusal is unchanged.
+  The user's position as of this date: **music and talk are never wanted at the same time**, so
+  the HFP profile switch is not a cost in itself; whether the in-ear mic survives the helmet at
+  speed is the only open question about AirPods-only, and this recording is what answers it.
+- `audio/DeviceRoster.kt` (pure, 10 tests) + `audio/DeviceWatch.kt`: `AudioManager.getDevices()` and
+  an `AudioDeviceCallback` on their own daemon thread, never Main. Lines
+  `audio devices: in builtin_mic#3 "Pixel 8", bt_sco#10 "AirPods Pro" · out earpiece#1 …`, plus
+  `audio devices +: …` / `-: …` on every plug and unplug, followed by the full roster. The id is
+  carried because it is what `AudioRecord.setPreferredDevice()` takes in Stage C. New UI row
+  "Audio devices" under "Call device" (which keeps its own meaning: what *our* call route picked).
+- `ScoRule.describe` gained `usb_device`, `usb_accessory`, `builtin_mic`, `speaker_safe`,
+  `telephony`, `remote_submix`; `VoiceEngine.inputName` is gone, it now calls `describe` directly.
 
-Everything offline is done and checked by the coordinator (Android 139 tests, peer 161, four
-`DRY=1` runs, the spike builds). **Committed as `ecfc144`** (last night's F3–F5 and today's F6, F7,
-bench, peer, spike, docs). **Not pushed: the repo has no git remote.** The build on the Pixel is
-still F3+F4+F5.
+**Next, in order:**
+1. **The bench check, in a quiet room, five minutes** (nobody has ever heard this code run). Switch
+   `captureDump` on, AirPods in, press TALK, wait for the live beep, speak, press again. The log
+   must show `talk: no client connected, recording solo`, then `capture dump: …, 0 dropped`. **The
+   line that decides whether the file is worth anything is `mic trace: … routed=…`: it must say
+   `bt_sco`, not `builtin_mic`.** A recording made on the phone's own mic answers a different
+   question. `adb pull /sdcard/Android/data/com.kivan.motoparty/files/captures/`.
+2. **The ride recording** — the whole of the current question. `captureDump` on, no client needed,
+   ~110 km/h, visor down, **speak the speed out loud as it changes** so the WAV is self-labelling.
+   One file per talk, capped at 40 MB ≈ 21 min. Then listen: *can a passenger understand this?*
+   - **Intelligible** → buy nothing. The remaining work is a high-pass at 150–200 Hz and noise
+     suppression tuned for wind, in the app, on the capture we already have, plus `research/`
+     becoming history. `research/PLAYBACK.md` §8 T2 (the ear-position spectrum) is the free
+     measurement that would tune it.
+   - **Mush** → `research/README.md`, then `research/MIC.md` §5: the free eraser-block fit test
+     first, then a ₪299–350 Hollyland Lark A1 or a ₪312 Sennheiser XS Lav, bought locally and
+     returnable. Nothing there is ordered and nothing there should be ordered before this step.
+   - **In between** → the honest case for the whole `research/` plan, and the one where the user's
+     ears, not this file, decide.
+3. **The silence-close decision** (see "Decisions in force") is owed either way and blocks nothing
+   else. On the AirPods mic Opus never goes DTX, so the 20 s close as specified cannot fire; solo
+   talk sidesteps it by skipping the timer, which is a debug path, not an answer.
+4. **Only if the ride says buy:** the staged plan in `~/.claude/plans/dynamic-bubbling-lemon.md`
+   (Stage B the bench hour, C the routing code, D the music setting, E the A/B ride) still stands
+   as written, with `research/MIC.md` overriding its Hardware table on what to buy.
 
-When the user says the phone is free — gate first (install the current build), one ask at a time,
-say what will sound in the AirPods, F13 keep-awake, never a tap on the MUSIC zone:
-
-1. `spikes/recognizer-pfd/run.sh pfd` ungranted, then `GRANT=1` (silent), `usage` (two quiet 1 s
-   tones), `props` → decides the single button (RESEARCH §5.4). On a `no match`: re-run with
-   `RECOGNIZER=default` before concluding.
-2. The user speaks one real command (RESEARCH §3.3).
-3. `talk_cycles.sh` on the F7 build (earcons): one `live cue: … (both)` per talk, which
-   `ScoWatch: sco connected (<source>)` fires, no `(fallback)`; still 0 `waited … for Main`.
-4. `beeps.sh` while the user listens (5 beeps, ~1 min incl. a 20 s silence close).
-5. `overlay_rotation.sh` (silent; ends with the dismiss step, which force-stops and relaunches the
-   app to bring the buttons back), then the user's own finger: drag, drop on the ✕, "Show buttons".
-6. If the spike passes: an `android/` agent builds the single button (tee in
-   `VoiceEngine.captureLoop`, segmented `Transcriber`, "motoparty" first word, one zone). Narrow
-   task: the F7 agent ran to 177k tokens.
-
-Offline, any time: align the iOS jitter backlog cap to Android's 400 ms and gate the iOS LIVE
-earcon on the first capture buffer (`AppModel.swift:406`) — both from the pre-roll review.
-
-## Sixth coordinator session (2026-09-20, daytime; no phone, no iPhone)
-
-Plan: `~/.claude/plans/pasted-content-id-45cf-you-are-functional-stonebraker.md`.
-
-**Decided with the user today (don't reopen):**
-
-- **Wired helmet mic (`RESEARCH.md` §4.8): rejected. No cable, and no other hardware either** (no
-  LE Audio earbuds, no Cardo/Sena). **The AirPods mic stays a hard requirement** (as §5.1 says).
-  The user asked "why can't we use the AirPods mic?": we do, and the talk itself is fine; the
-  limit is Bluetooth's, not ours: AirPods do stereo music *or* a mic, never both, so every talk
-  drops them to mono call quality, the call link is up 0.9–1.7 s after the press, and music is
-  back within ±80 ms ~18 s after a talk. That cost is accepted. What softens it: the 20 s silence
-  close, the honest go-beep (F7; the pre-roll buffer was reviewed and dropped, see below), and the
-  single button (no second route switch for
-  a command). Dropped for good: the USB-mic research and the USB-mic device spike; `RESEARCH.md`
-  §6 "USB-C helmet mic" and "LE Audio earbuds" are won't-do. Not researched, because the answer
-  made it moot: USB input in MODE_NORMAL vs A2DP, iOS input-only USB routing, charging + mic on
-  one port, products. The passenger's iPhone will be a 15 or newer (USB-C), should it ever matter.
-- **Overlay dismiss:** dropping the buttons on the X sets `overlayEnabled=false`; they come back
-  by a "Show buttons" action on the notification and by the app's switch. **No auto-hide**: always
-  shown while the service runs.
-- **Single button (`RESEARCH.md` §5.4): wanted, test first.** The user expected it to exist
-  already; it does not (nothing in `RESEARCH.md` is implemented). Two zones stay until the
-  `EXTRA_AUDIO_SOURCE` spike (`spikes/recognizer-pfd/`) passes on the Pixel; then an agent builds
-  the merge (press = talk; "motoparty, …" while open = command).
-- **Silence close 10 s → 20 s** (PROTOCOL.md "Talk flow" step 3 updated by the coordinator;
-  Android `TalkController.SILENCE_MS`, the peer's fake host).
-- **`duckDuringTalk` stays off; the user said don't ask again.**
-- Beeps (closed / error): the user was not listening for them last night → `tools/bench/beeps.sh`
-  plays each once on purpose, the user listens on the next phone session.
-
-**Done by the coordinator, no phone:** the own check of D4 run 4 (`results/2026-09-20-d4-overlay-4`):
-13/13 frames on screen, 8/8 `trigger TALK`, 0 `trigger MUSIC`, `fx`/`fy` change on every drag
-(0.0/1.0 corners), overlay back at `551 461 865 1025` with the start fractions, rotation restored
-1 / 0, 0 errors → the agent's report holds; F5 is verified for injected drags (a real finger is
-still the user's). `UIRequiresPersistentWiFi` is already in `ios/Info.plist` (RESEARCH §6 item:
-done, needs only the iPhone test). `ios/README.md` now says the overlay is Pixel only.
-
-**Agents of this session** (results below as they land): T = `tools/bench` heuristics + `beeps.sh`
-+ peer 20 s; S = `spikes/recognizer-pfd/` throwaway app (recognizer on fed audio, USAGE_MEDIA vs
-USAGE_VOICE_COMMUNICATION routing, UNPROCESSED property); O = `android/` F6 (drag-to-dismiss,
-"Show buttons", service reacts to the setting, 20 s).
-
-**Agent T (`tools/bench`, `tools/peer`; coordinator read the diff and re-ran everything).**
-`bench.py`: capture-alive is judged against the engine's own `capture: read N … (X expected)` line
-(open→close only as a fallback) → `…-d1-talk-5` has no `STALLED?` any more (336/380 … 972/981);
-`errors()` counts E/F only under the app's own tags or any `Exception`/`FATAL`, lists the rest as
-"not counted" → `…-d3b-unavailable` is `VERDICT: CLEAN`. Coordinator's own third fix: a collapsed
-cycle (fast re-open) is not "incomplete" → `…-d1-talk-5` `VERDICT: CLEAN`; `…-d1-talk-4` stays LOOK,
-rightly (that build did not collapse). New `beeps.sh` (listening test: live+closed, live+closed on
-the 20 s silence, error; `NOW:` lines with the wall clock; only `host_talk`'s TALK-zone tap; adb
-path unproven; earcons log nothing, `Earcons.kt` has no Log call). Peer: `TALK_SILENCE_MS = 20_000`,
-READMEs. `uv run pytest`: 161 pass. `DRY=1`: `unavailable` CLEAN, `beeps` ok, `talk_cycles` ok (all
-after the `lib.sh keep_awake` edit), `music_sync` ok (exit 0, full play → talk → resume → pause
-trace, no fake host left behind). **"Do now" item 1 is done.**
-
-**F6, agent O (`android/`; coordinator read the diff, fresh `assembleDebug testDebugUnitTest
---rerun-tasks`: 128 tests, 0 fail, 2 skipped). Device-unverified.** Drag shows a 112 dp ✕ at the
-bottom centre of the usable area (own window, title `MotopartyDismiss`, not touchable; the buttons
-window is now titled `com.kivan.motoparty:buttons`, so `bench.py frame` still picks the buttons);
-ACTION_UP over it → fractions back to their ACTION_DOWN values, nothing saved,
-`overlayEnabled=false` (`shared_prefs/settings.xml`), `stopSelf()`; CANCEL never dismisses.
-`LinkService` now collects the setting itself (the activity's collector is gone), re-posts the
-notification on a change, and swaps "Command" for **"Show buttons"** (`ACTION_SHOW_OVERLAY`) while
-hidden. `SILENCE_MS = 20_000`. Target box in parent-frame px: portrait 1080x2205 →
-`[393,1880][687,2174]`, landscape 2268x1017 → `[987,692][1281,986]`. Coordinator's objection: the
-hit rule (centre x over the target and window bottom ≥ target top) makes ~72 % of the landscape
-height count → tightened to "bottom ≥ the target's vertical centre" in F7. Still owed: a `dismiss`
-step in `overlay_rotation.sh` (after agent T is out of `tools/bench`), then the user's real finger.
-
-**F7, honest go-beep + tighter X (`android/`; coordinator read `LiveCue.kt`, `ScoWatch.kt` and the
-`LinkHost` wiring, fresh `--rerun-tasks`: 139 tests, 0 fail, 2 skipped). Device-unverified. The
-agent used ~177k tokens, over the user's limit: give the next one a narrower task.** LIVE now fires
-when the first capture frame of this talk was read **and** the route is up (SCO connected for a
-Bluetooth SCO device, at once for any other route), once per open, never after a close, not twice
-on an SCO flap; a 2.5 s timer fires it anyway. Pure rule in `audio/LiveCue.kt` (10 tests);
-`audio/ScoWatch.kt` caches the SCO state off Main from **two** broadcasts
-(`ACTION_SCO_AUDIO_STATE_UPDATED` and `BluetoothHeadset.ACTION_AUDIO_STATE_CHANGED`) because on
-Android 17 SCO is managed by the audio framework ("Audio Managed SCO") and the classic broadcast
-may be gone: **unknown which fires on the Pixel**. Bench reads: one line per talk
-`live cue: session N, capture up +X ms, sco +Y ms|n/a|unknown, fired +Z ms (both|fallback)` and
-`ScoWatch: sco connected (<source>)`. `(fallback)` on every AirPods talk = neither broadcast
-fires → next step an `AudioDeviceCallback` on the SCO input device. A kept-route re-open logs
-`+0 ms` for both. Open edge (coordinator): a quick close→open that did *not* collapse may see the
-old link still "connected" when the route reports; `scoDisconnected` clears it only if the drop
-arrives before the first frame. `LIVE_EARCON_DELAY_MS` is gone. X hit rule: window bottom ≥ the
-target's vertical centre (178 px above the usable bottom): 10 % of the vertical travel in
-portrait, 39 % in landscape (was 20 % / 72 %).
-
-**Dismiss bench step (`tools/bench/overlay_rotation.sh`, `bench.py`; coordinator read
-`dismiss_step`, `bash -n` ok, the four old overlay dirs summarise as stored, talk-5 / d3b still
-CLEAN). Every adb step unproven.** `DISMISS=1` (default), rotation 0, after the "back" row: grabs
-the buttons in the TALK half, 5 s swipe to the bottom centre, refuses any swipe under 40 px (moves
-the buttons up first if needed), never a tap; mid-swipe dump → `bench.py window MotopartyDismiss`
-(new subcommand; `frame <pkg>` unchanged); expects no buttons window, `overlayEnabled=false`,
-fx/fy unchanged, no `trigger` lines; rows `dismiss-target` / `dismissed` / `restored`. Restore
-(registered with `on_exit` before the swipe): `am start-service … SHOW_OVERLAY` (expected refused,
-the service is not exported), else force-stop → `run-as … sed -i` on `shared_prefs/settings.xml` →
-`restart_app`. Most likely to break: toybox `sed -i` under `run-as`; the swipe's end point
-`(w/2, h-20)` counting as a drop on the ✕. Side fix: a failed TALK tap (`"no\n"`) never failed the
-overlay verdict before; it does now. `shellcheck` is not installed here.
-
-**Agent S: `spikes/recognizer-pfd/`** (throwaway app `com.kivan.motoparty.spike`, zero
-dependencies; the coordinator built it: `./gradlew assembleDebug` ok, 2.9 MB apk; read `run.sh`: only
-install / grant / logcat / `am start`, no taps, and fixed one bug: `install -g` granted RECORD_AUDIO
-always, so the ungranted case could not run). `run.sh [pfd|usage|props|all]`, verdict lines
-`PFD VERDICT:` / `PFD PIPE:` (a pipe never drained = the recognizer ignored the extra) /
-`USAGE VERDICT:` / `PROPS VERDICT:`. Audible: two quiet 1 s tones for `usage` only. Open: whether
-`RECORD_AUDIO` is needed for the pipe case (run ungranted first, then `GRANT=1`); TTS speech may
-not be recognisable → a `no match` needs a `RECOGNIZER=default` re-run before concluding. Found:
-`onSegmentResults` / `onEndOfSegmentedSession` are default methods, the compiler won't force them
-in the `Transcriber` rewrite.
-
-**Pre-roll buffer (`RESEARCH.md` §5.3): design review says don't build it** (Plan agent, read-only;
-the coordinator checked the cited code: `LinkHost.kt:328-331` + `LIVE_EARCON_DELAY_MS = 400`,
-`JitterBuffer.kt:165` backlog cap `MAX_MS + BACKLOG_SLACK_MS`, `VoiceEngine.kt:59` drop while no
-session). §5.3 is confused: before the press no mic is open (opening the AirPods mic *is* the
-switch), so there is nothing to keep a rolling buffer of. From `…-d1-talk-5/logcat_all.txt`, after
-`talk open`: enterCall 199–563 ms, SCO up 1.17–1.38 s (cycle 2: up 0.97, dropped, up 1.88), the
-talker's first captured frame 1.27–1.49 s (1.97) = 62–166 ms after its own SCO up. So the words
-lost are the ones spoken in the first ~1.3–2.0 s, **never captured, not recoverable**. Listener-side
-loss (listener's SCO later than the talker's mic) is ~0–0.3 s on rare cycles and the jitter buffer
-already keeps the newest ≤400 ms (an accidental pre-roll). Caveat: measured with one AirPods phone
-against the peer's instant mic; two AirPods phones were never measured. Found on the way: the three
-receivers treat a backlog differently (Android caps 400 ms; iOS holds 100 packets = up to 2 s delay
-until the next pause, `ios/…/JitterBuffer.swift:163`; the peer trims 1 frame/s, `jitter.py:223`) —
-align iOS to Android's cap when `ios/` is next touched. **Recommended instead: a truthful "go"
-beep**: today LIVE fires 400 ms after `enterCall`+`VoiceEngine.start` return (in cycle 1 that is
-630 ms *before* SCO was up; it is only heard near SCO-up because the output blocks); fire it when
-SCO audio is connected *and* the first capture frame arrived (`capture up` alone is not enough:
-cycle 9 had frames 0.76 s before SCO), ~2.5 s fallback; Android `VoiceEngine` `onCaptureUp` +
-`AudioRouter` SCO state + `LinkHost`; iOS `AppModel.swift:406`; no PROTOCOL change; ½–1 day + one
-bench run. **The user said yes (2026-09-20): honest go-beep, no buffer, same tone.** Queued as the
-next `android/` task (F7) after agent O; iOS side with it or when `ios/` is next touched.
-
-## Seventh coordinator session (2026-09-20, from 07:45; device testing: Pixel + AirPods Pro, no iPhone)
-
-Results as they land, newest last. Every result below was re-read by the coordinator from the
-result files, not taken from an agent's report.
-
-**Gate 07:49.** Phone awake, unlocked, home screen; AirPods Pro active on A2DP, mode 0, media
-button session null. `installDebug` of `68c7bf3` (F6+F7) at 07:49:33, RECORD_AUDIO /
-POST_NOTIFICATIONS / BLUETOOTH_CONNECT granted, SYSTEM_ALERT_WINDOW allow, app launched, window
-`com.kivan.motoparty:buttons` up, `LinkService` foreground. `shared_prefs/settings.xml` did not
-exist yet (the setting was never written; default on). Overlay at `fx=1.0 fy=0.159`.
-
-**Test 1, recognizer spike: PASS → the single button is buildable** (`spikes/recognizer-pfd/results/2026-09-20-0751…0754-*`,
-`run.sh` needed no fix).
-- `pfd`, RECORD_AUDIO **not** granted (`package.txt`: `granted=false`): `PFD PIPE: audio=5434 ms,
-  wrote=173894/173894 bytes, maxWriteBlock=2 ms, drained=true`; `PFD CALLBACKS: … segments=2,
-  onEndOfSegmentedSession=true, micOpened=false`; `PFD VERDICT: Moto party next |  Play album Abbey Road`;
-  rec-watch `no active recordings` at baseline and at the end. The `GRANT=1` run is identical.
-  → Google's on-device recognizer reads `EXTRA_AUDIO_SOURCE`, opens no mic, **does not need
-  RECORD_AUDIO**, and `EXTRA_SEGMENTED_SESSION` works (one `onSegmentResults` per phrase). No
-  `no match`, so no `RECOGNIZER=default` run.
-- Timing: `onSegmentResults` ~0.9–1.0 s after the end of each phrase (phrase 1 ends ≈1.9 s → 2.92 s;
-  phrase 2 ≈4.9 s → 5.85 s); partials are near real time.
-- **For the single-button build:** the wake word came back as **"Moto party"** (two words,
-  capitalised; second segment with a leading space) despite `EXTRA_BIASING_STRINGS` →
-  `CommandParser` must accept "motoparty" / "moto party" and trim; per-code-point normalisation
-  already lower-cases.
-- `USAGE VERDICT: media -> BLUETOOTH_A2DP "AirPods Pro", voice_communication -> BLUETOOTH_A2DP "AirPods Pro"`
-  → the RESEARCH §5.2 earpiece gotcha does not show on this phone in MODE_NORMAL (says nothing
-  about MODE_IN_COMMUNICATION).
-- `PROPS VERDICT: unprocessed=false, sdk=37, onDeviceRecognizer=true`; output 48000 Hz, 240
-  frames/buffer → `AudioSource.UNPROCESSED` is not available on the Pixel 8.
-- Not shown: real speech through the AirPods mic at call quality (8/16 kHz SCO, wind), a session
-  as long as a talk, a pipe fed from a live capture loop. The spike app is still installed.
-
-**Test 2, the user's own voice (07:59; `tools/bench/results/2026-09-20-t2-voice/logcat_all.txt`, the
-main buffer starts 07:59:14 so the first press's start is lost). RESEARCH §3.3 settled: yes, the
-recognizer hears the AirPods mic while we hold MODE_IN_COMMUNICATION** — press 1: `recognition
-failed: error 7` (no match; the user was waiting for a beep that never came); press 2: `heard:
-"Next"` → `command: "Next"` → `announce: End of queue`. **But the user's report of the two-zone
-command path is bad, and the log explains each point:**
-- *"No beep."* Press 24.049 → `enterCall` done 24.508 → **playback is on the phone's
-  `speaker-earpiece` from 24.13** (in-call mode, call link not up) → BT `OPEN_ST` 25.021 → playback
-  patched to `bluetooth-sco-default` 25.154 → LISTEN earcon posted ~25.21 (`SCO_SETTLE_MS = 700`
-  after enterCall) while `voip-playback-0 -> bluetooth-sco-default` is only configured at 25.340 →
-  the beep falls into the route change. Same disease F7 cured for LIVE; the command path still
-  uses a fixed delay.
-- *"Mic starts ~2.5 s after the press."* Recognizer `start listening` 25.487, SCO mic patch 25.553 =
-  1.5 s after the press on press 2 (press 1 not in the log).
-- *"Distorted, sometimes from the phone speaker."* The recognizer stops recording 29.53 → the
-  system drops SCO at once (29.530 `OPEN→CLOSING`), re-opens it 29.85→30.39 for our playback, then
-  our `exitCall` (posted 29.94, done 30.85, `setMode 909 ms`) moves playback to `speaker-earpiece`
-  30.438 and SCO closes 30.447. The TTS reply (`announce` 30.012) plays straight through that:
-  part call-quality SCO, part phone speaker, then A2DP. `LinkHost.listenForCommand` announces
-  without waiting for `routeBack`.
-- **`ScoWatch: sco connected (ACTION_SCO_AUDIO_STATE_UPDATED)` fired 24.547, 474 ms BEFORE the BT
-  stack's `OPEN_ST` (25.021).** So the classic broadcast exists on Android 17 but here it was
-  early: watch for this in test 3 (a LIVE beep before `OPEN_ST` = F7 not honest yet).
-- Consequence for the single-button build: it removes the separate command route switch (the
-  biggest cost here), and it must play any spoken reply only on a settled route (inside the open
-  talk, or after `exitCall` finished), never across the switch.
-
-**Test 3, `talk_cycles.sh` on F7 (08:03–08:05; `tools/bench/results/2026-09-20-t3-talk-f7`, one run,
-no script fix; the coordinator rebuilt the timeline from `logcat_all.txt`). Talk path healthy, F7
-NOT honest yet.**
-- Healthy: `VERDICT: CLEAN`, 0 errors, 0 `waited … for Main`, all router/engine work on
-  `motoparty-audio`, mode 0 at the end, open→HFP median 471 / max 1164 ms, close→media median 831 /
-  max 989 ms, 20 s talk 49.9 frames/s (9 % DTX), 0 `(fallback)`, 8 `live cue … (both)` lines for 9
-  opens (session 7, closed after 287 ms, gets no live beep: by design, fine).
-- **Which broadcast: `ACTION_SCO_AUDIO_STATE_UPDATED`, 18/18** (the classic one lives on Android
-  17; whether `BluetoothHeadset.ACTION_AUDIO_STATE_CHANGED` fires is unknown, it is masked).
-- **But that broadcast is early in 9/9 talks: 534–1100 ms before the BT stack's first
-  `->[BTA_AG_SCO_OPEN_ST]`.** It is not a "link is up" signal. Session 4: `live cue … fired +738 ms
-  (both)` at 662.211, first `OPEN_ST` 662.859 (−648 ms), the link that stayed 663.841 (−1630 ms).
-  The other 7 were after the stable `OPEN_ST` by 70–355 ms only because the first capture frame
-  happened to be late. The earcon's AudioFlinger track in session 4 was created 1.8 s after the cue
-  (output blocked), so no wrong beep was *heard* in this run; nothing guarantees that.
-- **The honest signal: `AS.AudioDeviceBroker: Dispatch onCommunicationDeviceChanged: … bt_sco`,
-  +184…+530 ms after the LAST `OPEN_ST`, never before, every talk** → public API
-  `AudioManager.addOnCommunicationDeviceChangedListener` (API 31). → **F8** (offline `android/`
-  agent): gate LiveCue's "route up" on it; keep the broadcast only below API 31.
-- **SCO flap, the real cost of the late mic:** in 5 of 8 talks (2, 3, 4, 6, 9) the stack goes
-  `OPEN → CLOSING` 27–47 ms after the first open and re-opens ~0.8–1.0 s later (last night: 1 of 9).
-  Live is then ~2.0–2.5 s after the press instead of ~1.2–1.4 s (sessions 1, 8). `startRecording`
-  blocks 0.9–1.9 s in those talks. `ScoWatch` sees none of the flaps. Cause unknown; open question
-  for an offline look (who closes: the framework re-evaluating the route when capture starts?).
-- Fast re-open: `re-open during teardown: call route kept (session 8)`, one cue, no double beep;
-  not `+0 ms` (SCO never came up in the 287 ms session 7, the engine restarted): the `+0 ms` path
-  needs a re-open after a talk that reached SCO; the bench step cannot reach it.
-- Bench gap: `bench.py talk` parses none of the F7 lines (live cue / ScoWatch / OPEN_ST table):
-  add it when nobody else is in `tools/bench`. Earcon `AudioTrack: stop` lines are not logged on
-  this build (the 9 seen are the voice playback tracks), so F5's "one stop line each" check is void.
-- The phone locked itself after the run (keep-awake ends with the script): the user unlocks.
-
-**Test 4, `beeps.sh`, the user listening (08:15–08:16; `tools/bench/results/2026-09-20-t4-beeps`, one
-run, no script fix: the adb path of `beeps.sh` is proven). Two faults found.**
-- The user heard: (1) live: AirPods, fine. **(2) closed: AirPods + phone speaker, a bit cut off.**
-  (3) live: AirPods only, fine. (4) closed and (5) error: fine.
-- **Beep 2, why:** `TalkAudio` plays CLOSED right after `exitCall()` returns. That normally blocks
-  0.7–1.0 s (the route is back by then); here `exitCall 6 ms (clearCommunicationDevice 5, setMode 1)`
-  at 34.563, 75 ms after the close, so the beep went into the SCO teardown. Beep 4's `exitCall` took
-  691 ms: fine. Same disease as LIVE and as the command reply: a sound timed by a call that
-  happens to block, not by the route. → **F9** after F8: CLOSED (and ERROR after a bounce) waits
-  until the communication device has left `bt_sco` (the F8 listener), with a timeout.
-- **Beep 4 was NOT a silence close: the 20 s silence close did not fire.** Open 40.543 → `talk closed
-  (by host, link)` 65.526 = 24 983 ms, because the script's peer quit (`bye` 08:16:04.748);
-  `client_2.log` has no `talk.close`. Cause, not a wiring bug: the rule is "20 s in which neither
-  side sent a non-DTX frame" (PROTOCOL "Talk flow" 3; `VoiceEngine.kt:204` `onActivity()` per sent
-  frame) and **the AirPods mic almost never goes DTX**: `tx 1193 sent of 1193 captured (0 DTX)` in
-  24 s with nobody talking; test 3: 0 % DTX in 5 of 8 talks (79 %, 41 %, 9 % in the others). Opus's
-  VAD takes the SCO mic's noise for voice; on a motorcycle it will never be quiet. **The silence
-  close as specified cannot work with this mic. Needs a decision** (coordinator's proposal: the
-  host judges activity by level over a running noise floor, on its own captured PCM and on the
-  *decoded* received PCM: no wire change, nothing for iOS or the peer to do; thresholds need a
-  ride). `beeps.sh` should also fail its step when no `reason:"silence"` close arrives instead of
-  quitting the peer (today the summary only says ASK YOUR EARS).
-- Error path clean: `trigger TALK from OVERLAY` → `talk open (by host)` → `talk closed (by client,
-  unavailable)` 17 ms later → `client microphone unavailable`. Noted, not chased: the host still
-  enters the call route for that refused talk and leaves it 1.5 s later (a pointless SCO bounce;
-  `stop 502 ms …, still running: voice-capture`).
-
-**F8, the live beep waits for the communication device (offline `android/` agent, ~100k tokens;
-coordinator read the whole diff, fresh `assembleDebug testDebugUnitTest --rerun-tasks`: 143 tests,
-0 fail, 2 skipped). NOT yet installed, device-unverified.** On API 31+ `ScoWatch` is driven by
-`AudioManager.addOnCommunicationDeviceChangedListener` (connected = `TYPE_BLUETOOTH_SCO`; pure rule
-in new `audio/ScoRule.kt`, 4 tests); the two broadcasts are still logged as `ScoWatch: broadcast sco
-… [not used]` so the bench can compare. New lines: `ScoWatch: sco connected (communication device
-bt_sco)` / `sco disconnected (communication device earpiece|none|…)` / `sco disconnected (call route
-released)`: `AudioRouter.exitCall` clears the cached state at once (new `onRouteReleased` callback),
-so a quick non-collapsed re-open cannot see a stale "connected" (closes F7's open edge); the
-kept-route re-open never calls `exitCall` and still beeps at once. `live cue:` line unchanged.
-**Coordinator's own change: `LiveCue.TIMEOUT_MS` 2.5 → 3.5 s** (the honest signal came +2.31…+2.82 s
-after the open in this morning's flapping talks, so the old timer would have won them and logged
-`(fallback)`). Open edge (coordinator): after a release, if the framework never reports a change
-(re-selected before it dispatched `earpiece`), no new `bt_sco` dispatch comes → that talk beeps on
-the timer; rare, watch for `(fallback)`. Next: install, re-run `talk_cycles.sh`.
-
-**Test 5, `overlay_rotation.sh` with the dismiss step (08:22–08:26;
-`tools/bench/results/2026-09-20-t5-overlay-dismiss`, one run, no script fix): `VERDICT: CLEAN`. F6 is
-verified for injected drags.** 12/12 frames on screen in the four rotations, 8/8 `trigger TALK`,
-**0 `trigger MUSIC`**, far-corner drags stick (fx/fy 0.0/1.0 ↔ 1.0/0.0), rotation settings back at
-1 / 0. Dismiss: `MotopartyDismiss` is in the mid-drag dump at `393 2012 687 2306` (= parent-frame
-`[393,1880][687,2174]`, the predicted box); the drop at `(540,2380)` counts: no buttons window,
-`overlayEnabled=false` (the app wrote `settings.xml` for the first time), `overlay.xml` fx/fy and
-mtime untouched, no trigger, one `overlay: hidden by drag to the X` line. Restore went the expected
-way: `am start-service … SHOW_OVERLAY` refused (not exported) → force-stop → **toybox `sed -i` under
-`run-as` works** → relaunch → buttons back at the same frame (off by 0 px). Both feared breakages
-did not happen. The buttons sit 3 px higher than this morning (fy 0.1590 → 0.1572, the rotation
-round trip). Still only for a finger/eyes: the X turning red, "Show buttons" on the notification,
-the app's own switch, dismiss with the app swiped out of recents, the landscape X, CANCEL.
-
-**Test 5b, the user's own finger (08:27–08:31): "everything looks good"** (normal drag, drop on the
-✕, "Show buttons"). Log (`tools/bench/results/2026-09-20-t5b-finger/logcat.txt`): two `overlay:
-hidden by drag to the X` lines (08:29:54, 08:30:34), same pid throughout, no `trigger` line (no
-accidental tap), position saved by the normal drag (`fx=0.662 fy=0.313`). **The user: the ✕ is a bit
-ugly; fine for the MVP, skip if it is much work** → cosmetic, parked. They left the buttons hidden;
-the coordinator turned them back on with the F8 install (08:31:49: `installDebug`, force-stop,
-`sed -i` on `settings.xml`, relaunch, HOME; buttons window up, `ScoWatch: broadcast … [not used]`
-already in the log = the F8 build runs).
-
-**Test 3b, `talk_cycles.sh` on F8 (08:35–08:37; `tools/bench/results/2026-09-20-t3b-talk-f8`, one run,
-no fix; the coordinator rebuilt the per-beep timeline from `logcat_all.txt`). The gate is honest on
-the phone's side; the user still hears cut-off live beeps.**
-- `VERDICT: CLEAN`, 0 `(fallback)`, 8 `(both)` cues for 9 opens, **fired − last `OPEN_ST` =
-  +329…+598 ms, never negative**; `ScoWatch: sco connected (communication device bt_sco)` 3–63 ms
-  after the framework's dispatch; the `[not used]` broadcast still 0.4–1.1 s before the first
-  `OPEN_ST`. Beep after the press: 1.25 s (re-open), otherwise 1.6–2.2 s (median 2.05). Would have
-  been a marginal pass at the old 2.5 s timer (+2166, +2224 ms). Flaps in 3 of 8 talks. open→HFP
-  median 511 / max 578, close→media median 914 / max 1051 ms. DTX per talk: 0, 73, 0, 0, 0, 0, 34,
-  89 % (20 s talk). Fast re-open: one cue, not `+0 ms` (the kept route had never come up): the
-  `+0 ms` branch is still unexercised; the F8 verify item 4 wording is too strong.
-- **The user, listening: "still cutoff sometimes, especially when the beeping starts pre-mid the
-  'talk' sound" (= the peer's `--tone`, the passenger's voice, heard through the intercom). "We need
-  to async await for talk mode to be fully ready. Fine with a small delay, not a sleep, a real
-  async delay. I want 0 cutoffs."**
-- What the log says about those beeps: in all 8 talks the phone's side was ready 0.3–0.5 s before
-  the beep (`Apply path: voip-playback-0 -> bluetooth-sco-default`, `stream voip-playback started`,
-  the voice playback track unmuted) and nothing was re-routed during it; the earcon only joins a
-  running stream (`voip-playback active tracks(2)` +60…130 ms, back to `(1)` ~300 ms later). The
-  coordinator's first guess (the beep's own track forcing a path set-up) is **wrong**. So the cut
-  happens after the phone: the AirPods start rendering call audio later than the phone starts
-  sending it, by a varying amount the phone gets no event for. That fits the user's observation
-  (a beep that comes before the tone becomes audible is the one that is cut).
-- Also seen: capture starts on the **built-in mic** (`(null) => microphones -> voip-capture-0`) and
-  is moved to `bluetooth-sco-headset-microphones` ~0.1 s later in talks 2, 4, 9: so "first capture
-  frame" is not "first AirPods frame".
-- → **F9a**: the only end-to-end evidence that the headset is really in call mode is its own mic
-  signal arriving: gate LIVE additionally on "the AudioRecord is routed to the SCO input
-  (`OnRoutingChangedListener`) and K consecutive frames after that are not digital silence", with
-  a per-talk level trace in the log so the next run shows whether that lines up with what the user
-  hears. **F9b** afterwards: CLOSED / ERROR / spoken replies wait for the media route.
-
-**F9a, the live beep also waits for the headset's mic signal (offline `android/` agent, ~120k tokens;
-coordinator read `MicLive.kt` and the `VoiceEngine` diff, fresh `--rerun-tasks`: 153 tests, 0 fail,
-2 skipped). NOT yet installed.** New pure `audio/MicLive.kt` (8 tests): the talk's `AudioRecord` is
-routed to a `TYPE_BLUETOOTH_SCO` input (`OnRoutingChangedListener` on its own `voice-route` thread
-+ a `routedDevice` re-read every 25 frames while unknown), then `FRAMES_NEEDED = 10` consecutive
-20 ms frames with peak > `PEAK_THRESHOLD = 16`. `LiveCue` fires on (a) first frame AND (b) comm
-device `bt_sco` AND (c) mic live; (c) only for SCO routes; an SCO flap does not clear (c); carried
-as `+0 ms` over a kept-route re-open. Log: `live cue: session N, capture up +X ms, sco +Y ms, mic
-+M ms, fired +Z ms (both|fallback)`; `VoiceEngine: capture routed to <builtin_mic|bt_sco|…> +N ms`;
-one `VoiceEngine: mic trace: session-start +0 ms routed=…, sco@…, live@…, peaks/100ms: …` per
-engine run (first 4 s; the origin is the engine start, not the talk open). `bench.py` parses no
-`live cue` field, so nothing breaks there. Risks to read from the first run: the SCO input may not
-be digital silence before the AirPods are live (then raise the threshold from the trace); the
-record may never report an SCO route (then every talk says `(fallback)` at 3.5 s); a quiet room
-may not pass peak > 16 (same symptom).
-
-## Do now (rewritten 2026-09-20 ~03:30, end of the fifth coordinator session)
-
-Part A is committed (`d8fa329`). **Part B (the four device sessions) ran in the night of
-2026-09-20; the evidence is in "Part B progress" below, newest entries last. Nothing of that night
-is committed** (F3 + F4 + F5 in `android/`, `tools/bench/` changes, the new result dirs, both
-HANDOFF files, `RESEARCH.md`); the build on the Pixel is F3+F4+F5 (installed 03:00, 123 tests).
-The phone and Bluetooth are disconnected: no adb work until the user says so.
-
-`RESEARCH.md` (2026-09-20, another session; nothing in it is implemented) holds the design
-research: iOS on an internet-less hotspot, glove triggers / handlebar remote, recognition on
-already-captured audio, Bluetooth audio limits, and its recommendation of a wired helmet mic
-(§4.8). Its §6 is an action list; several items are answered by the night's benches (the
-A2DP↔SCO switch cost: link up 0.9–1.7 s after the press, see D1 runs 4 and 5).
-
-What is left, in order:
-
-1. No phone needed: the coordinator's own check of D4 run 4 (`results/2026-09-20-d4-overlay-4`:
-   summary, 0 `trigger MUSIC`, fx/fy in run.log) and `DRY=1` runs of `talk_cycles.sh`,
-   `unavailable.sh`, `music_sync.sh` after the `lib.sh keep_awake` edit; the two `bench.py`
-   heuristics (unrelated `E` lines in the unavailable verdict; `capture STALLED?` on short
-   cycles). Then ask the user whether to commit.
-2. Overlay: drag-to-dismiss (decide the two open points with the user first) and the "Pixel only"
-   note in `ios/README.md` — see "New from the user" at the end of "Part B progress".
-3. Ask the user: did they hear the closed beep and the error beep (AudioFlinger tags them `muted`).
-4. `RESEARCH.md` §6, cheap items first; the wired-mic question needs the user's answer on the
-   cable and on the "AirPods mic is a hard requirement" statement in `RESEARCH.md` §5.1.
-5. With the phone: one real spoken command (RESEARCH §3.3; the two accidental voice commands of
-   the night did open the recognizer's mic over BT-SCO for ~5 s and ended in `error 7`, nobody
-   spoke, so nothing is proven either way); a real finger drag of the overlay; a ride.
-
-## Part B progress (2026-09-19, ~23:15 onwards; the user said the phone is free, AirPods connected)
-
-- Gate done: current build installed at ~23:15. YouTube (ReVanced) owns the media button.
-- **D1 talk** (`results/2026-09-19-d1-talk-2`): Main no longer blocks (answers 9–117 ms), always
-  back in MODE_NORMAL, no exceptions, capture alive (silence = DTX). But open→HFP median 397 /
-  max 2124 ms, rising 185→503 over 6 cycles; close→media ~60 or 630–850 ms; the fast re-open
-  replayed close+open (2124 ms); run 1 (`…-d1-talk`) had one 20 s talk with `950 late, 8 played`.
-  D1 also fixed the bench: logcat is now streamed (the 256 KiB buffer rolled over), audio-mode
-  grep uses `mAudioModeOwner` (mMode=0 = normal).
-- **F1 offline fix** (105 tests): jitter buffer re-anchors after 100 ms of steady lateness (the
-  950-late bug, reproduced in tests); new `audio/TalkAudio.kt` settles to the latest wanted state
-  (a queued close+open collapses; re-open during teardown keeps the route); step timing lines
-  (`enterCall N ms (…)`, `exitCall`, `VoiceEngine: start/stop/capture/playback …`); earcon
-  AudioTracks now released (suspected cause of the rising open time). audioserver's
-  `setDevicesRoleForStrategy` takes 1.0–1.25 s per switch (not our code).
-- **D2 music** (`results/2026-09-19-d2-music`): the overshoot is the **ExoPlayer position
-  reading flipping between two levels ~200 ms apart** on A2DP, at speed 1.0 too; the nudge math is
-  right. Post-talk resume fine (±80 ms after ~14 s).
-- **F2 offline fix** (111 tests): drift = median of 9 samples over 2 s; nudge only on two
-  agreeing readings 2 s apart (`check: median err … waiting for confirmation`); re-seek >1 s on
-  one reading; `nudge done` 1 s after the reset. Root cause (Media3 position tracker on a
-  deep-buffer track over A2DP) not chased.
-- **D3 unavailable** (`results/2026-09-19-d3-unavailable`): (b) host mic revoked → refused in
-  23 ms, state.talk never true, permission restored. **(a) not run: the phone was locked and the
-  lock screen hides the overlay.** Scripts now refuse to tap when locked and keep the screen
-  awake (`keep_awake`) once unlocked. The app restarts cleared the queued track.
-- F1+F2 build installed ~23:40. **The AirPods disconnected at 23:31** (before the re-run), so
-  `…-d1-talk-3` ran on the earpiece: fast re-open collapsed (re-open → playback up ~200 ms), capture
-  97–99 % (read = device frames, so the old shortfall was route/start-up, not the loop), max 5 late,
-  0 re-anchors, MODE_NORMAL, 0 errors; step timings without BT: enterCall 2–29 ms, exitCall 7–56,
-  voice stop 106–166 (join capture), capture up ~500–580, playback up ~300–350. The HFP numbers
-  and the rising-open question still need the AirPods. The music re-run was not started (it would
-  have played on the speaker). Earcon tracks log no `AudioTrack: stop(` on this phone, but the
-  audio event log shows each earcon player released. talk_cycles/music_sync now refuse to run without a
-  Bluetooth audio device (`need_bt`; `NO_BT=1` overrides).
-- **D1 talk, 4th run, AirPods, F1+F2 build** (`results/2026-09-20-d1-talk-4`, 2026-09-20 ~02:00;
-  coordinator read summary + logcat): 0 errors, MODE_NORMAL, capture alive (951 of 974 frames in
-  the 20 s talk, 51 % DTX), 0 lost, 16 late in the whole run. **The jitter re-anchor fired on the
-  device for the first time (cycles 2 and 4, 1 each) and playback carried on** — verified.
-  - open→"HFP" per cycle 189, 210, 459, 248, 426, 528 ms (median 248, was 397): **not flat, not
-    under 300**. All of it is one blocking call, `am.availableCommunicationDevices` right after
-    `setMode` (174–523 ms) while AudioService tears down A2DP; our own work is ~0–30 ms. The
-    bench's "HFP" marker is `setCommunicationDevice` returning, not the link: the real SCO link
-    (`SCO_state_change … OPEN_ST` in `logcat_all.txt`) is up 0.9–1.7 s after `talk open`, all
-    Bluetooth stack. So "<300 ms" is not reachable from our code; what the rider feels is ~1–1.5 s.
-  - close→media 57, 786, 675, 763, 752, 797, 837 ms: the slow case nearly every time, all inside
-    `setMode(MODE_NORMAL)` (601–778 ms); `VoiceEngine.stop` is 46–75 ms.
-  - **Fast re-open did NOT collapse with the AirPods: no `TalkAudio:` line.** The third
-    `talk.open` waited ~930 ms for Main (pings in the gap answered in 11 ms on the reader thread);
-    Main unblocked 11 ms after `exitCall 573 ms` returned. Main calls into the audio system during
-    teardown: `LinkHost.micAvailable()` reads `audioManager.mode`, and `Earcons.play` builds an
-    AudioTrack on Main (closed/error earcons). → **F3 offline fix agent** (started 02:15): mode
-    cached by listener, earcons off Main, a `… waited N ms for Main` log line, a TalkAudio test for
-    a re-open while `exitCall` blocks.
-  - Earcon release: no `AudioTrack: stop(` for earcons (a MODE_STATIC track may never log it, so
-    the check is weak); the rising open time is explained by the AudioService call above, not by
-    leaked tracks. The close earcon shows `muted` in appops each cycle: **ask the user whether
-    they hear the close beep** (their listening test).
-  - Bench: `talk_cycles.sh` / `music_sync.sh` don't keep the screen on and `keep_awake`'s
-    `KEYCODE_WAKEUP` does not reset the screen-off timer when already awake (checked:
-    `lastUserActivityTime` unchanged); `KEYCODE_F13` does. The coordinator ran its own F13 loop;
-    **fix `keep_awake` in lib.sh** once no script is running.
-- **D2 music, 2nd run, AirPods, F2 filter** (`results/2026-09-20-d2-music-2`, ~02:20; coordinator
-  read summary + every SyncController line): **PASS.** Settled drift min −79 / max +53 / median
-  −36 ms over 20 readings (all within ±80). **2 nudges (was 18), both speed-ups 64 s apart, no
-  slow-down at all, so no opposite-direction pairs; 0 re-seeks;** 6 `waiting for confirmation`
-  checks of which 4 led to nothing (the filter absorbing the flip: −101, −83, −82, and −221
-  replaced by −327). The raw flip is still there under the filter (every 2 s window has a
-  221–299 ms spread at speed 1.0; trace `err 10 → −245 → −16`); the median lands between the two
-  levels, hence a ±80 band rather than ±0. Media3 root cause still not chased.
-  Open points: after the talk, back within ±80 ms took ~18 s (was ~14 s; the confirmation step
-  costs ~4 s) — decide whether the post-start path should skip confirmation; right after the
-  cold start the raw err ramped −7 → −89 → −220 → −320 over 3 s at speed 1.0 (a slew, not a flip;
-  not investigated); the >1 s re-seek path never triggered, so it is unverified on the device.
-- **F3 offline fix** (coordinator read the diff, fresh `./gradlew testDebugUnitTest --rerun`: **115
-  tests, 0 fail, 2 skipped**; installed on the Pixel 02:33): new `audio/AudioModeWatch.kt` (mode
-  cached off Main by `OnModeChangedListener`, 1 s poll below API 31), `micAvailable()` reads only
-  local state, every earcon + `adjustStreamVolume` posted to the audio thread (`LinkHost.earcon`),
-  new `core/MainLag.kt` → log line `control message talk.open waited 930 ms for Main` from 100 ms
-  up, TalkAudioTest for a re-open while `exitCall` blocks. Not changed: reading
-  `availableCommunicationDevices` before `setMode` (inferred safe, not measured). **Next
-  `talk_cycles.sh` must show** `TalkAudio: re-open during teardown…` in the fast re-open, no
-  `waited … for Main` lines, talk.open answered < 100 ms.
-- **D4 overlay** (`results/2026-09-20-d4-overlay-2`; `…-d4-overlay` is invalid: the portrait-locked
-  launcher in front meant the display never rotated — the script now starts our MainActivity and
-  reads the real `mDisplayRotation`): **at rest, fully on screen and the TALK tap reaches the app
-  in all four rotations (8/8), settings restored (accelerometer 1 / user 0, checked by the
-  coordinator).** Two drag bugs → **F4 offline fix agent** (started 02:40): the drag clamp uses the
-  full display bounds but the window lives in a parent frame inset by status bar/cutout, so the far
-  corner is 74–132 px off screen; a drag ending in ACTION_CANCEL is never saved and snaps back
-  (seen with injected swipes only; **a real finger drag is for the user to try**). Run 1 also
-  opened a voice command by accident (a zero-length restore swipe read as a MUSIC tap; fixed in
-  the script).
-- **D3 (a), F3 build** (`results/2026-09-20-d3b-unavailable`; coordinator read summary + client_a.log):
-  **PASS, all 8 expectations ok, per PROTOCOL "Talk flow".** Overlay tap → `talk open (by host)` →
-  client `talk.close{by:client,reason:unavailable}` → host broadcast of that close +
-  `state{talk:false}` 12 ms later; host log `client microphone unavailable` 61 ms after the open;
-  MODE_NORMAL at the end; (b) still passes; RECORD_AUDIO granted again. The verdict line says
-  LOOK only because bench.py counts one unrelated `E ActivityThread: … androidx.car.app.connection`
-  line (**bench.py: don't fold unrelated E lines into the unavailable verdict**). The error earcon
-  is created ~1.65 s after the close (it queues behind `exitCall` 980 ms on the audio thread since
-  F3) and AudioFlinger tags it `muted`: **ask the user whether they heard it (02:34:22).** No
-  `waited … for Main` line fired, so that line is still unproven on the device. Not exercised:
-  (a) with music playing, the mic dying after talk opened.
-- **F4 offline fix** (coordinator read the diff, fresh rerun: **122 tests, 0 fail, 2 skipped**):
-  `OverlayService.usableSize()` = bounds minus `getInsetsIgnoringVisibility(systemBars|cutout)`
-  (pure part `OverlayPlacement.usable`), `ACTION_CANCEL` ends a drag like UP (never fires a
-  trigger). F3+F4 build installed on the Pixel (`lastUpdateTime` 02:38:36); `talk_cycles.sh
-  …-d1-talk-5` running on it, then `overlay_rotation.sh …-d4-overlay-3` (`dragged-far` must be on
-  screen in all four rotations).
-- **D1 talk, 5th run, AirPods, F3+F4 build** (`results/2026-09-20-d1-talk-5`; coordinator grepped
-  logcat + summary): **F3 verified.** Fast re-open: `TalkAudio: re-open during teardown: call
-  route kept (session 8)`, one `enterCall` and one `exitCall` (2 ms) for the whole trio, the third
-  `talk.open` answered in **14 ms (was 940)**, all 18 requests 14–54 ms, **0 `waited … for Main`
-  lines**, 0 errors, MODE_NORMAL, 20 s talk capture 49.5 frames/s, lost 2 / late 29 in the run,
-  re-anchors 1+1. For the rider the fast re-open is ~1.3 s to SCO up, ~1.5 s to voice (was ~2.2 s):
-  the BT stack still drops and re-makes the SCO link when the AudioTrack/AudioRecord restart,
-  though we kept the route.
-  - System-call times, not ours, unchanged in kind: open (`availableCommunicationDevices`) 202,
-    489, 563, 532, 481, 486 ms (median 486; run 4: 248 — two samples, noise or not is open; a
-    cheap experiment is reading the device list before `setMode`, log it once in MODE_NORMAL
-    first); close (`setMode(NORMAL)`) 708–784 ms every time. **Answer to the open question: the
-    switch is not under 300 ms and cannot be from our side; link-up is 0.9–1.7 s after the press.**
-  - Earcons on the audio thread: the closed tone now starts ~1.3 s after the close (median; was
-    ~0.8 s) because it queues behind `exitCall`; the live tone lands 50–220 ms after SCO up. A
-    collapsed close plays no closed tone (8 tones for 9 closes). All closed tones still tagged
-    `muted` by AudioFlinger, as before F3. **All of this is for the user's ears.**
-  - `capture STALLED?` on 6 of 8 short cycles is the bench's 8 s window vs a 0.8–1.5 s capture
-    start, not a dead loop (49.7 frames/s while running): **fix the bench.py heuristic** (compare
-    with the capture line's own window). bench.py now prints Main-lag and `TalkAudio:` lines.
-  - Unproven: `AudioModeWatch`'s listener firing (no positive log line).
-- **D4 overlay, 3rd run, F4 build** (`results/2026-09-20-d4-overlay-3`, VERDICT CLEAN): at rest on
-  screen + TALK tap 8/8 in all four rotations (resting frames moved 27–95 px: same fraction, now of
-  the usable area); **`dragged-far` now fully on screen in all four rotations** (rot 0
-  `766 1773 1080 2337`, rot 90 `2086 453 2400 1017`, rot 180 `766 1704 1080 2268`, rot 270
-  `1954 453 2268 1017`) — F4's clamp verified. **A drag still never persists**, in-screen drags
-  too, `overlay.xml` fx/fy never change. Cause (coordinator, from the code): the root's
-  `addOnLayoutChangeListener { place() }` runs on the layout pass every MOVE's `updateViewLayout`
-  causes and resets `params` to the stored fraction, so UP saves the old fraction; a regression
-  of the fraction change in `d8fa329`, so a real finger is affected too. → **F5 offline fix agent**
-  (started ~03:00), then `overlay_rotation.sh …-d4-overlay-4`. The run's end-of-run restore swipe
-  (2 px) was read as a MUSIC tap and opened a ~5 s voice command (mic); the script now only swipes
-  when more than 40 px off. Rotation settings verified 1 / 0 afterwards.
-  `lib.sh keep_awake` now also sends `KEYCODE_F13` (done by the coordinator).
-- **F5 offline fix** (coordinator read the diff, fresh rerun: **123 tests, 0 fail, 2 skipped**;
-  installed 03:00): ACTION_MOVE now updates `fx`/`fy` from the clamped params, so the layout
-  listener's `place()` is a no-op mid-drag; round trip `position(fraction(x)) == x` pinned by a test.
-- **D4 overlay, 4th run, F5 build** (`results/2026-09-20-d4-overlay-4`, VERDICT CLEAN) — **the
-  agent's report only; the user stopped the session before the coordinator's own check (summary,
-  `trigger MUSIC` count, final frame, rotation settings, DRY runs of the three scripts after the
-  `lib.sh keep_awake` edit). Do that check first tomorrow.** Reported: `after-release` =
-  `dragged-far` in all four rotations, `overlay.xml` fx/fy change on each drag, every frame on
-  screen incl. far-corner fractions carried into the next rotation, 8/8 TALK taps, 0 `trigger
-  MUSIC`, overlay dragged back to `551 461 865 1025` exactly, rotation 1 / 0.
-  `overlay_rotation.sh` changed again (drags away from the current corner, 5 s swipe, logs fx/fy).
-- **Session ended ~03:15 on the user's word; the phone and Bluetooth are disconnected. Nothing is
-  committed**: uncommitted = F3 + F4 + F5 in `android/`, `tools/bench/` (`bench.py`, `lib.sh`,
-  `overlay_rotation.sh`), the new result dirs, both HANDOFF files.
-- **New from the user (2026-09-20, for tomorrow), overlay:**
-  1. *Only the Pixel has the overlay.* Checked: `ios/` has no overlay code at all (iOS cannot draw
-     over other apps anyway). Keep it that way; say so in `ios/README.md` if it is not there.
-  2. *A way to dismiss the overlay by dragging it:* while dragging, show a trash / X target at the
-     bottom of the screen; dropping the overlay on it hides it. The user's complaint: it is on
-     screen now and they cannot make it go away, "even if I close the app". What exists today: the
-     `overlayEnabled` setting (MainActivity toggles `OverlayService` from it) and the foreground
-     notification's "Stop" action (`LinkService.ACTION_STOP`, stops everything); closing the
-     activity leaves `LinkService` + the overlay running by design. To decide with the user
-     tomorrow: does drop-on-X just set `overlayEnabled=false` (back via the app's setting — and
-     then the notification should offer "Show buttons"), and should the overlay hide by itself
-     when no ride/link is active? Then an offline agent + a bench step in `overlay_rotation.sh`.
-- Open questions only the user's ears answer: did they hear the closed beep (now ~1.3 s after the
-  close, none on a collapsed re-open) and the error beep (02:34:20); AudioFlinger tags them `muted`.
-- (older) Waiting on the user: (1) AirPods connected → re-run `talk_cycles.sh …-d1-talk-4` and
-  `music_sync.sh …-d2-music-2`; (2) phone unlocked on the home screen → D4 overlay rotation +
-  D3 (a) re-run. The build on the phone is current (F1+F2); no re-install needed.
-
-## Status
+## Where each component stands
 
 | Component | State |
 |---|---|
-| `tools/peer` (Python, uv) | Done, incl. local volume + `unavailable`. `uv run pytest`: 161 pass. Client stdin `unavailable` / `--mic-unavailable`, fake host `mic on\|off`; `raw <json>` sends the now-invalid volume action on purpose. New 2026-09-19 (P1): client `--no-mdns` skips Bonjour and goes straight to the /24 sweep (mutually exclusive with `--host`; the /24 comes from the laptop's own interface addresses). Untried on the hotspot. |
-| `tools/bench` | **New device scripts (2026-09-19, C1), see `tools/bench/README.md`:** `talk_cycles.sh`, `music_sync.sh`, `unavailable.sh`, `overlay_rotation.sh`, shared `lib.sh`, summaries in `bench.py` (`summary.txt`, last line `VERDICT:`). Peer side dry-run on loopback (`DRY=1`) for the first three; summaries checked against the real BT-bench logcat. **Every adb step unproven** until D1–D4. Older: `hotspot_test.sh <out-dir>` (joins the Pixel hotspot, runs the peer through screen-on / screen-off / music / talk phases with a 5 Hz ICMP ping alongside, always restores home Wi-Fi) and `hotspot_rtt.py <out-dir>` (pong + ICMP per phase). Proven end to end on 2026-09-19 (the BT-on run); fixed then: relative out-dir, adb `offline` transport over the hotspot blocking for ever (now reconnect + `timeout 30` on every adb call), `GW=` override for a dry run. Results: `tools/bench/results/2026-09-19-bt-off-2.4ghz/` and `…-bt-on-2.4ghz/`. |
-| `ios/` (SwiftPM + xtool) | `swift test`: 66 pass on Linux. The app compiles for arm64-apple-ios with 0 errors / 0 warnings: `cd ios && xtool dev build [--ipa] [-c release]` (unsigned, no phone or login needed). Drift rule (rate nudge), local command parser, local volume (`Audio/LocalVolume.swift`, hidden MPVolumeView slider, unproven) and `unavailable` are in. Swift 5 mode; strict concurrency (~140 warnings) deliberately not done. **Never run on a device**; `ios/README.md` lists what only a real iPhone can answer. No iPhone available for now. **Audit 2026-09-19 (I1), 6 fixes in `AppModel.swift` only** (coordinator re-ran: 66 tests, `xtool dev build` 0 errors / 0 warnings, diff read): a mic-permission prompt still up when the host closed talk no longer opens/refuses a finished talk (`talkOpenPending`); a failed open no longer resumes music along the stale anchor (waits for the host's `music.play`); after a voice command it rejoins the current anchor, not the player's last one; `interruptionEnded` goes back to media mode instead of re-activating a command/talk route; a media-services reset during talk now tells the host (`talk.close`); `state` without music clears title/now-playing. Reported, not changed: a call interruption mid-talk closes with `"trigger"`, not `"unavailable"` (harmless, the host treats both as a close); up to 3 `music.ready` for one id on a mid-track join (check how Android handles duplicates); clock offset not reset on reconnect; `hello.proto` unchecked; `TrackCache` marks a file cached before the decode check ends. New device questions for the iPhone list: whether the permission prompt appears while backgrounded/locked, which route-change notifications the A2DP↔HFP switch posts, whether `AVPlayer`/KeepAlive survive a media-services reset. |
-| `android/` | Committed state (`cdc33c6`): 65 tests, verified on the Pixel (31 min locked soak, talk/music/TTS while locked and dozing, silence close, overlay taps, framing conformance, volume dropped as malformed). **Uncommitted, all verified by the coordinator 2026-09-19 ~23:00: `./gradlew assembleDebug test` = 94 tests, 0 fail, 2 skipped (network); diffs read.** Layer 1: `audio/AudioThread.kt` (one serial thread for every route change and voice start/stop, so talk no longer blocks Main ~2.7 s), overlay position as a clamped fraction (`overlay/OverlayPlacement.kt`), first-check-after-talk in `SyncController`. A1 review fixed 4 bugs in it: stale callbacks of an old talk acting on the next one (`talkSession` counter), a capture loop that outlived `stop()` reviving under the next `start()` (per-start session in VoiceEngine), a recognizer route-back dropped at service stop leaving MODE_IN_COMMUNICATION (`AudioRouter.exitAll()`), `exitCall` not reaching MODE_NORMAL if `clearCommunicationDevice` threw (`finally`); +6 `AudioThreadTest`. A late mic failure now ends talk as `talk.close{by:host,reason:unavailable}` (PROTOCOL clarified). Layer 2 (logging): per-talk counters in `core/JitterBuffer.kt`, `talk stats:` line built by new `core/TalkStats.kt` (format unchanged, pinned by a test), and a 1/s `trace:` line in `SyncController` during every nudge + 5 s after, 5 s after every start and re-seek (format in `android/HANDOFF.md` §3 and `tools/bench/README.md`); a test proves the trace changes no player call. A2's tests found 2 jitter bugs, fixed: seq span measured from the first seq instead of the lowest (hid losses); a late last packet before DTX made the pause look like loss (kept concealing, skipped the +20 ms target raise) — **a small voice playback change, unverified on the device**. Installed on the Pixel: only the layer-1 build of 21:40; the gate installs the current one. Phone left as found at 22:20: permissions granted, rotation untouched, music paused, audio mode normal. |
-| Phase 0 spikes | Spike 1: SDK + `xtool auth` done, the install waits for an iPhone. Spikes 2–4 need the iPhone, AirPods and rides. |
-| git | `master`: `cdc33c6` initial, **`d8fa329` (2026-09-20 ~00:15) everything of the fourth session**: layer 1+2, A1/A2/I1/P1 fixes, F1/F2 device fixes, `tools/bench/`, docs. **Not clean since the night of 2026-09-20: F3/F4/F5 (`android/`, 123 tests), `tools/bench/`, result dirs, HANDOFFs and `RESEARCH.md` are uncommitted.** `tools/bench/results/*/logcat_all.txt` (whole-phone dumps) are gitignored; the filtered `logcat.txt` is committed. Commit only when the user asks. |
+| `android/` | The host. 191 tests, 0 fail, 2 skipped. Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
+| `ios/` | The passenger. `swift test`: 66 pass on Linux; `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. |
+| `tools/peer` | Python/uv fake host + client. `uv run pytest`: 161 pass. |
+| `tools/bench` | `talk_cycles.sh`, `music_sync.sh`, `unavailable.sh`, `overlay_rotation.sh`, `beeps.sh`, shared `lib.sh`, summaries in `bench.py` (`summary.txt`, last line `VERDICT:`). All adb paths are proven on the device except `beeps.sh`'s silence step. `HOST_IP` is overridable. `results/*/logcat_all.txt` (whole-phone dumps) are gitignored; the filtered `logcat.txt` is committed. |
+| `spikes/recognizer-pfd/` | Throwaway app, its question answered (see "Recognizer" below). Still installed on the Pixel. |
+| git | Remote `origin` = https://github.com/vaknin/motoparty (**public**: nothing personal in commits). **Commit only when the user asks.** |
 
-## Spec decisions made today (already in PROTOCOL.md and implemented everywhere unless noted)
+**Open in `ios/`, found by the 2026-09-19 audit and deliberately not changed** (nothing else records
+these, and none can be checked without an iPhone): a call interruption mid-talk closes with
+`"trigger"` rather than `"unavailable"` (harmless — the host treats both as a close); a mid-track
+join can send up to three `music.ready` for one id (check how Android handles duplicates); the clock
+offset is not reset on reconnect; `hello.proto` is never checked; `TrackCache` marks a file cached
+before the decode check has finished. Also unverified on a real phone: whether the mic-permission
+prompt appears while backgrounded or locked, which route-change notifications the A2DP↔HFP switch
+posts, and whether `AVPlayer`/KeepAlive survive a media-services reset, and whether `AVPlayer` plays
+the Opus-in-MP4 tracks (iOS 17+ should; if not, the host falls back to AAC on the first
+`music.error "not decodable"` — look for "AAC for the rest of this session" in logcat). `AudioModeWatch`'s listener
+on Android has still never produced a positive log line either.
 
-- DTX frames are not sent (`OPUS_GET_IN_DTX`), so every audio packet is voice activity. The
-  silence close relies on that. Unverified in practice: the AirPods mic never goes quiet
-  enough; wind noise on a ride may keep talk open (Spike 4 decides).
-- `ts` is a running 16 kHz clock; keepalives share `seq`; a `ts` jump with contiguous `seq`
-  is silence, a `seq` gap is loss. Jitter underrun = late packet; raise at most once per spurt.
-- Malformed known message = drop and keep the connection; not JSON / not an object /
-  oversize = close. Fixture lists `malformed` and `fatal` in `control/framing.json`.
-- Clock: negative-RTT samples take no slot; a jump of more than 500 ms clears the window
-  (the iOS monotonic clock stops while the device sleeps).
-- Mid-track join: the host re-sends `music.load` (current + next), then `music.play`.
-- Command normalisation is per code point, and U+2019 maps to an apostrophe.
-- **Music drift (changed last):** A2DP adds 350–700 ms of fresh lag on every play or seek,
-  so the host starts early by the measured delay, corrects 80 ms–1 s of drift by changing
-  the playback rate by up to ±2 %, and re-seeks only above 1 s. Both phones do this now.
-  iOS: `DriftController` in MotopartyCore (rate = clamp(1 − e/10000, ±2 %), 0.25 % steps,
-  re-check every 2 s while correcting, hold until |e| ≤ 40 ms), lead = `AVAudioSession.outputLatency`
-  + user trim. Android instead sets the speed once for a computed time and learns its start lead.
-  **Check on the first real iPhone run:** does `setRate(_:time:atHostTime:)` already compensate
-  output latency (then outputLatency is double-counted; go back to trim only); does assigning
-  `rate` disturb the scheduled start on A2DP; is `.spectral` pitch algorithm OK on CPU
-  (`.timeDomain` is the fallback).
-  Was ±5 % over 4 s; ±2 % over 10 s since 2026-09-24 (idea #3), so the time-stretch is not heard.
-  Bench `~/bench/2026-09-24-music-opus`: 3 nudges at 1.02, 0 re-seeks, the last 150 s within
-  +17..+74 ms; a 540 ms start error now takes ~45 s to close (was ~11 s).
-- **Music quality (idea #3, 2026-09-24; decided with the user):** the best YouTube stream without
-  Premium: Opus itag 251, remuxed to MP4 on the Pixel (`Remux.kt`, `OpusDops.kt`), with AAC itag 140
-  as the fallback after a client's `music.error "not decodable"`. FLAC and 320 kbps are not possible:
+## Decisions in force (don't reopen without the user)
+
+- **Music quality (idea #3, 2026-09-24):** the best YouTube stream without Premium: Opus itag 251,
+  remuxed to MP4 on the Pixel, with AAC itag 140 as the fallback. FLAC and 320 kbps are not possible:
   YouTube has no lossless audio, 256 kbps needs Premium (ReVanced does not change that), and A2DP
   re-encodes everything to AAC for the AirPods anyway. `tools/bench/a2dp_codec.sh` checks the Pixel
-  is on AAC and not SBC. Media3 1.11.1 writes and reads `dOps` little-endian (the spec and AVPlayer:
-  big-endian), so `dOps` pre-skip is patched to 0. **Check on the first real iPhone run:** AVPlayer
-  plays the Opus MP4 (else logcat says "AAC for the rest of this session").
+  is on AAC and not SBC.
 
-## Protocol gaps: decided with the user 2026-09-19 (in PROTOCOL.md, fixtures and all three implementations)
+- **Music and talk are never wanted simultaneously** (user, 2026-09-22, verbatim: *"it's this or
+  that, never both"*). This is the load-bearing one: the A2DP↔HFP switch costs music quality only
+  during a talk, which is time the user wants no music in. Do not re-derive an architecture from
+  "but the music degrades".
+- **The microphone direction is open, and the ride recording decides it.** The ninth session's
+  "the wired helmet mic is the direction" is **suspended, not reversed**: its physics stands, its
+  purchase plan is intact in `research/`, and none of it may be acted on until the AirPods mic has
+  been heard at 110 km/h. Equally, the sixth session's "AirPods mic is a hard requirement, no
+  cable, no other hardware" stays history — it is a candidate now, not a constraint.
+- **Volume is local.** `volumeUp`/`volumeDown` are not in `music.control`; a phone's spoken or
+  pressed volume change never goes on the wire. A value outside an enum = malformed (drop, keep).
+- **Talk is not negotiable** (the user was explicit: no decline button or setting, ever).
+  `talk.close{reason:"unavailable"}` means only "cannot open the mic", in either direction —
+  including a mic that fails *after* talk opened.
+- **No host→client ping.** Won't do.
+- **Overlay:** dropping the buttons on the ✕ sets `overlayEnabled=false`; they come back via the
+  notification's "Show buttons" and the app's switch. **No auto-hide** — always shown while the
+  service runs. The ✕ is "a bit ugly"; cosmetic, parked. Pixel only; iOS has no overlay and won't.
+- **Single button:** wanted, and the spike says it is buildable. Replan it rather than resuming the
+  old steps 6a/6b. Note its motivation is **back to full strength**: on the AirPods route every
+  talk pays the 1–1.5 s switch, so a press that does the right thing first time is worth more, not
+  less.
+- **`duckDuringTalk` stays off**, and the Stage D "setting flippable on the road, defaulting per
+  mode" is **on hold with Stage D** — it only ever made sense on a route that does not switch. On
+  the AirPods route music cannot play through a talk at all, and the user does not want it to.
+- **Silence close is 20 s** in `PROTOCOL.md` — but see "the AirPods mic is never DTX" below: as
+  specified it cannot work, and **a decision is owed**. Proposal: the host judges activity by level
+  over a running noise floor, on its own captured PCM and on the *decoded* received PCM (no wire
+  change, nothing for iOS or the peer to do; thresholds need a ride). Alternative: drop it and end
+  talk on a press only. Then `beeps.sh` must fail its step when no `reason:"silence"` close arrives.
+- **Wire format:** 16 kHz Opus, 20 ms frames, 24 kbps VOIP. A sample-rate change is out of scope —
+  8 hard-coded constants across three implementations, ~40 test assertions, and the Python peer's
+  silence detector reads the SILK VAD bit and stops working above 16 kHz. There is no negotiation
+  mechanism to stage it, only `proto:1`.
+- Spec details, all implemented: DTX frames are not sent, so every audio packet is voice activity;
+  `ts` is a running 16 kHz clock and keepalives share `seq` (a `ts` jump with contiguous `seq` is
+  silence, a `seq` gap is loss); malformed known message = drop and keep, not-JSON / not-an-object /
+  oversize = close; negative-RTT clock samples take no slot and a >500 ms jump clears the window;
+  mid-track join re-sends `music.load` (current + next) then `music.play`; command normalisation is
+  per code point and U+2019 maps to an apostrophe.
+- **Music drift:** A2DP adds 350–700 ms of fresh lag on every play or seek, so the host starts early
+  by the measured delay, corrects 80 ms–1 s of drift by changing playback rate up to ±2 % (spread
+  over 10 s, so it is not heard; was ±5 % over 4 s until 2026-09-24, idea #3), and
+  re-seeks only above 1 s. **Check on the first real iPhone run:** does `setRate(_:time:atHostTime:)`
+  already compensate output latency (then `outputLatency` is double-counted — go back to trim only);
+  does assigning `rate` disturb the scheduled start on A2DP; is `.spectral` pitch algorithm OK on
+  CPU (`.timeDomain` is the fallback).
 
-1. **Volume is local.** `volumeUp`/`volumeDown` removed from `music.control`; a phone's spoken
-   or pressed volume changes that phone only and is never sent. The client parses its own
-   utterances first; a host that still gets a volume utterance answers "Didn't catch that".
-   A value outside an enum = malformed (drop, keep).
-2. **Talk is not negotiable** (the user was explicit: no decline button or setting, ever).
-   `talk.close` reason `"unavailable"` exists only for "cannot open the mic" (cellular call,
-   permission missing, route failure), in either direction. Not yet benched on the device.
-3. **No host→client ping.** Won't do.
-4. (Coordinator, 2026-09-19 23:00, a clarification of 2, not a new rule.) A mic that fails
-   *after* talk opened ends talk with `reason:"unavailable"` too: the host broadcasts
-   `talk.close{by:"host",reason:"unavailable"}` + `state{talk:false}`. Android does this since A1;
-   the peer already handles it. Added to PROTOCOL.md "Talk flow" step 4.
+## What the device benches established (durable; the evidence is in `tools/bench/results/`)
+
+Pixel 8 / Android 17 / AirPods Pro, 2026-09-19 and 2026-09-20.
+
+- **The A2DP↔SCO switch is not ours to make fast.** `setCommunicationDevice` returning is not the
+  link. `am.availableCommunicationDevices` blocks 174–563 ms right after `setMode`, while
+  AudioService tears down A2DP; `setMode(MODE_NORMAL)` on the way back blocks 600–800 ms; our own
+  work is ~0–30 ms. The **real SCO link is up 0.9–1.7 s after the press**. "<300 ms" is not
+  reachable; what the rider feels is ~1–1.5 s.
+- **The SCO link flaps:** `OPEN → CLOSING` 27–47 ms later → `OPEN` again ~0.8–1.0 s later, in 3–5 of
+  8 talks. That is what makes live ~2.0–2.5 s instead of ~1.2–1.4 s. `ScoWatch` sees none of it.
+  Cause unknown; open.
+- **`ACTION_SCO_AUDIO_STATE_UPDATED` is a lie about the link:** "connected" 534–1100 ms *before* the
+  stack opens it, 18/18, and it misses every flap. `onCommunicationDeviceChanged(bt_sco)` lands
+  +184…+530 ms *after* the last `OPEN_ST`, never before. Hence F8.
+- **The AirPods mic is ~never DTX:** `tx 1193 sent of 1193 captured (0 DTX)` in 24 s of a quiet room;
+  0 % DTX in 5 of 8 talks. Opus's VAD takes the SCO mic's noise for voice, and on a motorcycle it
+  will never be quiet. This is what breaks the silence close.
+- **Capture can start on the built-in mic** (`(null) => microphones -> voip-capture-0`) and move to
+  `bluetooth-sco-headset-microphones` ~0.1 s later — so "first captured frame" ≠ "first frame from
+  the headset". Hence F9a.
+- **The phone is ready before the ears are:** in all 8 talks the HAL path was applied, the stream
+  started and nothing re-routed 0.3–0.5 s *before* the beep the user still heard cut off. The AirPods
+  start rendering later than the phone starts sending, by a varying amount the phone gets no event
+  for.
+- **Earcons:** AudioFlinger tags the closed/error tones `muted` in appops every cycle, and earcon
+  `AudioTrack: stop(` lines are never logged on this phone (a MODE_STATIC track may never log one),
+  so any bench check built on them is void. The user's ears are the instrument.
+- **Music position on A2DP:** the ExoPlayer/Media3 position reading flips between two levels ~200 ms
+  apart, at speed 1.0 too. The nudge math is right; the median filter lands between the levels, hence
+  a ±80 ms band rather than ±0. Root cause (Media3 position tracker on a deep-buffer track) not
+  chased. Post-talk resume is back within ±80 ms after ~18 s.
+- **Recognizer** (spike, PASS): Google's on-device recognizer reads `EXTRA_AUDIO_SOURCE`, opens no
+  mic, **does not need `RECORD_AUDIO`**, and `EXTRA_SEGMENTED_SESSION` works (one `onSegmentResults`
+  per phrase, ~0.9–1.0 s after the phrase ends; partials near real time). The wake word comes back
+  as **"Moto party"** (two words, capitalised) despite `EXTRA_BIASING_STRINGS`, so a parser must
+  accept "motoparty" / "moto party" and trim. `AudioSource.UNPROCESSED` is **not** available on the
+  Pixel 8. In `MODE_NORMAL` both `USAGE_MEDIA` and `USAGE_VOICE_COMMUNICATION` route to A2DP (says
+  nothing about `MODE_IN_COMMUNICATION`). The recognizer does hear the user through the AirPods mic
+  while we hold `MODE_IN_COMMUNICATION` (`research/RESEARCH.md` §3.3 settled).
+- **The two-zone command path is bad** and the log explains every complaint: the LISTEN beep falls
+  into the route change (a fixed `SCO_SETTLE_MS`, the disease F7 cured for LIVE), the mic starts
+  ~1.5 s after the press, and the spoken reply plays straight across the teardown — part SCO, part
+  phone speaker, then A2DP. The single button removes the separate command route switch, which is
+  the biggest cost here.
+- **Verified working on the device:** the jitter re-anchor (fired twice, playback carried on); both
+  `unavailable` paths per `PROTOCOL.md` "Talk flow"; the overlay in all four rotations, injected
+  drags and the user's own finger (drag, drop on the ✕, "Show buttons"); talk path `VERDICT: CLEAN`
+  with 0 `waited … for Main` lines since F3.
+
+## Parked, not lost
+
+- The **silence-close decision** (above) — the user's call.
+- The **single button** — worth building for gloves; replan on a non-switching route.
+- The **SCO flap**, and the pointless SCO bounce on a refused talk (the host enters the call route
+  for a talk the client refuses and leaves it 1.5 s later).
+- **`bench.py` parses none of** the `live cue` / `media cue` / `mic trace` / `capture dump` /
+  `audio devices` lines: every table in this file was made by hand. Do it when nobody else is in
+  `tools/bench`.
+- Two `motoparty-audio` threads were once seen alive in one process. Unexplained.
+- The overlay ✕ is a bit ugly (cosmetic).
 
 ## Hotspot
 
-- **5 GHz hotspot is not available on the user's Pixel ("not available in your country"), so
-  2.4 GHz is the real target.**
-- Test of 2026-09-19, Bluetooth OFF, hotspot on 2.4 GHz ch 11, Pixel kept home Wi-Fi as
-  upstream (STA+AP), laptop internet worked through it: Bonjour found the app in 1.4 s
-  (Pixel = gateway, 10.148.67.218 that time; Android randomises the subnet). Ping RTT screen
-  on: median 10 / p90 15 / max 100 ms (n=44); screen off + dozing: median 14 / p90 18 / p99 48
-  / max 121 ms (n=105), none over 200 ms. So the home-Wi-Fi screen-off tail (p99 229 ms) does
-  not show on the SoftAP. talk.open answered in 23 ms while dozing.
-- **Bluetooth ON test (2026-09-19 22:00, AirPods Pro connected, same 2.4 GHz ch 11, phone ~1 m
-  away, stationary): good enough for talk; don't raise the jitter ceiling.** Coordinator re-ran
-  `hotspot_rtt.py` on both result dirs; numbers hold. Pong RTT median / p90 / p99 / max, ms:
-  screen on 14/41/80/80 (n=30; BT off 10/15/100/100), screen off 15/38/86/86 (n=60; BT off
-  14/18/48/121), music over A2DP 20/52/94/94 (n=60), talk over HFP 14/30/118/118 (n=21; BT off
-  n=5 only). Nothing over 200 ms in any phase. ICMP at 5 Hz: median 6–7 ms everywhere, p99
-  51–67 ms, 1 lost packet of ~1900, worst 202 ms during the voice-command resolve + TTS, not
-  during talk. Talk (30 s): 0 lost packets (fec=0 plc=0), 1 late packet, jitter target 40 → 60 →
-  back to 40 ms. 5.7 MB track over the hotspot in 830 ms. No link drops; the Pixel kept home
-  Wi-Fi upstream. So Bluetooth adds ~20 ms to the p90 tail and nothing that matters.
-  Still untested: a ride (motion, weaker link, two real voices). The iPhone-as-5-GHz-AP fallback
-  is not needed on these numbers.
-- Seen in that run, handed to the Android agent: host music drift on A2DP oscillates (±150–220 ms
-  swings after each rate nudge, never settles, no re-seek); the host mic sent nothing for the
-  last 21 s of the talk (no seq gaps, host keepalives kept coming, so most likely DTX in a quiet
-  room); `VoiceEngine` logs no receive stats, so host-side loss can't be counted yet.
-- Laptop side: NetworkManager, one Wi-Fi card (`wlp1s0`), so the laptop leaves home Wi-Fi
-  ("Aviv's") during the test. Use the NM profile **`Aviv's Hotspot 1`** (the profile
-  `Aviv's Hotspot` is bound to a dead interface name and fails). adb over the hotspot works at
-  `<gateway>:5555`. The Pixel's hotspot can't be toggled from adb without root; the user turns it on.
-- Not done: the /24 sweep fallback over the hotspot (the peer client has no `--no-mdns`).
+- **5 GHz is not available on the user's Pixel ("not available in your country"), so 2.4 GHz is the
+  real target.** Tested with Bluetooth on (AirPods connected, ch 11, phone ~1 m, stationary):
+  **good enough for talk; don't raise the jitter ceiling.** Pong RTT median/p90/p99/max in ms —
+  screen on 14/41/80/80, screen off 15/38/86/86, music over A2DP 20/52/94/94, talk over HFP
+  14/30/118/118. Nothing over 200 ms in any phase. ICMP at 5 Hz: median 6–7 ms, p99 51–67 ms, 1 lost
+  packet of ~1900. A 30 s talk: 0 lost, 1 late, jitter target 40 → 60 → 40 ms. Bonjour found the app
+  in 1.4 s. So Bluetooth adds ~20 ms to the p90 tail and nothing that matters. Untested: a ride
+  (motion, weaker link, two real voices).
+- Laptop side: NetworkManager, one Wi-Fi card (`wlp1s0`), so the laptop leaves home Wi-Fi during a
+  hotspot test. Use the NM profile **`Aviv's Hotspot 1`** (`Aviv's Hotspot` is bound to a dead
+  interface name and fails). adb over the hotspot works at `<gateway>:5555`; the Pixel's hotspot
+  cannot be toggled from adb without root, so the user turns it on. Android randomises the subnet.
+- Not done: the /24 sweep fallback over the hotspot (`--no-mdns` exists in the peer client but was
+  never tried there).
+
+## Running a device session
+
+**Gate, every time, before anything else — and one ask at a time:**
+
+1. `timeout 10 adb -s 192.168.1.100:5555 get-state` = `device` (else `adb connect`; if the phone is
+   off home Wi-Fi, ask the user).
+2. What the phone is doing: `dumpsys power | grep mWakefulness`, the foreground activity, whether an
+   A2DP/HFP device is connected (`dumpsys audio | grep -iE 'mode|communication'`), who owns the
+   media button.
+3. **Say plainly what will make a sound in the user's ears, and wait for their go.**
+4. Install the current build so every step starts from the same one:
+   `cd android && ./gradlew installDebug`, then grant RECORD_AUDIO / POST_NOTIFICATIONS / overlay as
+   `android/HANDOFF.md` lists, launch once, check the buttons window is up.
+
+Rules: never `sudo`; no git commits; always `adb -s 192.168.1.100:5555` with every call wrapped in
+`timeout` (an offline transport blocks for ever); only install/grant/revoke for
+`com.kivan.motoparty`; don't change Wi-Fi, hotspot or Bluetooth state. The user may pick the phone
+up — the scripts wait if another app is in front with the screen on. Leave the phone as found: music
+paused, locked if it was locked, settings restored. Keep the screen awake with `KEYCODE_F13`
+(`KEYCODE_WAKEUP` does not reset the screen-off timer when the phone is already awake).
+**Re-read every summary from the result files yourself; never take an agent's report for it.**
 
 ## Waiting on the user
 
-- An iPhone on USB with Developer Mode on, then `cd ios && xtool dev` (Spike 1). The user
-  logged into `xtool auth` with their **personal Apple ID**, was told about the 0xe8008024
-  ban reports and decided to keep using it; don't raise it again.
-- Hands-on tests: speak real commands through the AirPods ("play album abbey road", "next",
-  "louder"); listen to a talk session for quality and that the "live" earcon is audible after
-  the HFP switch; a ride.
+- **The ride recording** — see "Do now". It is the only thing the project's direction now waits on,
+  and it needs the user, a helmet and a motorway; nothing else unblocks it. **No hardware may be
+  ordered before it** (and nothing is ordered).
+- An iPhone on USB with Developer Mode on, then `cd ios && xtool dev` (Spike 1). The user logged into
+  `xtool auth` with their **personal Apple ID**, was told about the 0xe8008024 ban reports and
+  decided to keep using it; don't raise it again.
+- Hands-on: real spoken commands through the AirPods, a listening pass on the F9a/F9b beeps, a ride.
 
 ## Environment facts
 
-- The user's rules: never run sudo (hand over a `!`-prefixed one-liner); log toolchain
-  changes in `~/AGENTS.md` (Swift 6.3.3, xtool 1.19.2, the Darwin SDK, NDK, CMake, usbmuxd and
-  libxml2-legacy are logged). The user wants plain-language status, agents kept under
-  ~200k tokens (they stopped one at 210k and restarted the coordinator too): give agents
-  narrow tasks and have them keep their HANDOFF current.
-- Swift is not on PATH by default: `~/.local/share/swift/swift-6.3.3-RELEASE-ubuntu24.04/usr/bin`.
-- Pixel 8 (Android 17) over adb Wi-Fi, listed twice; always `adb -s 192.168.1.100:5555` on
-  home Wi-Fi. The laptop is 192.168.1.102. `KEYCODE_SLEEP` locks the phone, `KEYCODE_WAKEUP`
-  wakes it; no secure keyguard got in the way so far. The user sometimes picks the phone up:
-  check `dumpsys power | grep mWakefulness` and the foreground activity before injecting input.
-- The user's AirPods are paired to the Pixel: bench audio plays in their ears. Keep it short
+- **Never run `sudo`** — hand the user a `!`-prefixed one-liner instead. Toolchain changes are
+  logged in `~/AGENTS.md` (Swift 6.3.3, xtool 1.19.2, the Darwin SDK, NDK, CMake, usbmuxd,
+  libxml2-legacy). The user wants plain-language status and agents kept under ~200k tokens (they
+  stopped one at 210k): give agents narrow tasks and have them keep their own HANDOFF current.
+- Swift is not on PATH by default:
+  `~/.local/share/swift/swift-6.3.3-RELEASE-ubuntu24.04/usr/bin`.
+- Pixel 8 (Android 17) over adb Wi-Fi, listed twice: always `adb -s 192.168.1.100:5555` on home
+  Wi-Fi. The laptop is 192.168.1.102. `KEYCODE_SLEEP` locks, `KEYCODE_WAKEUP` wakes.
+- The user's AirPods are paired to the Pixel: bench audio plays **in their ears**. Keep it short
   unless the test is about exactly that, and say so beforehand.
-- Laptop firewall (nftables, input drop policy): the peer in *client* mode needs nothing. For
-  fake-host mode ports 47800-47802 must be opened by the user (command in `tools/peer/README.md`).
-
-## Part B: device sessions (only after the user says the phone is free)
-
-### Gate (the coordinator, before any agent)
-
-1. `timeout 10 adb -s 192.168.1.100:5555 get-state` = `device` (else `adb connect`, and if the
-   phone is off home Wi-Fi, ask the user).
-2. What the phone is doing: `dumpsys power | grep mWakefulness`, the foreground activity
-   (`dumpsys activity activities | grep -m1 topResumedActivity`), is an A2DP/HFP device connected
-   (`dumpsys bluetooth_manager | grep -iE 'mActiveDevice|A2dp.*active'`, `dumpsys audio | grep -iE 'mode|communication'`),
-   who owns the media button (`dumpsys media_session | grep -iE 'media button|active'`).
-3. Tell the user plainly whether sound will play in their AirPods in the next session, and wait
-   for their go.
-4. Install the current build and grant, one command so every agent starts from the same build:
-   `cd android && ./gradlew installDebug && adb -s 192.168.1.100:5555 shell pm grant com.kivan.motoparty android.permission.RECORD_AUDIO`
-   (+ POST_NOTIFICATIONS / overlay as `android/HANDOFF.md` lists), then launch the app once
-   (`monkey -p com.kivan.motoparty -c android.intent.category.LAUNCHER 1`) and check the overlay is on.
-
-### Order
-
-| Order | Session | Script | Needs from the user | Sound in AirPods |
-|---|---|---|---|---|
-| D1 | Talk timing, fast re-open, mic-silence (DTX or dead loop) | `talk_cycles.sh` | phone left alone ~5 min | earcons, short |
-| D2 | Music: resume after talk + 3 min A2DP drift trace; reading jump vs overshoot | `music_sync.sh` | AirPods connected, phone alone ~6 min | ~5 min of music |
-| D3 | The two `unavailable` cases | `unavailable.sh` | phone alone ~3 min | one error earcon |
-| D4 | Overlay after rotation | `overlay_rotation.sh` | phone alone and **unlocked** ~3 min | none |
-
-D1 first: everything rides on the talk path. If the AirPods are not around, D3 and D4 first.
-Home Wi-Fi is enough for all four. Only for the user's own hands afterwards: real spoken
-commands, listening to a talk, a ride.
-
-### Device agent prompt (fill in `<SCRIPT>`, `<QUESTION>`, `<EXTRA>` from the table and notes)
-
-```
-You are running one device bench session for Motoparty (/home/kivan/Work/motoparty), Android
-host app on a Pixel 8 over adb Wi-Fi. The coordinator has already installed the current build
-and checked the phone. Your job: run ONE script, read its summary, answer ONE question, report.
-You fix nothing big on the spot: a failure gets written up; a separate offline agent fixes it.
-
-Session: <QUESTION>
-
-Read first (only these): /home/kivan/Work/motoparty/tools/bench/README.md, the header of
-tools/bench/<SCRIPT>, and android/HANDOFF.md section 3 (state / what to verify).
-
-Run: `cd /home/kivan/Work/motoparty && tools/bench/<SCRIPT> tools/bench/results/2026-MM-DD-<name>`
-(results dir name: today's date + a short name). Then read summary.txt. Grep, don't read,
-logcat.txt (it can be long).
-
-The script is new and its adb steps are unproven. If it breaks on an adb detail (a dumpsys
-format, a tap position, a grep), you MAY fix tools/bench/*.sh or bench.py (keep the fix small,
-keep DRY=1 working: `DRY=1 tools/bench/<SCRIPT> <scratch dir>` must still pass for the three
-scripts that have a dry run) and run again. Don't edit android/, ios/, tools/peer/, PROTOCOL.md.
-
-<EXTRA>
-
-Rules
-- Never run sudo. No git commits. Always `adb -s 192.168.1.100:5555`, every call wrapped in
-  `timeout` (an offline transport blocks for ever). Only install/grant/revoke for
-  com.kivan.motoparty. Don't change Wi-Fi, hotspot or Bluetooth state.
-- The user may pick the phone up: the scripts wait if another app is in front with the screen on;
-  if you run adb by hand, check `dumpsys power | grep mWakefulness` and the foreground activity
-  first. Leave the phone as found: music paused, locked if it was locked, settings restored.
-- At most two runs of the script. Stop and report at ~100k tokens.
-
-Final report (concise, for the coordinator): the summary's key numbers, the answer to the
-question with the evidence lines, anything the script needed fixed, what's still unverified.
-```
-
-Per-session `<QUESTION>` / `<EXTRA>`:
-
-- **D1** `talk_cycles.sh`. Question: over 6 cycles + a fast open→close→open + a 20 s talk, are
-  open→HFP and close→media well under 300 ms every time (before layer 1: ~2.7 s each), does
-  the phone always end in media mode, any exceptions; and in the 20 s talk, is the host capture
-  loop alive (captured ≈ 50/s) with the silence being DTX, or stalled? Extra: before layer 1,
-  the only data point was open→HFP 13 ms / close→media 79 ms (one cycle, BT bench).
-- **D2** `music_sync.sh`. Question: does the speed-up overshoot come from the nudge or from a
-  position reading that jumps? Read the `trace:` lines (1/s during a nudge + 5 s after, 5 s
-  after each start; `pos`, `expected`, `err`, `speed`, …): if `err` steps by ~150–220 ms within
-  one second while speed is 1.0 (or the step does not scale with the nudge size), it is the
-  reading; if `err` moves steadily during the nudge and ends past zero in proportion to the
-  nudge, it is the nudge. Also: the post-talk sequence (`start cold: lead …` and the drifts
-  after it; before: −693 → +428 → +173 → +93 ms, ~25 s to settle; last night: lead 442, then −317).
-  Extra: the coordinator's analysis of last night: every speed-up landed ~+150..+220 ms ahead
-  whatever its size (−91 → +221, −189 → +147, −185 → +149), every slow-down within 20–30 ms,
-  and the reading dropped 140–220 ms by itself between checks with no speed change. Decide
-  with data and propose (don't implement) the fix.
-- **D3** `unavailable.sh`. Question: do both refusal paths behave as PROTOCOL.md "Talk flow"
-  says, and is RECORD_AUDIO granted again at the end (`permission.txt`)? Extra: case (a) taps
-  the overlay TALK zone: if the tap misses, find the right spot from `dumpsys window` and fix
-  `host_talk` in lib.sh.
-- **D4** `overlay_rotation.sh`. Question: in every rotation is the overlay fully on screen, does
-  a TALK tap reach the app (`trigger TALK` in logcat), and is it still on screen after a drag to
-  the far corner; are the rotation settings back at the end? Extra: needs the phone unlocked; if
-  the script says locked, stop and report (don't try to unlock).
+- Laptop firewall (nftables, input drop policy): the peer in *client* mode needs nothing; fake-host
+  mode needs ports 47800–47802 opened by the user (command in `tools/peer/README.md`).
+- Phone left at the end of the seventh session: music mode, buttons on (`overlayEnabled=true`,
+  `fx=0.662 fy=0.313`), the spike app still installed with RECORD_AUDIO granted.
