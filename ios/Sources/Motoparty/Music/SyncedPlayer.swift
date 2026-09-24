@@ -11,7 +11,7 @@ import MotopartyCore
 /// measured `AVAudioSession.outputLatency` plus the user's latency trim), so
 /// the *sound* lands on the anchor. Drift is then checked against the anchor
 /// and handled by `DriftController` (PROTOCOL.md "Music flow" step 4): under
-/// 80 ms nothing, 80 ms - 1 s a playback-rate nudge of up to ±5 %, above 1 s a
+/// 80 ms nothing, 80 ms - 1 s a playback-rate nudge of up to ±2 %, above 1 s a
 /// re-seek — because every seek on A2DP costs a fresh few hundred ms of lag.
 /// Main-queue API.
 final class SyncedPlayer {
@@ -60,7 +60,7 @@ final class SyncedPlayer {
         stopDriftTimer()
         drift.reset()
         let item = AVPlayerItem(url: url)
-        // Drift is corrected by playing at up to ±5 %; without a pitch-keeping
+        // Drift is corrected by playing at up to ±2 %; without a pitch-keeping
         // algorithm that would be audible as a tuning change. .spectral is the
         // high-quality one and this is music, not speech.
         item.audioTimePitchAlgorithm = .spectral

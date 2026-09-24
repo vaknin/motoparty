@@ -40,7 +40,8 @@ data class Anchor(val id: String, val positionMs: Long, val atHostTimeMs: Long, 
  * Measured on the Pixel 8 with AirPods Pro (A2DP): the audible position starts moving ~400 ms
  * after play() or a seek, and up to ~2 s when the Bluetooth stream was idle. So:
  * - play() is issued early by a learned [startLatencyMs];
- * - drift of 80 ms..1 s is absorbed by briefly playing up to 5 % faster/slower (pitch kept),
+ * - drift of 80 ms..1 s is absorbed by playing up to 2 % faster/slower (pitch kept) for ~10 s
+ *   or longer — slow on purpose, so the time-stretch stays inaudible;
  *   because a re-seek would restart the output and create a new lag of its own;
  * - only drift above 1 s re-seeks (with the learned lead).
  *
@@ -344,8 +345,10 @@ class SyncController(
         const val NUDGE_DONE_AFTER_MS = 1_000L
         private const val SEEK_ABOVE_MS = 1_000L
         private const val PREPARE_MS = 250L
-        private const val NUDGE_WINDOW_MS = 4_000f
-        private const val MAX_NUDGE = 0.05f
+        /** Drift is spread over this long: 80 ms asks for 0.992 for 10 s. */
+        private const val NUDGE_WINDOW_MS = 10_000f
+        /** PROTOCOL.md: at most ±2 %. A 1 s drift then takes ~50 s, which two riders never notice. */
+        const val MAX_NUDGE = 0.02f
         const val DEFAULT_START_LATENCY_MS = 300L
         /** How hard one measurement pulls the learned start latency (1/4 of the way). */
         const val LEARN_DIVISOR = 4

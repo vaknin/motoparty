@@ -6,10 +6,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.File
 import java.nio.file.Files
 
 /** Live YouTube tests; skipped unless `./gradlew test -Pnetwork`. */
@@ -24,17 +28,38 @@ class CatalogNetworkTest {
         val result = catalog.search(Command.Kind.SONG, "bohemian rhapsody queen")
         println("song -> ${result.label}: ${result.tracks}")
         val track = result.tracks.first()
-        val audio = catalog.resolveAudio(track.id)
-        println("resolved itag ${audio.itag}, ${audio.url.take(80)}")
+        val opus = catalog.resolveAudio(track.id)
+        println("resolved itag ${opus.itag} webm=${opus.webm}, ${opus.url.take(80)}")
+        assertEquals(251, opus.itag)
+        assertTrue(opus.webm)
+        val aac = catalog.resolveAudio(track.id, opus = false)
+        assertEquals(140, aac.itag)
+        assertFalse(aac.webm)
+
         val dir = Files.createTempDirectory("tracks").toFile()
-        val cache = TrackCache(dir, http, { catalog.resolveAudio(it).url }, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val aacCache = TrackCache(File(dir, "aac"), http, { TrackCache.Source(aac.url, aac.webm) }, scope)
         val start = System.nanoTime()
-        val file = cache.ensure(track.id)
+        val file = aacCache.ensure(track.id)
         val head = file.readBytes().copyOfRange(4, 8).toString(Charsets.US_ASCII)
         println("downloaded ${file.length()} bytes in ${(System.nanoTime() - start) / 1_000_000} ms, box '$head'")
         assertTrue(file.length() > 500_000)
         assertTrue(head == "ftyp")
+
+        // The real remuxer needs Android's MediaExtractor; here it only has to receive the WebM.
+        var remuxed: ByteArray? = null
+        val opusCache = TrackCache(File(dir, "opus"), http, { TrackCache.Source(opus.url, opus.webm) }, scope,
+            remux = { webm, mp4 -> remuxed = webm.readBytes(); webm.copyTo(mp4) })
+        val webm = opusCache.ensure(track.id)
+        println("downloaded ${webm.length()} bytes of WebM Opus")
+        assertTrue(webm.length() > 500_000)
+        assertArrayEquals(EBML_MAGIC, remuxed!!.copyOfRange(0, 4))
+        assertEquals(listOf("${track.id}.m4a"), File(dir, "opus").list()!!.toList())
         dir.deleteRecursively()
+    }
+
+    private companion object {
+        val EBML_MAGIC = byteArrayOf(0x1A, 0x45, 0xDF.toByte(), 0xA3.toByte())
     }
 
     @Test

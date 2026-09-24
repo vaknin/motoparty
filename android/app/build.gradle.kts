@@ -100,6 +100,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
+    implementation(libs.media3.muxer)
     implementation(libs.okhttp)
     implementation(libs.newpipe.extractor)
     testImplementation(libs.junit)

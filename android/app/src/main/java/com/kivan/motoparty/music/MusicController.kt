@@ -20,7 +20,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class MusicController(
     private val scope: CoroutineScope,
-    private val cache: TrackCache,
+    private val caches: TrackCaches,
     private val sync: SyncController,
     private val player: Player,
     private val hostNow: () -> Long,
@@ -40,6 +40,8 @@ class MusicController(
     private var startJob: Job? = null
     private val readyWaiters = HashMap<String, CompletableDeferred<Unit>>()
     private val clientReady = HashSet<String>()
+    /** Tracks already re-sent after a "not decodable"; one retry each. */
+    private val resent = HashSet<String>()
 
     /** True while talk (or a track that arrived during it) is holding a resume. */
     var pausedForTalk = false
@@ -119,13 +121,25 @@ class MusicController(
     fun onClientError(id: String, message: String) {
         Log.w(TAG, "client could not load $id: $message")
         readyWaiters.remove(id)?.complete(Unit)
+        if (!message.startsWith(NOT_DECODABLE)) return
+        // The one format the client may not play is Opus in MP4 (AVPlayer, iOS 17+, unverified on
+        // a real iPhone): from now on every track is AAC, for both phones. The host keeps playing
+        // the Opus file it has open; the client gets the AAC one and joins mid-track when ready.
+        // A next track already sent as Opus fails on its own and comes back through here; re-sending
+        // it earlier would only join the client's in-flight download and fail with it.
+        if (caches.opus) {
+            caches.opus = false
+            Log.w(TAG, "client cannot decode Opus-in-MP4; AAC for the rest of this session")
+        }
+        queue.firstOrNull { it.id == id }?.let { resend(it) }
     }
 
     fun onClientConnected() {
         clientReady.clear()
+        resent.clear()
         val t = current ?: return
-        if (cache.cached(t.id) != null) send(load(t))
-        upcoming.firstOrNull()?.let { if (cache.cached(it.id) != null) send(load(it)) }
+        if (caches.active.cached(t.id) != null) send(load(t))
+        upcoming.firstOrNull()?.let { if (caches.active.cached(it.id) != null) send(load(it)) }
     }
 
     fun onClientGone() {
@@ -192,7 +206,7 @@ class MusicController(
         onChanged()
         startJob = scope.launch {
             try {
-                val file = cache.ensure(t.id)
+                val file = caches.active.ensure(t.id)
                 player.load(t, file)
                 if (hasClient() && t.id !in clientReady) {
                     val waiter = readyWaiters.getOrPut(t.id) { CompletableDeferred() }
@@ -231,9 +245,19 @@ class MusicController(
     private fun prefetchNext() {
         val next = upcoming.firstOrNull() ?: return
         scope.launch {
-            runCatching { cache.ensure(next.id) }
+            runCatching { caches.active.ensure(next.id) }
                 .onSuccess { if (hasClient()) send(load(next)) }
                 .onFailure { Log.w(TAG, "prefetch ${next.id} failed", it) }
+        }
+    }
+
+    /** Fetch [t] from the active cache and send its `music.load` again, once per track. */
+    private fun resend(t: Track) {
+        if (!resent.add(t.id)) return
+        scope.launch {
+            runCatching { caches.active.ensure(t.id) }
+                .onSuccess { if (hasClient()) send(load(t)) }
+                .onFailure { Log.w(TAG, "re-fetch ${t.id} failed", it) }
         }
     }
 
@@ -242,6 +266,8 @@ class MusicController(
         const val READY_TIMEOUT_MS = 8_000L
         const val RESTART_THRESHOLD_MS = 3_000L
         const val DUCK_VOLUME = 0.2f
+        /** PROTOCOL.md: a `music.error` message starting with this = the client cannot play the file. */
+        const val NOT_DECODABLE = "not decodable"
         private const val TAG = "MusicController"
     }
 }

@@ -45,7 +45,9 @@ import com.kivan.motoparty.music.MusicController
 import com.kivan.motoparty.music.Player
 import com.kivan.motoparty.music.RemoteAction
 import com.kivan.motoparty.music.SyncController
+import com.kivan.motoparty.music.remuxWebmToMp4
 import com.kivan.motoparty.music.TrackCache
+import com.kivan.motoparty.music.TrackCaches
 import com.kivan.motoparty.music.TrackServer
 import com.kivan.motoparty.trigger.TriggerKind
 import com.kivan.motoparty.trigger.TriggerSource
@@ -91,7 +93,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
     private val catalog = Catalog(http)
-    private val cache = TrackCache(File(context.cacheDir, "tracks"), http, { catalog.resolveAudio(it).url }, scope)
+    /** Opus (remuxed to MP4) by default; `tracks/` stays the AAC one it always was. */
+    private val caches = TrackCaches(
+        opusCache = TrackCache(
+            File(context.cacheDir, "tracks-opus"), http, { source(it, opus = true) }, scope,
+            remux = ::remuxWebmToMp4,
+        ),
+        aacCache = TrackCache(File(context.cacheDir, "tracks"), http, { source(it, opus = false) }, scope, maxBytes = 256L shl 20),
+    )
     private val player: Player = Player(context, ::onMediaKey, ::onRemoteControl, onEnded = { music.onTrackEnded() })
     private val sync: SyncController = SyncController(player, scope, clock) { settings.value.latencyTrimMs }
     private val control: ControlServer = ControlServer(scope, clock, ::hello, ::state)
@@ -118,12 +127,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         onFailed = { session, what, e -> scope.launch { onMicFailed(session, "$what: ${e.message}") } },
     )
     private val voiceSocket: VoiceSocket = VoiceSocket(clientIp = { control.clientAddress }, onPacket = { voice.onPacket(it) })
-    private val trackServer = TrackServer(scope, cache::cached)
+    private val trackServer = TrackServer(scope, lookup = { caches.active.cached(it) })
     private val discovery = Discovery(context, deviceName)
     private val transcriber = Transcriber(context)
     private val announcer = Announcer(context, earconPlayer = { earcon(it) })
     private val music: MusicController = MusicController(
-        scope, cache, sync, player, clock,
+        scope, caches, sync, player, clock,
         send = control::send,
         hasClient = control::hasClient,
         onChanged = ::pushState,
@@ -612,6 +621,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         Hub.log("announce: $text")
     }
 
+    /** Where a track downloads from. Off Main; the log line says which stream a run got. */
+    private suspend fun source(id: String, opus: Boolean): TrackCache.Source {
+        val a = catalog.resolveAudio(id, opus)
+        Hub.log("track $id: itag ${a.itag}${if (a.webm) " (Opus, remuxed to MP4)" else ""}")
+        return TrackCache.Source(a.url, a.webm)
+    }
+
     // ---- UI ----
 
     private fun onUiAction(a: UiAction) {
@@ -650,7 +666,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 positionMs = sync.anchor?.expectedAt(now)?.coerceAtLeast(0) ?: 0,
                 queue = music.upcoming,
                 lastDriftMs = sync.lastDriftMs,
-                cacheMb = cache.sizeBytes() / (1024 * 1024),
+                cacheMb = caches.active.sizeBytes() / (1024 * 1024),
             )
         }
     }

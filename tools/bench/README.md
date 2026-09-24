@@ -12,6 +12,7 @@ Everything lands in the `<out-dir>` given: `run.log`, `client*.log` (the peer, e
 | `unavailable.sh` | both `talk.close{reason:"unavailable"}` paths, expectation by expectation | one error earcon | left alone; the app restarts twice |
 | `beeps.sh` | a listening test: is each earcon there, announced before it plays (live/closed, closed on silence, error) | 5 earcons and nothing else | unlocked, left alone ~1 min |
 | `overlay_rotation.sh` | overlay frame on screen in each rotation, a TALK tap reaches the app, still on screen after a drag; then (`DISMISS=1`) the drag onto the X: the target window, the buttons gone with `overlayEnabled=false` and the position kept, and back again | none | unlocked, left alone; screen rotates; the app is restarted at the end |
+| `a2dp_codec.sh` | the Bluetooth codec music goes to the headset with (AAC or SBC; PASS on AAC), from the connected or last A2DP device | none | anything; read-only, seconds |
 | `hotspot_test.sh` + `hotspot_rtt.py` | RTT over the Pixel hotspot per phase (see the script header) | short | on its own hotspot |
 
 ```sh

@@ -13,7 +13,7 @@ import kotlin.math.abs
 
 /**
  * The drift rule of PROTOCOL.md "Music flow" step 4: start early by the measured output delay,
- * correct 80 ms..1 s with a rate change of at most +-5 %, re-seek only above 1 s.
+ * correct 80 ms..1 s with a rate change of at most +-2 %, re-seek only above 1 s.
  *
  * The controller's drift check is an endless loop, so it runs in [TestScope.backgroundScope] and
  * the tests step virtual time explicitly (never `advanceUntilIdle`, which would never return).
@@ -155,7 +155,7 @@ class SyncControllerTest {
             }
         }
         assertTrue("expected a rate nudge", sawNudge)
-        assertTrue("nudge $extreme must stay within +-5 %", abs(extreme - 1f) <= 0.05f + 1e-6f)
+        assertTrue("nudge $extreme must stay within +-2 %", abs(extreme - 1f) <= SyncController.MAX_NUDGE + 1e-6f)
         assertTrue("must slow down when ahead, got $extreme", extreme < 1f)
         assertEquals("must not re-seek below 1 s of drift", seeksAfterShove, player.seeks.size)
         assertEquals("speed must return to 1", 1f, player.speed)
@@ -430,10 +430,10 @@ class SyncControllerTest {
         assertEquals("check: median err 150 ms (spread 0 ms, n 9), waiting for confirmation", waiting.single().line)
         assertTrue("its line must not look like a check to the bench parser", !Regex("drift -?\\d+ ms").containsMatchIn(waiting.single().line))
         assertEquals("acted on the confirming reading", SyncController.FILTER_SPAN_MS, nudgeAt - waiting.single().atMs)
-        assertTrue(log.last().line, log.last().line.startsWith("drift 150 ms: speed 0.96"))
+        assertTrue(log.last().line, log.last().line.startsWith("drift 150 ms: speed 0.98"))
         assertTrue("slow down when ahead", player.speed < 1f)
 
-        advanceTimeBy(4_000 + SyncController.EARLY_CHECK_MS + SyncController.FILTER_SPAN_MS + 100)
+        advanceTimeBy(10_000 + SyncController.EARLY_CHECK_MS + SyncController.FILTER_SPAN_MS + 100)
         assertEquals("one nudge: ${player.calls}", 1, player.nudges().size)
         assertEquals(1f, player.speed)
         assertTrue("landed at ${sync.lastDriftMs} ms", abs(sync.lastDriftMs!!) <= SyncController.RESYNC_MS)
@@ -455,7 +455,7 @@ class SyncControllerTest {
         advanceTimeBy(firstCheckAfter(1_000) + 100)
         player.shove(150)
         val nudgeAt = untilNudge(player, withinMs = 20_000)
-        val end = nudgeAt + 4_000
+        val end = nudgeAt + 10_000
         player.readingError = { t -> if (t in end - 1_000 until end + 3_100) -220L else 0L }
         log.clear()
         advanceTimeBy(30_000)
@@ -550,7 +550,7 @@ class SyncControllerTest {
         player.seekTo(player.positionMs + 600) // ahead: the next check nudges (slows down)
         lines.clear()
         player.calls.clear()
-        advanceTimeBy(30_000)
+        advanceTimeBy(50_000) // 600 ms at 2 % is a 30 s nudge
 
         val speeds = player.calls.filter { " speed " in it && !it.endsWith("speed 1.0") }
         assertEquals("expected exactly one nudge: ${player.calls}", 1, speeds.size)

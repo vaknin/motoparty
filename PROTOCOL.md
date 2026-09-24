@@ -58,7 +58,7 @@ catches up.
 | `talk.close`    | both  | `by`, `reason`: `"trigger"`\|`"silence"`\|`"link"`\|`"unavailable"` |
 | `music.load`    | H→C   | `id`: string, `path`: string (e.g. `/track/<id>.m4a`), `title`, `artist`, `album` (optional), `durationMs`: int |
 | `music.ready`   | C→H   | `id` — the file is fully cached and decodable |
-| `music.error`   | C→H   | `id`, `message` |
+| `music.error`   | C→H   | `id`, `message` — starting with `"not decodable"` when the file downloaded but will not play (see Tracks) |
 | `music.play`    | H→C   | `id`, `positionMs`, `atHostTimeMs` — also used for seek and resync |
 | `music.pause`   | H→C   | `id`, `positionMs` |
 | `music.stop`    | H→C   | (nothing) |
@@ -147,9 +147,15 @@ successor; otherwise packet-loss concealment.
 
 ## Tracks (HTTP 47802)
 
-`GET /track/<id>.m4a` → `200` with `Content-Type: audio/mp4` and the full AAC-in-MP4 file,
+`GET /track/<id>.m4a` → `200` with `Content-Type: audio/mp4` and the full audio-only MP4 file,
 or `206` for a `Range` request. `404` if the host has not cached it (yet). Nothing else is
 served. The client downloads the whole file before replying `music.ready`.
+
+The audio is **Opus** (YouTube itag 251, 48 kHz stereo, remuxed from WebM, `dOps` pre-skip 0) or
+**AAC-LC** (itag 140). The host serves Opus until a client answers `music.error` with a message
+starting `"not decodable"`; it then switches to AAC for the rest of the session and sends
+`music.load` for that track once more. Lossless does not exist on YouTube, and the Bluetooth
+link re-encodes to AAC or SBC anyway.
 
 ## Talk flow
 
@@ -187,7 +193,7 @@ served. The client downloads the whole file before replying `music.ready`.
    (`expected = positionMs + (hostNow - atHostTimeMs)`). Every play or seek on Bluetooth
    (A2DP) restarts the output with 350–700 ms of fresh lag (measured on the Pixel 8), so
    re-seeking to fix small drift oscillates. Instead: start playback early by the measured
-   output delay, correct 80 ms–1 s of drift by changing the playback rate by up to ±5 %
+   output delay, correct 80 ms–1 s of drift by changing the playback rate by up to ±2 %
    until it is back under 80 ms, and re-seek only above 1 s. Each phone also applies its own output-latency trim
    (setting, ms) to account for Bluetooth delay.
 5. Pause/stop are immediate on receipt. The host sends `music.load` for the next queue

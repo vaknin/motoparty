@@ -34,7 +34,7 @@ final class MusicAnchorTests: XCTestCase {
         XCTAssertEqual(c.decide(anchor: a, playerPositionMs: 20_050, hostNowMs: 10_000, trimMs: 0),
                        DriftDecision(errorMs: 50, action: .hold, nextCheckMs: DriftCheck.intervalMs))
         XCTAssertEqual(c.decide(anchor: a, playerPositionMs: 20_200, hostNowMs: 10_000, trimMs: 0),
-                       DriftDecision(errorMs: 200, action: .rate(0.95), nextCheckMs: DriftCheck.correctingIntervalMs))
+                       DriftDecision(errorMs: 200, action: .rate(0.98), nextCheckMs: DriftCheck.correctingIntervalMs))
         // Trim moves the target: 100 ms ahead is exactly right with a 100 ms trim.
         c.reset()
         XCTAssertEqual(c.decide(anchor: a, playerPositionMs: 20_100, hostNowMs: 10_000, trimMs: 100),
@@ -58,7 +58,7 @@ final class MusicAnchorTests: XCTestCase {
 }
 
 /// PROTOCOL.md "Music flow" step 4: in sync up to 80 ms, rate nudge of up to
-/// ±5 % from there to 1 s, re-seek above 1 s.
+/// ±2 % from there to 1 s, re-seek above 1 s.
 final class DriftControllerTests: XCTestCase {
     func testInSyncBandBoundaries() {
         var c = DriftController()
@@ -72,24 +72,24 @@ final class DriftControllerTests: XCTestCase {
 
     func testJustOutsideTheBandNudgesTheRate() {
         var c = DriftController()
-        // Player ahead → slow down; 81 ms quantises to 0.98 (1 - 81/4000).
+        // Player ahead → slow down; 81 ms quantises to 0.9925 (1 - 81/10000 = 0.9919).
         XCTAssertEqual(c.decide(errorMs: 81),
-                       DriftDecision(errorMs: 81, action: .rate(0.98), nextCheckMs: DriftCheck.correctingIntervalMs))
-        XCTAssertEqual(c.rate, 0.98)
+                       DriftDecision(errorMs: 81, action: .rate(0.9925), nextCheckMs: DriftCheck.correctingIntervalMs))
+        XCTAssertEqual(c.rate, 0.9925)
 
         // Player behind → speed up, same size.
         var back = DriftController()
         XCTAssertEqual(back.decide(errorMs: -81),
-                       DriftDecision(errorMs: -81, action: .rate(1.02), nextCheckMs: DriftCheck.correctingIntervalMs))
-        XCTAssertEqual(back.rate, 1.02)
+                       DriftDecision(errorMs: -81, action: .rate(1.0075), nextCheckMs: DriftCheck.correctingIntervalMs))
+        XCTAssertEqual(back.rate, 1.0075)
     }
 
-    func testRateIsProportionalAndClampedToFivePercent() {
-        XCTAssertEqual(DriftCheck.rate(forErrorMs: 100), 0.975)
-        XCTAssertEqual(DriftCheck.rate(forErrorMs: -100), 1.025)
-        XCTAssertEqual(DriftCheck.rate(forErrorMs: 200), 0.95)
-        XCTAssertEqual(DriftCheck.rate(forErrorMs: 999), 0.95)
-        XCTAssertEqual(DriftCheck.rate(forErrorMs: -999), 1.05)
+    func testRateIsProportionalAndClampedToTwoPercent() {
+        XCTAssertEqual(DriftCheck.rate(forErrorMs: 100), 0.99)
+        XCTAssertEqual(DriftCheck.rate(forErrorMs: -100), 1.01)
+        XCTAssertEqual(DriftCheck.rate(forErrorMs: 200), 0.98)
+        XCTAssertEqual(DriftCheck.rate(forErrorMs: 999), 0.98)
+        XCTAssertEqual(DriftCheck.rate(forErrorMs: -999), 1.02)
         // Way out of range still clamps (the caller re-seeks there instead).
         XCTAssertEqual(DriftCheck.rate(forErrorMs: 60_000), DriftCheck.minRate)
         XCTAssertEqual(DriftCheck.rate(forErrorMs: -60_000), DriftCheck.maxRate)
@@ -98,10 +98,10 @@ final class DriftControllerTests: XCTestCase {
     func testSeekBoundary() {
         var c = DriftController()
         XCTAssertEqual(c.decide(errorMs: 999),
-                       DriftDecision(errorMs: 999, action: .rate(0.95), nextCheckMs: DriftCheck.correctingIntervalMs))
+                       DriftDecision(errorMs: 999, action: .rate(0.98), nextCheckMs: DriftCheck.correctingIntervalMs))
         XCTAssertEqual(c.decide(errorMs: 1_000),
                        DriftDecision(errorMs: 1_000, action: .hold, nextCheckMs: DriftCheck.correctingIntervalMs))
-        XCTAssertEqual(c.rate, 0.95)
+        XCTAssertEqual(c.rate, 0.98)
         // Above 1 s: re-seek, and the correction is dropped (the seek restarts
         // playback at rate 1.0).
         XCTAssertEqual(c.decide(errorMs: 1_001),
@@ -110,19 +110,19 @@ final class DriftControllerTests: XCTestCase {
         XCTAssertFalse(c.isCorrecting)
 
         var back = DriftController()
-        XCTAssertEqual(back.decide(errorMs: -1_000).action, .rate(1.05))
+        XCTAssertEqual(back.decide(errorMs: -1_000).action, .rate(1.02))
         XCTAssertEqual(back.decide(errorMs: -1_001).action, .reseek)
         XCTAssertEqual(back.rate, 1)
     }
 
     func testCorrectionHoldsPastEightyAndReleasesAtOne() {
         var c = DriftController()
-        // 300 ms asks for more than 5 %, so it clamps to the floor.
-        XCTAssertEqual(c.decide(errorMs: 300).action, .rate(0.95))
+        // 300 ms asks for more than 2 %, so it clamps to the floor.
+        XCTAssertEqual(c.decide(errorMs: 300).action, .rate(0.98))
         // Still correcting: no new rate while the quantised rate is unchanged.
         XCTAssertEqual(c.decide(errorMs: 299).action, .hold)
-        // 150 ms: 1 - 150/4000 = 0.9625, quantised up to the nearest 0.5 % step.
-        XCTAssertEqual(c.decide(errorMs: 150).action, .rate(0.965))
+        // 160 ms: 1 - 160/10000 = 0.984, quantised up to the nearest 0.25 % step.
+        XCTAssertEqual(c.decide(errorMs: 160).action, .rate(0.985))
         // Back inside 80 ms but not yet settled: hysteresis keeps the nudge on.
         XCTAssertEqual(c.decide(errorMs: 79),
                        DriftDecision(errorMs: 79, action: .hold, nextCheckMs: DriftCheck.correctingIntervalMs))
@@ -140,14 +140,14 @@ final class DriftControllerTests: XCTestCase {
 
     func testCorrectionSwitchesSignWithoutSeeking() {
         var c = DriftController()
-        XCTAssertEqual(c.decide(errorMs: 400).action, .rate(0.95))
-        XCTAssertEqual(c.decide(errorMs: -120).action, .rate(1.03))
+        XCTAssertEqual(c.decide(errorMs: 400).action, .rate(0.98))
+        XCTAssertEqual(c.decide(errorMs: -120).action, .rate(1.0125))
         XCTAssertEqual(c.decide(errorMs: -20).action, .rate(1))
     }
 
     func testResetDropsTheCorrection() {
         var c = DriftController()
-        XCTAssertEqual(c.decide(errorMs: -200).action, .rate(1.05))
+        XCTAssertEqual(c.decide(errorMs: -200).action, .rate(1.02))
         c.reset()
         XCTAssertEqual(c.rate, 1)
         XCTAssertFalse(c.isCorrecting)
@@ -155,7 +155,7 @@ final class DriftControllerTests: XCTestCase {
         XCTAssertEqual(c.decide(errorMs: 50).action, .hold)
     }
 
-    func testEveryDecisionStaysWithinFivePercent() {
+    func testEveryDecisionStaysWithinTwoPercent() {
         var c = DriftController()
         for error in stride(from: -1_200.0, through: 1_200.0, by: 7) {
             let d = c.decide(errorMs: error)

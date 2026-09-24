@@ -31,6 +31,7 @@ kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
+media3-muxer = { group = "androidx.media3", name = "media3-muxer", version.ref = "media3" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 newpipe-extractor = { group = "com.github.TeamNewPipe", name = "NewPipeExtractor", version.ref = "newpipeExtractor" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.ref = "desugar" }

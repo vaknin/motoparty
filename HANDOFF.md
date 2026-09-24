@@ -667,14 +667,25 @@ What is left, in order:
 - Command normalisation is per code point, and U+2019 maps to an apostrophe.
 - **Music drift (changed last):** A2DP adds 350–700 ms of fresh lag on every play or seek,
   so the host starts early by the measured delay, corrects 80 ms–1 s of drift by changing
-  the playback rate by up to ±5 %, and re-seeks only above 1 s. Both phones do this now.
-  iOS: `DriftController` in MotopartyCore (rate = clamp(1 − e/4000, ±5 %), 0.5 % steps,
+  the playback rate by up to ±2 %, and re-seeks only above 1 s. Both phones do this now.
+  iOS: `DriftController` in MotopartyCore (rate = clamp(1 − e/10000, ±2 %), 0.25 % steps,
   re-check every 2 s while correcting, hold until |e| ≤ 40 ms), lead = `AVAudioSession.outputLatency`
   + user trim. Android instead sets the speed once for a computed time and learns its start lead.
   **Check on the first real iPhone run:** does `setRate(_:time:atHostTime:)` already compensate
   output latency (then outputLatency is double-counted; go back to trim only); does assigning
   `rate` disturb the scheduled start on A2DP; is `.spectral` pitch algorithm OK on CPU
   (`.timeDomain` is the fallback).
+  Was ±5 % over 4 s; ±2 % over 10 s since 2026-09-24 (idea #3), so the time-stretch is not heard.
+  Bench `~/bench/2026-09-24-music-opus`: 3 nudges at 1.02, 0 re-seeks, the last 150 s within
+  +17..+74 ms; a 540 ms start error now takes ~45 s to close (was ~11 s).
+- **Music quality (idea #3, 2026-09-24; decided with the user):** the best YouTube stream without
+  Premium: Opus itag 251, remuxed to MP4 on the Pixel (`Remux.kt`, `OpusDops.kt`), with AAC itag 140
+  as the fallback after a client's `music.error "not decodable"`. FLAC and 320 kbps are not possible:
+  YouTube has no lossless audio, 256 kbps needs Premium (ReVanced does not change that), and A2DP
+  re-encodes everything to AAC for the AirPods anyway. `tools/bench/a2dp_codec.sh` checks the Pixel
+  is on AAC and not SBC. Media3 1.11.1 writes and reads `dOps` little-endian (the spec and AVPlayer:
+  big-endian), so `dOps` pre-skip is patched to 0. **Check on the first real iPhone run:** AVPlayer
+  plays the Opus MP4 (else logcat says "AAC for the rest of this session").
 
 ## Protocol gaps: decided with the user 2026-09-19 (in PROTOCOL.md, fixtures and all three implementations)
 

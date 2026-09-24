@@ -17,15 +17,21 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Downloaded tracks in `<dir>/<id>.m4a`, LRU-evicted (by mtime, touched on use) above
- * [maxBytes]. Concurrent requests for the same id share one download. Pure JVM.
+ * [maxBytes]. Concurrent requests for the same id share one download. A WebM source is handed to
+ * [remux] and only the MP4 it writes is kept, so every cached file is audio-only MP4. Pure JVM
+ * (the remuxer is injected).
  */
 class TrackCache(
     private val dir: File,
     private val http: OkHttpClient,
-    private val resolve: suspend (id: String) -> String,
+    private val resolve: suspend (id: String) -> Source,
     private val scope: CoroutineScope,
     private val maxBytes: Long = 1L shl 30,
+    private val remux: (webm: File, mp4: File) -> Unit = { _, _ -> throw IOException("no remuxer") },
 ) {
+    /** Where a track's audio is downloaded from; [webm] needs remuxing to MP4. */
+    data class Source(val url: String, val webm: Boolean)
+
     private val inflight = ConcurrentHashMap<String, Deferred<File>>()
 
     init {
@@ -62,7 +68,7 @@ class TrackCache(
     fun isDownloading(id: String) = inflight.containsKey(id)
 
     private suspend fun download(id: String): File = withContext(Dispatchers.IO) {
-        val url = resolve(id)
+        val (url, webm) = resolve(id)
         val part = File(dir, "$id.m4a.part")
         val target = File(dir, "$id.m4a")
         RandomAccessFile(part, "rw").use { out ->
@@ -94,7 +100,18 @@ class TrackCache(
                 }
             }
         }
-        if (!part.renameTo(target)) throw IOException("rename failed for $id")
+        if (webm) {
+            val mp4 = File(dir, "$id.m4a.remux.part")
+            try {
+                remux(part, mp4)
+                if (!mp4.renameTo(target)) throw IOException("rename failed for $id")
+            } finally {
+                part.delete()
+                mp4.delete()
+            }
+        } else if (!part.renameTo(target)) {
+            throw IOException("rename failed for $id")
+        }
         evict(keep = target)
         target
     }
@@ -131,4 +148,14 @@ class TrackCache(
             }
         }
     }
+}
+
+/**
+ * The host keeps Opus and AAC tracks apart, so falling back never replaces a file ExoPlayer has
+ * open. [opus] until a client reports an Opus-in-MP4 file as not decodable
+ * ([MusicController.onClientError]); from then on, for this session, every track is AAC.
+ */
+class TrackCaches(private val opusCache: TrackCache, private val aacCache: TrackCache) {
+    var opus = true
+    val active: TrackCache get() = if (opus) opusCache else aacCache
 }

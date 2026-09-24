@@ -86,7 +86,7 @@ public struct DriftDecision: Equatable, Sendable {
 /// Thresholds and the rate formula for the drift rule in PROTOCOL.md, "Music
 /// flow" step 4. Every play or seek on A2DP restarts the output with 350-700 ms
 /// of fresh lag, so a re-seek to fix small drift only makes new drift. Instead
-/// the rate is nudged by up to ±5 % until the player is back on the anchor, and
+/// the rate is nudged by up to ±2 % until the player is back on the anchor, and
 /// only drift above 1 s re-seeks. Same numbers as Android's `SyncController`.
 public enum DriftCheck {
     /// Between checks while in sync.
@@ -103,17 +103,18 @@ public enum DriftCheck {
     /// cannot toggle the rate on and off at every check.
     public static let releaseMs: Double = 40
     /// Drift is spread over this long: rate = 1 - drift / nudgeWindowMs, so a
-    /// 80 ms error asks for 0.98 and is gone in ~4 s (Android: NUDGE_WINDOW_MS).
-    public static let nudgeWindowMs: Double = 4_000
-    /// PROTOCOL.md: "by up to ±5 %".
-    public static let maxRateDelta: Double = 0.05
+    /// 80 ms error asks for 0.992 and is gone in ~10 s (Android: NUDGE_WINDOW_MS).
+    /// Slow on purpose: a gentle time-stretch is inaudible, a 5 % one is not.
+    public static let nudgeWindowMs: Double = 10_000
+    /// PROTOCOL.md: "by up to ±2 %".
+    public static let maxRateDelta: Double = 0.02
     public static let minRate: Double = 1 - maxRateDelta
     public static let maxRate: Double = 1 + maxRateDelta
-    /// The rate is quantised to 0.5 % steps, so a rate change is only asked for
+    /// The rate is quantised to 0.25 % steps, so a rate change is only asked for
     /// when it is worth telling the player about.
-    public static let rateSteps: Double = 200
+    public static let rateSteps: Double = 400
 
-    /// Proportional rate for an error, clamped to ±5 % and quantised.
+    /// Proportional rate for an error, clamped to ±2 % and quantised.
     /// Positive error (the player is ahead) gives a rate below 1.
     public static func rate(forErrorMs errorMs: Double) -> Double {
         let raw = 1 - errorMs / nudgeWindowMs

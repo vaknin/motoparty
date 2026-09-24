@@ -101,20 +101,31 @@ class Catalog(private val http: OkHttpClient) {
         )
     }
 
-    /** A direct URL for the best AAC-in-MP4 audio-only stream (itag 140 when present). */
-    suspend fun resolveAudio(id: String): ResolvedAudio = withContext(Dispatchers.IO) {
+    /**
+     * A direct URL for the best audio-only stream. Without Premium YouTube offers two: Opus in
+     * WebM (itag 251, ~130 kbps VBR, full band) and AAC-LC in MP4 (itag 140, ~130 kbps, cut at
+     * ~16 kHz). Opus is preferred ([opus]) and falls back to AAC; a WebM result has to be remuxed
+     * to MP4 before a client can play it ([ResolvedAudio.webm]). Nothing lossless exists.
+     */
+    suspend fun resolveAudio(id: String, opus: Boolean = true): ResolvedAudio = withContext(Dispatchers.IO) {
         require(isValidTrackId(id))
         val info = StreamInfo.getInfo(yt, "https://www.youtube.com/watch?v=$id")
-        val candidates = info.audioStreams.filter {
-            it.format == MediaFormat.M4A && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl
-        }
-        val best: AudioStream = candidates.firstOrNull { it.itag == 140 }
-            ?: candidates.maxByOrNull { it.averageBitrate }
-            ?: error("no progressive m4a audio for $id (${info.audioStreams.map { "${it.format}/${it.deliveryMethod}" }})")
-        ResolvedAudio(best.content, best.itag, info.duration * 1000, info.name, cleanArtist(info.uploaderName ?: ""))
+        val progressive = info.audioStreams.filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
+        fun pick(format: MediaFormat, itag: Int): AudioStream? = progressive.filter { it.format == format }
+            .let { c -> c.firstOrNull { it.itag == itag } ?: c.maxByOrNull { it.averageBitrate } }
+        val best: AudioStream = (if (opus) pick(MediaFormat.WEBMA_OPUS, 251) else null)
+            ?: pick(MediaFormat.M4A, 140)
+            ?: error("no progressive audio for $id (${info.audioStreams.map { "${it.format}/${it.deliveryMethod}" }})")
+        ResolvedAudio(
+            best.content, best.itag, webm = best.format == MediaFormat.WEBMA_OPUS,
+            info.duration * 1000, info.name, cleanArtist(info.uploaderName ?: ""),
+        )
     }
 
-    data class ResolvedAudio(val url: String, val itag: Int, val durationMs: Long, val title: String?, val artist: String)
+    data class ResolvedAudio(
+        val url: String, val itag: Int, val webm: Boolean,
+        val durationMs: Long, val title: String?, val artist: String,
+    )
 
     companion object {
         private const val ARTIST_TRACKS = 20
