@@ -12,6 +12,8 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.ChecksSdkIntAtLeast
+import androidx.annotation.RequiresApi
 import java.util.concurrent.Executor
 
 /**
@@ -60,6 +62,7 @@ class ScoWatch(
     var connected: Boolean = false
         private set
 
+    @ChecksSdkIntAtLeast(api = ScoRule.COMMUNICATION_DEVICE_SDK)
     private val usesDevice = ScoRule.usesCommunicationDevice(Build.VERSION.SDK_INT)
 
     private var thread: HandlerThread? = null
@@ -174,6 +177,7 @@ class ScoWatch(
      * the state that already holds, and any callback for a change racing with the registration is
      * queued *behind* this post.
      */
+    @RequiresApi(ScoRule.COMMUNICATION_DEVICE_SDK)
     private fun startCommunicationDevice(handler: Handler) {
         val am = context.getSystemService(AudioManager::class.java) ?: return
         val executor = Executor { command -> handler.post(command) }

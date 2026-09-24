@@ -70,6 +70,9 @@ class MusicController(
     }
 
     fun pause() {
+        // During talk both sides are already paused locally; a pause now only cancels the resume
+        // talk was holding, so the music stays paused when talk closes.
+        pausedForTalk = false
         val a = sync.anchor ?: return
         if (!a.playing) return
         val pos = a.expectedAt(hostNow()).coerceAtLeast(0)

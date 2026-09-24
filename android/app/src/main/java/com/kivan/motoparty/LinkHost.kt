@@ -43,6 +43,7 @@ import com.kivan.motoparty.link.VoiceSocket
 import com.kivan.motoparty.music.Catalog
 import com.kivan.motoparty.music.MusicController
 import com.kivan.motoparty.music.Player
+import com.kivan.motoparty.music.RemoteAction
 import com.kivan.motoparty.music.SyncController
 import com.kivan.motoparty.music.TrackCache
 import com.kivan.motoparty.music.TrackServer
@@ -91,7 +92,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         .build()
     private val catalog = Catalog(http)
     private val cache = TrackCache(File(context.cacheDir, "tracks"), http, { catalog.resolveAudio(it).url }, scope)
-    private val player: Player = Player(context, ::onMediaKey, onEnded = { music.onTrackEnded() })
+    private val player: Player = Player(context, ::onMediaKey, ::onRemoteControl, onEnded = { music.onTrackEnded() })
     private val sync: SyncController = SyncController(player, scope, clock) { settings.value.latencyTrimMs }
     private val control: ControlServer = ControlServer(scope, clock, ::hello, ::state)
     private val voice: VoiceEngine = VoiceEngine(
@@ -560,6 +561,23 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             ControlAction.NEXT -> music.next()
             ControlAction.PREVIOUS -> music.previous()
         }
+    }
+
+    /**
+     * Play/pause/next/previous from an outside controller (KDE Connect, lock screen, watch): a
+     * request like the client's `music.control`, so it acts on the whole ride. Silent, since no
+     * one spoke.
+     */
+    private fun onRemoteControl(action: RemoteAction) {
+        Hub.log("remote ${action.name.lowercase()}")
+        onMusicControl(
+            when (action) {
+                RemoteAction.PAUSE -> ControlAction.PAUSE
+                RemoteAction.RESUME -> ControlAction.RESUME
+                RemoteAction.NEXT -> ControlAction.NEXT
+                RemoteAction.PREVIOUS -> ControlAction.PREVIOUS
+            },
+        )
     }
 
     /**

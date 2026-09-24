@@ -65,7 +65,7 @@ type (it cannot be claimed from the background).
 | `LinkHost` | Wires everything; the one place protocol decisions are made (main thread) |
 | `link/` | `Discovery` (NSD `_motoparty._tcp`, TXT proto/voice/http), `ControlServer` (TCP 47800), `VoiceSocket` (UDP 47801), `TalkController` (talk authority, 20 s silence close) |
 | `audio/` | `Opus` (JNI), `VoiceEngine` (AudioRecord VOICE_COMMUNICATION 16 kHz → Opus → UDP; UDP → jitter → Opus FEC/PLC → AudioTrack), `AudioRouter` (MODE_IN_COMMUNICATION + `setCommunicationDevice`), `Earcons` (generated tones), `LiveCue` (when the "live" beep may play: first captured frame **and** the SCO link up, fallback timer 2.5 s), `ScoWatch`/`AudioModeWatch` (Bluetooth SCO link state and audio mode, cached off Main) |
-| `music/` | `Catalog` (NewPipeExtractor, YouTube Music search, itag-140 resolve), `OkHttpDownloader`, `TrackCache` (1 GiB LRU, ranged download, prefetch), `TrackServer` (hand-rolled HTTP on 47802), `Player` (ExoPlayer + MediaSession), `SyncController` (scheduled start with learned start-up latency, 10 s drift check, speed nudge 80 ms–1 s, re-seek > 1 s, latency trim), `MusicController` (queue, load/ready/play, talk pause/resume) |
+| `music/` | `Catalog` (NewPipeExtractor, YouTube Music search, itag-140 resolve), `OkHttpDownloader`, `TrackCache` (1 GiB LRU, ranged download, prefetch), `TrackServer` (hand-rolled HTTP on 47802), `Player` (ExoPlayer + MediaSession; outside transport controls go through `MusicController`), `SyncController` (scheduled start with learned start-up latency, 10 s drift check, speed nudge 80 ms–1 s, re-seek > 1 s, latency trim), `MusicController` (queue, load/ready/play, talk pause/resume) |
 | `voicecmd/` | `Transcriber` (on-device SpeechRecognizer, falls back to the default service), `Announcer` (TTS + earcons) |
 | `overlay/OverlayService` | Draggable TYPE_APPLICATION_OVERLAY with TALK and MUSIC zones (112×100 dp), colour = state; drag onto the X at the bottom to hide (sets `overlayEnabled=false`, back via the notification's "Show buttons") |
 | `trigger/` | `Triggers`: one stream fed by overlay, headset buttons, notification and UI |
@@ -73,7 +73,8 @@ type (it cannot be claimed from the background).
 
 Headset buttons (via the MediaSession): play/pause → talk toggle (setting: or music
 play/pause); next (AirPods double press) → voice command (setting: or next track); previous →
-previous track.
+previous track. Transport controls from outside controllers (KDE Connect, lock screen, watch)
+are not headset buttons: play/pause/next/previous always act on the music, for both phones.
 
 ## Bumping NewPipeExtractor
 
