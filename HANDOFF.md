@@ -115,6 +115,13 @@ framework what devices the phone has.
    - **Mush** → `research/README.md`, then `research/MIC.md` §5: the free eraser-block fit test
      first, then a ₪299–350 Hollyland Lark A1 or a ₪312 Sennheiser XS Lav, bought locally and
      returnable. Nothing there is ordered and nothing there should be ordered before this step.
+   - **Result, 2026-09-27: mush.** Two rides recorded (`captures/capture-20260927-094754.wav`,
+     6 min; `…-135708.wav`, 12.5 min; gitignored). User: *"sounds terrible whenever speed is >0."*
+     Whether they were `bt_sco` and not `builtin_mic` was **not confirmed** (logcat had rolled).
+     A second research pass then found that **one** Lark A1 Duo (₪175, Ivory, new) in Stereo mode
+     can mic both riders — `research/MIC.md` §2.2, gates S1–S4 in §6, gap measurement in §5. The
+     user is considering buying it. S4 needs a debug capture mode (`UNPROCESSED`, 48 kHz stereo,
+     `setPreferredDevice(usb)`, `MODE_NORMAL`) — **ask before writing it**.
    - **In between** → the honest case for the whole `research/` plan, and the one where the user's
      ears, not this file, decide.
 3. **The silence-close decision** (see "Decisions in force") is owed either way and blocks nothing
@@ -306,9 +313,9 @@ paused, locked if it was locked, settings restored. Keep the screen awake with `
 
 ## Waiting on the user
 
-- **The ride recording** — see "Do now". It is the only thing the project's direction now waits on,
-  and it needs the user, a helmet and a motorway; nothing else unblocks it. **No hardware may be
-  ordered before it** (and nothing is ordered).
+- ~~**The ride recording**~~ — done 2026-09-27, verdict mush (see "Do now" step 2). Now waiting on:
+  the plasticine gap measurement in both helmets (`research/MIC.md` §5), and whether the user buys
+  the ₪175 Lark A1 Duo.
 - An iPhone on USB with Developer Mode on, then `cd ios && xtool dev` (Spike 1). The user logged into
   `xtool auth` with their **personal Apple ID**, was told about the 0xe8008024 ban reports and
   decided to keep using it; don't raise it again.

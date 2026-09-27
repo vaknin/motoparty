@@ -449,6 +449,17 @@ it converts the pivotal Stage B test into a confirmation.
 
 > *Caveat:* this is `enginedefault`. A vendor may ship `engineconfigurable` instead. Pixel is
 > believed to use the default engine; not verified. **U.**
+>
+> *Added 2026-09-27 (`MIC.md` §2.2):* (1) **stay in `MODE_NORMAL`.** `is_state_in_call()` is true
+> for `MODE_IN_COMMUNICATION` too, and in that state `MIC`/`UNPROCESSED`/`CAMCORDER` are rewritten
+> to `VOICE_COMMUNICATION` and A2DP leaves media routing (**D**, `policy.h`, `Engine.cpp`).
+> (2) `VOICE_COMMUNICATION` is **mono-only on a Pixel 8** — it forces the `voip_tx` input port
+> (**D**, `AudioPolicyManager.cpp`, shiba config), so a stereo USB receiver needs `UNPROCESSED`
+> or `MIC`. (3) `CAMCORDER` ranks built-in mics *above* USB unless `setPreferredDevice` is used.
+> (4) If a USB device also exposes an **output**, media goes to the last-connected removable
+> device: pin the app's `AudioTrack` to A2DP with `setPreferredDevice`. (5) On an AIDL-HAL Pixel
+> the policy config *and the engine choice* come from the HAL (`loadFromApmAidlConfigWithFallback`),
+> so `dumpsys media.audio_policy` is the only authority on which engine runs.
 
 **And there is a price the plan has not costed.** Platform AEC is engaged by the
 `VOICE_COMMUNICATION` preset and references only the voice-communication output path; an output
