@@ -140,4 +140,28 @@ class PcmDumpTest {
             lines.last(),
         )
     }
+
+    @Test
+    fun `a stereo dump says two channels in the header and counts seconds per frame pair`() {
+        val file = File(tmp.newFolder(), "usb-mic-20260928-210000.wav")
+        val lines = mutableListOf<String>()
+        val stereoFrame = 1920 // 20 ms of 48 kHz L,R
+        val dump = PcmDump(file, 48_000, stereoFrame, channels = 2, log = { lines += it })
+        dump.start()
+        repeat(50) { dump.offer(ShortArray(stereoFrame) { i -> if (i % 2 == 0) 1 else -1 }) }
+        dump.close()
+        assertTrue(dump.awaitFinished(5_000))
+
+        val h = ByteBuffer.wrap(file.readBytes(), 0, Wav.HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        assertEquals("channels", 2, h.getShort(22).toInt())
+        assertEquals("sample rate", 48_000, h.getInt(24))
+        assertEquals("byte rate", 48_000 * 4, h.getInt(28))
+        assertEquals("block align", 4, h.getShort(32).toInt())
+        val s = samples(file)
+        assertEquals("L first, then R", listOf<Short>(1, -1, 1, -1), s.take(4))
+        assertEquals(
+            "capture dump: usb-mic-20260928-210000.wav, 50 frames, 1.0 s, 192000 bytes, 0 dropped",
+            lines.last(),
+        )
+    }
 }

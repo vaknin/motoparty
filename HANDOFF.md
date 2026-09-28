@@ -119,9 +119,24 @@ framework what devices the phone has.
      6 min; `…-135708.wav`, 12.5 min; gitignored). User: *"sounds terrible whenever speed is >0."*
      Whether they were `bt_sco` and not `builtin_mic` was **not confirmed** (logcat had rolled).
      A second research pass then found that **one** Lark A1 Duo (₪175, Ivory, new) in Stereo mode
-     can mic both riders — `research/MIC.md` §2.2, gates S1–S4 in §6, gap measurement in §5. The
-     user is considering buying it. S4 needs a debug capture mode (`UNPROCESSED`, 48 kHz stereo,
-     `setPreferredDevice(usb)`, `MODE_NORMAL`) — **ask before writing it**.
+     can mic both riders — `research/MIC.md` §2.2, gates S1–S4 in §6, gap measurement in §5. **Bought
+     2026-09-28** (Ivory, Duo Mini USB-C, ₪175). **Same evening: S1, S2, S3 pass** (details and
+     numbers in `research/MIC.md` §"Status", 2026-09-28 evening): UAC 48 kHz stereo; Stereo mode
+     persists in the receiver; **Mic1 = pink LED = left = rider**, Mic2 = yellow = right; the Pixel's
+     stock Camera records two distinct channels. Gain 5/6 clips at a hand's width → A2 at ~3. **S4
+     passes too (2026-09-28, 23:08)**: the new debug "USB stereo test" (`audio/UsbStereoProbe.kt`,
+     outside the talk path, `MODE_NORMAL`) got two distinct channels from **all three** sources —
+     `UNPROCESSED`, `MIC`, `CAMCORDER` — routed to the USB device, 48 kHz 2 ch, media still on
+     `bt_a2dp`, no `voip_tx`. Numbers in `research/MIC.md` §"Status". **A2 passes at gain 3**
+     (persists without the app; clean at raised, one 0.6 ms clip in 12 s of shouting, no pumping).
+     Gap measurement waived (user: the TX with fur fits);
+     **A3's 30 min soak skipped** by the user, its RF question folded into the ride recording. **Helmet
+     test done** (laptop, fur, visor down): like A2 — clean at raised, shouting clips ~0.6 ms, no
+     breath pops; gain 2 recommended for the ride. **Long recording written, installed and
+     desk-checked** (button "start long Lark recording"; runs with the screen locked, 0 dropped; ENC
+     on drops the background ~16 dB and gates to near-silence between words). **Next: the ride** —
+     ENC Off then On on the same stretch, gain 2, EQ "Equalization". "Schedule power off" (15 min)
+     applies only to an unpaired TX (user read the ⓘ).
    - **In between** → the honest case for the whole `research/` plan, and the one where the user's
      ears, not this file, decide.
 3. **The silence-close decision** (see "Decisions in force") is owed either way and blocks nothing
@@ -314,8 +329,9 @@ paused, locked if it was locked, settings restored. Keep the screen awake with `
 ## Waiting on the user
 
 - ~~**The ride recording**~~ — done 2026-09-27, verdict mush (see "Do now" step 2). Now waiting on:
-  the plasticine gap measurement in both helmets (`research/MIC.md` §5), and whether the user buys
-  the ₪175 Lark A1 Duo.
+  the helmet test, then A4 and the ride on the Lark A1 Duo (arrived 2026-09-28; S1–S4 and A2 pass,
+  gain now 3; gap measurement waived, A3 soak skipped — both user decisions).
+  Return window is running from 2026-09-28.
 - An iPhone on USB with Developer Mode on, then `cd ios && xtool dev` (Spike 1). The user logged into
   `xtool auth` with their **personal Apple ID**, was told about the 0xe8008024 ban reports and
   decided to keep using it; don't raise it again.
@@ -330,7 +346,9 @@ paused, locked if it was locked, settings restored. Keep the screen awake with `
 - Swift is not on PATH by default:
   `~/.local/share/swift/swift-6.3.3-RELEASE-ubuntu24.04/usr/bin`.
 - Pixel 8 (Android 17) over adb Wi-Fi, listed twice: always `adb -s 192.168.1.100:5555` on home
-  Wi-Fi. The laptop is 192.168.1.102. `KEYCODE_SLEEP` locks, `KEYCODE_WAKEUP` wakes.
+  Wi-Fi. *2026-09-28:* `adb connect 192.168.1.100:5555` was refused; the phone was reachable as
+  `adb -s adb-37171FDJH0071S-omL9n2._adb-tls-connect._tcp` (Wireless debugging, mDNS) — check
+  `adb devices -l` first. The laptop is 192.168.1.102. `KEYCODE_SLEEP` locks, `KEYCODE_WAKEUP` wakes.
 - The user's AirPods are paired to the Pixel: bench audio plays **in their ears**. Keep it short
   unless the test is about exactly that, and say so beforehand.
 - Laptop firewall (nftables, input drop policy): the peer in *client* mode needs nothing; fake-host

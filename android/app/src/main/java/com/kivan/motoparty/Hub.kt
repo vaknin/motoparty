@@ -33,6 +33,8 @@ data class LinkStatus(
     val lastDriftMs: Long? = null,
     val cacheMb: Long = 0,
     val searchResults: List<Track> = emptyList(),
+    /** A long Lark recording ([com.kivan.motoparty.audio.UsbStereoProbe.startLong]) is running. */
+    val longRecording: Boolean = false,
     val log: List<String> = emptyList(),
 )
 
@@ -43,6 +45,10 @@ sealed interface UiAction {
     /** Typed text, handled exactly like a recognised utterance. */
     data class Command(val text: String) : UiAction
     data class Control(val action: String) : UiAction
+    /** Debug: gate S4, the Lark receiver recorded as stereo ([com.kivan.motoparty.audio.UsbStereoProbe]). */
+    data object UsbStereoProbe : UiAction
+    /** Debug: start a long Lark recording, or stop the one running. */
+    data object LongRecording : UiAction
 }
 
 /** Process-wide state shared between the service, the overlay and the activity. */

@@ -31,8 +31,13 @@ import kotlin.concurrent.thread
 class PcmDump(
     private val file: File,
     private val sampleRate: Int,
-    /** Samples per [offer]; a frame of any other length is dropped rather than resized. */
+    /**
+     * Samples per [offer], interleaved across [channels]; a frame of any other length is dropped
+     * rather than resized.
+     */
     private val frameSamples: Int,
+    /** 1 for talk; 2 for the USB stereo probe, whose frames are L,R,L,R… */
+    private val channels: Int = 1,
     /** Stop growing the file here. A ride is long and the phone's storage is not. */
     private val maxBytes: Long = MAX_BYTES,
     private val queueFrames: Int = QUEUE_FRAMES,
@@ -102,7 +107,7 @@ class PcmDump(
             log("capture dump: writing ${file.path}")
             RandomAccessFile(file, "rw").use { out ->
                 out.setLength(0)
-                out.write(Wav.header(sampleRate, CHANNELS, BITS_PER_SAMPLE, 0))
+                out.write(Wav.header(sampleRate, channels, BITS_PER_SAMPLE, 0))
                 val bytes = ByteArray(frameSamples * 2)
                 var capped = false
                 while (true) {
@@ -130,7 +135,7 @@ class PcmDump(
                 }
                 // Last: the length nobody knew when the file was opened.
                 out.seek(0)
-                out.write(Wav.header(sampleRate, CHANNELS, BITS_PER_SAMPLE, dataBytes))
+                out.write(Wav.header(sampleRate, channels, BITS_PER_SAMPLE, dataBytes))
             }
         } catch (e: Exception) {
             log("capture dump failed: $e")
@@ -147,14 +152,13 @@ class PcmDump(
      * `dropped` is the only number that means something is wrong.
      */
     internal fun line(dataBytes: Long): String {
-        val seconds = written * frameSamples.toDouble() / sampleRate
+        val seconds = written * frameSamples.toDouble() / (sampleRate * channels)
         // Locale.US: the bench parses this line, and a comma decimal separator is not a number to it.
         return "capture dump: ${file.name}, $written frames, ${"%.1f".format(Locale.US, seconds)} s, " +
             "$dataBytes bytes, $dropped dropped"
     }
 
     companion object {
-        private const val CHANNELS = 1
         private const val BITS_PER_SAMPLE = 16
 
         /** 2 s of 20 ms frames: enough to ride out a stalled write, small enough to stay honest. */

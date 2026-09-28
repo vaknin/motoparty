@@ -18,6 +18,7 @@ import com.kivan.motoparty.audio.MediaCue
 import com.kivan.motoparty.audio.PcmDump
 import com.kivan.motoparty.audio.ScoWatch
 import com.kivan.motoparty.audio.TalkAudio
+import com.kivan.motoparty.audio.UsbStereoProbe
 import com.kivan.motoparty.audio.VoiceEngine
 import com.kivan.motoparty.core.Announce
 import com.kivan.motoparty.core.Bye
@@ -193,6 +194,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      */
     private var soloTalk = false
     private var clientName: String? = null
+    /** Debug, gate S4: the Lark receiver as stereo, outside the talk path. Files beside the dumps. */
+    private val usbProbe = UsbStereoProbe(
+        context,
+        File(context.getExternalFilesDir(null) ?: context.filesDir, "captures"),
+        Hub::log,
+        onLong = { on -> Hub.status.update { it.copy(longRecording = on) } },
+    )
 
     fun start() {
         for ((name, action) in listOf(
@@ -238,6 +246,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     fun stop() {
         listenJob?.cancel()
+        usbProbe.stopLong()
         if (talk.isOpen) applyTalk(TalkController.Action.Close(Role.HOST, "link"))
         control.stop()
         voiceSocket.stop()
@@ -593,6 +602,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                     errorEarcon()
                     return
                 }
+                // The USB probe holds the receiver (51 s, or a whole ride); a talk opening under it
+                // would record neither properly.
+                if (usbProbe.isRunning) {
+                    errorEarcon()
+                    Hub.log("talk: usb probe running")
+                    return
+                }
                 listenJob?.cancel()
                 if (solo) {
                     soloTalk = true
@@ -804,6 +820,15 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is UiAction.Play -> music.setQueue(a.tracks, a.index)
             is UiAction.Command -> executeCommand(a.text)
             is UiAction.Control -> onMusicControl(a.action)
+            is UiAction.UsbStereoProbe -> when {
+                talk.isOpen -> Hub.log("usb probe: not during a talk")
+                !usbProbe.start() -> Hub.log("usb probe: already running")
+            }
+            is UiAction.LongRecording -> when {
+                Hub.status.value.longRecording -> usbProbe.stopLong()
+                talk.isOpen -> Hub.log("usb probe: not during a talk")
+                !usbProbe.startLong() -> Hub.log("usb probe: already running")
+            }
         }
     }
 

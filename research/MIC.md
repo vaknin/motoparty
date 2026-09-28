@@ -1,6 +1,7 @@
 # The helmet microphone: wireless-in-helmet vs. wired, bought locally
 
-Researched 2026-09-21. Answers `MIC-HANDOFF.md`. **Nothing has been bought, no code was touched.**
+Researched 2026-09-21. Answers `MIC-HANDOFF.md`. **Bought 2026-09-28: one Lark A1 Duo Mini USB-C
+(Ivory, ₪175) — §2.2 route; gates S1–S4 (§6) now run on the real unit.** No code was touched.
 Supersedes the wireless paragraph of `PLAYBACK.md` §5.5 (rewritten to point here) and the sourcing
 conclusions of `PLAYBACK.md` §5.3–5.4.
 
@@ -31,6 +32,103 @@ through the receiver's Stereo mode — rider on one channel, passenger on the ot
 Pixel. It halves the cost again, removes HFP from *both* phones (no 1–1.7 s switch at talk start)
 and makes the passenger's iPhone connector irrelevant. Its one gate that research cannot close is
 whether the Pixel hands the app two distinct channels (§2.2, S4).
+
+*2026-09-28:* **bought** — the Ivory Duo Mini USB-C above, ₪175. Next: the gap measurement (§5) if
+not yet done, then S1–S4 and A1–A4 (§6) inside the return window.
+
+*2026-09-28, evening — S1, S2, S3 **pass** on the real unit* (WAVs in `captures/lark-s*.wav`,
+gitignored). **S1:** VID:PID `3547:0407`, UAC1, one input only, **48 kHz stereo, S16_LE or
+S24_3LE**, `MaxPower 100mA`, plus a HID interface (buttons; the vendor app configures the RX over
+it — its manifest has `com.hollyland.usbmic.core.USBHIDService`) and a vendor-class interface; no
+output. Enumeration took ~12 `error -71` retries on first plug (loose plug?), fine after. Default
+Mono = L and R **bit-identical**. **S2:** Stereo set in the vendor app (Android package
+`com.hollyland.larkc1` v3.0.7, "LarkSound"/HollyAudio; firmware updated first), reverb off; then
+app force-stopped, RX unplugged, TXs power-cycled, RX into the laptop (no app): **Mic1 → L only,
+Mic2 → R only**, 21–47 dB separation, L/R correlation 0.03 — **Stereo persists in the RX** (one
+reset, not the second the gate asks for; the user skipped it). **S3:** Pixel stock Camera video →
+AAC 48 kHz stereo, Mic1 on L, Mic2 on R, 17–32 dB separation — **the Pixel HAL passes stereo**.
+Found on the unit: the app's **Mic Recognition** switch lights TX1 **pink/purple**, TX2 **yellow**
+(off, both are blue); **Mic1 = pink = L = rider's helmet** (user will add a sticker). ENC is one
+state for the whole kit — a press on either TX toggles both, blue ↔ solid green; **powers on OFF**
+(resolves "ENC state at power-on"). App also has EQ (Equalization / Low / Bright), Mic mute,
+Schedule power off (**15 min** default — per the ⓘ, only while a TX is **unpaired**; no effect
+on a ride),
+Indicator light switch. Gain is 5/6 (default). **Levels are hot:** at a hand's width, normal
+counting hits full scale (1.00) several times (S1 and S3), so at 2–3 cm in the helmet it will clip —
+drop gain to ~3 and run A2. Noise floor −49 dBFS with ENC off, −69 with ENC High. The protective
+film on the TX charging pads must be peeled off or the dock does nothing. The user asked why not
+ENC High: the answer given was that it is a ride A/B (Off / Low / High on the same stretch), not a
+lab call.
+
+*2026-09-28, late — S4 **passes**, on every source.* A debug "USB stereo test" in the app
+(`android/…/audio/UsbStereoProbe.kt`; Settings, bottom; not the talk path) recorded 15 s per source
+at 48 kHz `CHANNEL_IN_STEREO` 16-bit, `setPreferredDevice(usb)`, no effects, in `MODE_NORMAL`. For
+`UNPROCESSED`, `MIC` and `CAMCORDER` alike: routed `usb_device` "USB-Audio - Wireless Microphone",
+`getFormat()` 48 kHz **2 ch**, the flinger's input thread 48 kHz 2 ch (left, right), **no
+`voip_tx`**, `mode 0` and media out `[bt_a2dp]` before, during and after — and the user heard the AirPods
+music play smoothly through all three clips. Pink TX counted first →
+L-louder windows, yellow second → R-louder, **15–39 dB apart**, whole-clip correlation −0.01 to
+−0.02, 0.3–0.4 % identical samples (on-phone verdict and the laptop's `lr.py` agree). Noise floor
+between words −55 to −58 dBFS on all three. The Pixel reports
+`PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED = false`, yet `UNPROCESSED` delivered the same clean
+stereo — on a USB input no source seems to add processing; **any of the three will do**, `MIC` is
+the conservative pick. Peaks hit 1.00 again at gain 5. WAVs `captures/usb-{unprocessed,mic,
+camcorder}-20260928-*.wav` (gitignored). **The Pixel side of §2.2 is closed.** Gain then set to 3/6 in the vendor app.
+
+*2026-09-28, late — A2 **passes** at gain 3* (`captures/lark-a2-shout-gain3.wav`, laptop,
+S24_3LE, gitignored). RX moved Pixel → laptop and both TXs power-cycled first, so gain 3 **persists**
+without the app (normal speech at 2–3 cm now peaks 0.1–0.34, where gain 5 hit 1.00 at a hand's
+width). Pink TX two fingers from the mouth corner, yellow across the room. Normal: RMS −32…−40 dBFS,
+peaks ≤ 0.34. Raised: −23…−28, peaks ≤ 0.47 (**6.6 dB headroom**). Loud/shouting: −13.5…−22, peaks
+0.74–0.999, **one flat top in ~12 s of shouting** (30 samples ≈ 0.6 ms at 36.0 s) plus 2 samples at
+38.5 s. **No pumping:** the floor between words and in the silence after the shouts (−66…−68 dBFS)
+equals the floor before (−67…−69). Yellow picked the shouts up acoustically ~30 dB below pink.
+Silent floor L −68 dBFS vs R −61.5; gain is one setting for both mics (user), so the 6.5 dB is
+the room at yellow's spot, not the kit. If wind
+adds level at speed, gain 2 is the next step.
+
+*Same evening, user decisions:* the gap measurement (§5 step 0) is **waived** — the user has the
+helmet and says the TX with its furry windscreen fits. The 30 min **A3 soak is skipped** as too
+long; its question (does 2.4 GHz from the Pixel's hotspot and A2DP, centimetres from the RX, cause
+dropouts?) moves to the ride recording, which exercises exactly that configuration.
+
+*Helmet test, gain 3* (`captures/lark-helmet-gain3.wav`, laptop 1 m away, pink TX with fur inside
+the chin bar at the mouth corner, visor down, yellow off, ENC off). Normal speech: words at −28…−39
+dBFS RMS, peaks 0.1–0.47, **one** clip (19 samples ≈ 0.4 ms at 9.5 s). Raised: −21…−27, peaks ≤
+0.52, clean. Loud: −10…−18, peaks 0.6–0.999, clips at 37.0 s (22 samples), 37.5 (2), 42.0 (7) —
+≈ 0.6 ms in ~12 s of shouting. **Breath: no pops** — four mouth exhalations peaked 0.05, 25+ dB under
+speech; the fur works. Counting while turning the head came out ~10 dB quieter than the first
+normal counting (softer voice or the mouth moving off the TX — not known). Silent floor −63…−68 dBFS.
+So the helmet behaves like A2 at 2–3 cm: fine at gain 3 indoors, shouting at the edge. **Recommended
+for the ride: gain 2** — wind adds its own level at the capsule, clipping happens in the TX before
+anything can undo it, and the floor has 40+ dB to spare. **Before the ride:** read the ⓘ of "Schedule
+power off" (15 min) — if it powers a TX off after 15 min of silence, it will die mid-ride; and a long
+recording on the Pixel (the probe only does 15 s clips).
+
+*EQ for the ride:* the app offers Equalization / Low / Bright; it stays on **Equalization**, taken
+to be the default (the app does not say it is flat). Low would lift the band wind lives in; Bright is
+a treble lift that the Pixel app can apply in software later, on a capture that was not shaped at the
+source. One variable per ride: noise cancelling Off vs High.
+
+*Desk check of the long recording (23:49, `captures/usb-ride-20260928-234945.wav`), gain 2, pink
+TX only:* 47.7 s, **0 dropped**, the phone was locked 2.7 s in (`Going to sleep due to power_button`)
+and the recording ran on. With yellow off, **R is exact digital zero** (so a TX that is off, and
+probably one that loses the link, reads as zeros, not noise). Noise cancelling off → on by a TX
+press at ~27 s: the background between words went from −76 to **−92…−94 dBFS** (≈ the 16-bit
+floor), speech level unchanged; L carries exact-zero runs up to 82 ms in the on part. So ENC gates
+to near-silence between words: **on the ride, listen for clipped word starts with ENC on**, and zeros
+are no dropout signature while it is on. Which level (Low or High) the press lands on is not
+confirmed. AirPods were not connected (media out `speaker`).
+
+*The RX's HID interface, read on the laptop (2026-09-28, `/sys/class/hidraw/hidraw1/device/
+report_descriptor`, no root):* report 3 = Consumer Control **input** (16 bits: mute, volume ±,
+play/pause, next/previous and similar — the RX can send media keys); report 6 = vendor page `0xFF52`,
+159-byte **feature**; report 8 = vendor page `0xFF53`, 63-byte **input + output** — a command/response
+channel; report 5 = vendor page `0xFF12`, 63-byte feature. The vendor app's settings (Stereo, gain,
+ENC, mute, EQ) almost certainly travel over report 8, but its command bytes are **undocumented**;
+learning them means decompiling `com.hollyland.larkc1` (no decompiler installed yet). `/dev/hidraw1`
+is root-only on the laptop; on Android an app reaches it through `UsbManager` after a USB permission
+prompt.
 
 ## How to read the grades
 

@@ -706,6 +706,33 @@ WAV that plays and is the right length, and **no change** to `capture: read N fr
 or to any `live cue:` timing; `audio devices:` at start-up listing the AirPods and the built-in
 devices, and `+`/`-` lines when a cable goes in (Stage B's first reading).
 
+### S4 USB stereo probe (2026-09-28) — the Lark A1 receiver as two channels
+
+**Why.** Gate S4 of `research/MIC.md` §6: one Lark A1 Duo in Stereo mode puts the rider on L and
+the passenger on R; the question was whether *this app* (not just the stock Camera) gets both.
+`VOICE_COMMUNICATION` cannot — its `voip_tx` port is mono — so the talk path was not the place to ask.
+
+**What was built.** `audio/UsbStereoProbe.kt`: a debug button at the bottom of Settings
+(`UiAction.UsbStereoProbe`, run by `LinkHost`, refused during a talk; TALK is refused while it runs).
+Own daemon thread; never touches the audio mode or the communication device. One 15 s clip per
+source (`UNPROCESSED`, `MIC`, `CAMCORDER`), 48 kHz stereo 16-bit, `setPreferredDevice(usb)`, no
+effects; beep (media stream) at start, double beep at end; WAV `captures/usb-<source>-<stamp>.wav`
+through `PcmDump` (which gained `channels`, default 1). Pure `audio/StereoStats.kt` (6 tests) gives
+the verdict from half-second windows: TWO CHANNELS when both an L-louder and an R-louder window
+(≥ 10 dB, louder side ≥ −45 dBFS) occur at least twice. Lines: `usb probe <src>: routed … format
+48000 Hz 2 ch, mode 0, media out [bt_a2dp]` and `usb probe <src>: L … → TWO CHANNELS`.
+
+**Verified on the device, 2026-09-28 23:08:** all three sources TWO CHANNELS, 0 dropped, A2DP
+untouched; numbers in `research/MIC.md` §"Status". 201 tests, 0 fail, 2 skipped; `lintDebug` 0 errors.
+
+**Long recording (same evening, for the ride).** `startLong`/`stopLong` on the same class, second
+button under the first ("start long Lark recording" / "Stop long Lark recording",
+`UiAction.LongRecording`, `LinkStatus.longRecording`): source `MIC`, until stopped or 1.6 GB (~2 h
+25 min), file `usb-ride-<stamp>.wav`; progress line every 5 min with the dump's `dropped`, and the
+route re-read every second (`route changed to …` — a pulled receiver would otherwise fall back to the
+built-in mic silently). `LinkHost.stop()` ends it. Installed 2026-09-28 23:41; Desk check 23:49: 47.7 s with the
+screen locked 2.7 s in, 0 dropped, route stayed `usb_device`.
+
 ## 3. Not done, in priority order
 
 Coordinator spec updates, all implemented: (1) DTX frames not sent, kind-1 = activity,

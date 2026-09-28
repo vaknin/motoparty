@@ -199,6 +199,13 @@ private fun SettingsCard(settings: Settings, update: ((Settings) -> Settings) ->
     SwitchRow("Debug: record talk mic to WAV (files/captures). With no passenger connected, TALK records solo", settings.captureDump) { v ->
         update { it.copy(captureDump = v) }
     }
+    OutlinedButton(onClick = { Hub.actions.tryEmit(UiAction.UsbStereoProbe) }) {
+        Text("Debug: USB stereo test (Lark receiver, 3 × 15 s)")
+    }
+    val long = Hub.status.collectAsStateWithLifecycle().value.longRecording
+    Button(onClick = { Hub.actions.tryEmit(UiAction.LongRecording) }) {
+        Text(if (long) "Stop long Lark recording" else "Debug: start long Lark recording (until stopped)")
+    }
 }
 
 @Composable
