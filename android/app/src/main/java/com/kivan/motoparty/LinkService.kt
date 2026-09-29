@@ -75,7 +75,6 @@ class LinkService : LifecycleService() {
         when (intent?.action) {
             ACTION_STOP -> stopSelf()
             ACTION_TALK -> Triggers.fire(TriggerKind.TALK, TriggerSource.UI)
-            ACTION_MUSIC -> Triggers.fire(TriggerKind.MUSIC, TriggerSource.UI)
             // The way back from a drag onto the X. Only the setting is written; the collector in
             // onCreate starts the overlay and re-posts this notification.
             ACTION_SHOW_OVERLAY -> MotopartyApp.instance.settings.update { it.copy(overlayEnabled = true) }
@@ -132,14 +131,12 @@ class LinkService : LifecycleService() {
             if (s.talkOpen) append(" · TALKING")
             s.nowPlaying?.let { append(" · ${it.title}") }
         }
-        // Android shows three actions. While the floating buttons are hidden, getting them back
-        // matters more than the "Command" shortcut (which the buttons themselves also offer), so
-        // the middle slot swaps; Talk and Stop always stay.
+        // Talk and Stop always; "Show buttons" in between while the floating button is hidden.
+        // (There is no "Command" action any more: commands are spoken inside a talk.)
         val buttonsHidden = !MotopartyApp.instance.settings.value.overlayEnabled &&
             AndroidSettings.canDrawOverlays(this)
         val middle: NotificationCompat.Builder.() -> Unit = {
             if (buttonsHidden) addAction(0, "Show buttons", action(ACTION_SHOW_OVERLAY, 4))
-            else addAction(0, "Command", action(ACTION_MUSIC, 2))
         }
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
@@ -166,7 +163,6 @@ class LinkService : LifecycleService() {
         private const val NOTIFICATION_ID = 1
         const val ACTION_STOP = "com.kivan.motoparty.STOP"
         const val ACTION_TALK = "com.kivan.motoparty.TALK"
-        const val ACTION_MUSIC = "com.kivan.motoparty.MUSIC"
         const val ACTION_SHOW_OVERLAY = "com.kivan.motoparty.SHOW_OVERLAY"
 
         fun start(context: Context) {

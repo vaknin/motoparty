@@ -162,7 +162,7 @@ def is_dtx_packet(packet: bytes) -> bool:
 
 
 def is_voice_activity(packet: bytes) -> bool:
-    """Does this received packet count as "a non-DTX frame" for the talk silence timer?
+    """Does this received packet carry voice activity (a "non-DTX frame")? Host stats only.
 
     With DTX on, libopus still emits a comfort-noise update every ~400 ms of silence, and
     with any background noise those are full-size (40-55 bytes at these settings), so size

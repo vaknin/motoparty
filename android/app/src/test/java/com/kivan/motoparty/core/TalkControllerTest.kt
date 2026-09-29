@@ -9,8 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TalkControllerTest {
-    private var now = 0L
-    private val talk = TalkController({ now })
+    private val talk = TalkController()
 
     @Test
     fun localTriggerToggles() {
@@ -20,25 +19,23 @@ class TalkControllerTest {
         assertFalse(talk.isOpen)
     }
 
+    /** PROTOCOL.md "Commands": `play`/`resume`/`end` close the talk as the side that spoke. */
+    @Test
+    fun spokenCommandClosesAsTheSpeaker() {
+        assertNull("nothing to close", talk.onCommandClose(Role.CLIENT))
+        talk.onLocalTrigger()
+        assertEquals(Action.Close("client", "trigger"), talk.onCommandClose(Role.CLIENT))
+        assertFalse(talk.isOpen)
+        talk.onClientOpenRequest()
+        assertEquals(Action.Close("host", "trigger"), talk.onCommandClose(Role.HOST))
+    }
+
     @Test
     fun clientRequestsAreDecidedByHost() {
         assertNull(talk.onClientCloseRequest())
         assertEquals(Action.Open("client"), talk.onClientOpenRequest())
         assertNull("already open", talk.onClientOpenRequest())
         assertEquals(Action.Close("client", "trigger"), talk.onClientCloseRequest())
-    }
-
-    @Test
-    fun closesAfterTwentySecondsOfMutualSilence() {
-        talk.onLocalTrigger()
-        now = 9_000
-        talk.noteActivity()
-        now = 28_999
-        assertNull(talk.tick())
-        now = 29_000
-        assertEquals(Action.Close("host", "silence"), talk.tick())
-        assertNull(talk.tick())
-        assertEquals("PROTOCOL.md: 20 s since 2026-09-20", 20_000L, TalkController.SILENCE_MS)
     }
 
     /**
@@ -62,7 +59,7 @@ class TalkControllerTest {
         talk.onLocalTrigger()
         assertEquals(Action.Close("client", "trigger"), talk.onClientCloseRequest(CloseReason.TRIGGER))
         talk.onLocalTrigger()
-        assertEquals(Action.Close("client", "trigger"), talk.onClientCloseRequest(CloseReason.SILENCE))
+        assertEquals(Action.Close("client", "trigger"), talk.onClientCloseRequest(CloseReason.LINK))
     }
 
     /** The host needs this to decide whether *it* was the phone that asked, and so must earcon. */

@@ -34,7 +34,6 @@ MAX_FRAME = 64 * 1024  # bytes of JSON; a larger length prefix is a protocol err
 
 PING_INTERVAL_MS = 2000
 LIVENESS_TIMEOUT_MS = 6000
-TALK_SILENCE_MS = 20_000
 RESUME_LEAD_MS = 1500
 PLAY_LEAD_MS = 300
 READY_TIMEOUT_MS = 8000
@@ -74,7 +73,7 @@ def now_ms() -> int:
 # (enum), ("obj", schema) or ("list", schema).
 _ROLE = ("host", "client")
 _BY = ("host", "client")
-_REASON = ("trigger", "silence", "link", "unavailable")
+_REASON = ("trigger", "link", "unavailable")
 # Volume is local (PROTOCOL.md "Commands"): volumeUp/volumeDown are not wire actions.
 _ACTION = ("pause", "resume", "next", "previous")
 _EARCON = ("ok", "error")

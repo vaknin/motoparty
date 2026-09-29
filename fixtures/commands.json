@@ -208,6 +208,30 @@
     "kind": "artist",
     "query": "beyoncé"
    }
+  },
+  {
+   "text": "over",
+   "expect": {
+    "action": "end"
+   }
+  },
+  {
+   "text": "End talk.",
+   "expect": {
+    "action": "end"
+   }
+  },
+  {
+   "text": "hang up please",
+   "expect": {
+    "action": "end"
+   }
+  },
+  {
+   "text": "over and out",
+   "expect": {
+    "action": "unknown"
+   }
   }
  ]
 }

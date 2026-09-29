@@ -5,10 +5,11 @@ import com.kivan.motoparty.core.Role
 
 /**
  * Host-side talk authority, PROTOCOL.md "Talk flow". Pure state machine: callers turn the
- * returned [Action] into broadcasts and audio start/stop. Not thread-safe (host thread only);
- * [noteActivity] may be called from audio threads because it only writes a volatile.
+ * returned [Action] into broadcasts and audio start/stop. Not thread-safe (host thread only).
+ * Talk ends on a trigger, never on silence: the AirPods mic never goes DTX, so a silence close
+ * could not fire (user, 2026-09-29).
  */
-class TalkController(private val nowMs: () -> Long, private val silenceMs: Long = SILENCE_MS) {
+class TalkController {
     sealed interface Action {
         data class Open(val by: String) : Action
         data class Close(val by: String, val reason: String) : Action
@@ -20,9 +21,6 @@ class TalkController(private val nowMs: () -> Long, private val silenceMs: Long 
     /** [Role] of the side whose trigger opened the current (or last) talk. */
     var openedBy: String? = null
         private set
-
-    @Volatile
-    private var lastActivityMs = 0L
 
     /** A trigger fired on this phone: toggles. */
     fun onLocalTrigger(): Action = if (isOpen) close(Role.HOST, CloseReason.TRIGGER) else open(Role.HOST)
@@ -51,29 +49,20 @@ class TalkController(private val nowMs: () -> Long, private val silenceMs: Long 
      */
     fun onMicFailure(): Action? = if (isOpen) close(Role.HOST, CloseReason.UNAVAILABLE) else null
 
-    /** Someone sent a non-DTX frame. */
-    fun noteActivity() {
-        lastActivityMs = nowMs()
-    }
-
-    /** Call periodically; closes after [silenceMs] without activity on either side. */
-    fun tick(): Action? =
-        if (isOpen && nowMs() - lastActivityMs >= silenceMs) close(Role.HOST, CloseReason.SILENCE) else null
+    /**
+     * A spoken command ends the talk (PROTOCOL.md "Commands": `play`, `resume`, `end`): closed
+     * like a press by the side that spoke it, [by].
+     */
+    fun onCommandClose(by: String): Action? = if (isOpen) close(by, CloseReason.TRIGGER) else null
 
     private fun open(by: String): Action {
         isOpen = true
         openedBy = by
-        lastActivityMs = nowMs()
         return Action.Open(by)
     }
 
     private fun close(by: String, reason: String): Action {
         isOpen = false
         return Action.Close(by, reason)
-    }
-
-    companion object {
-        /** PROTOCOL.md "Talk flow": close after this long without a non-DTX frame either way. */
-        const val SILENCE_MS = 20_000L
     }
 }

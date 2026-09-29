@@ -1,14 +1,38 @@
 import pytest
 
 from conftest import load_fixture
-from motoparty_peer.commands import normalise, parse_command
+from motoparty_peer.commands import normalise, parse_command, wake
 
 CASES = load_fixture("commands.json")["cases"]
+WAKE_CASES = load_fixture("wake.json")["cases"]
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: repr(c["text"]))
 def test_fixture(case):
     assert parse_command(case["text"]) == case["expect"]
+
+
+@pytest.mark.parametrize("case", WAKE_CASES, ids=lambda c: repr(c["text"]))
+def test_wake_fixture(case):
+    assert wake(case["text"]) == case["expect"]
+
+
+@pytest.mark.parametrize(
+    "text, expect",
+    [
+        ("okay moto party hang up", "hang up"),
+        ("Moto party… volume up", "volume up"),
+        ("please motoparty pause", None),  # only hey/ok/okay precede the wake word
+        ("motor", None),
+        ("party", None),
+    ],
+)
+def test_wake_extra(text, expect):
+    assert wake(text) == expect
+
+
+def test_wake_then_parse():
+    assert parse_command(wake("Hey Moto Party, end talk please")) == {"action": "end"}
 
 
 @pytest.mark.parametrize(

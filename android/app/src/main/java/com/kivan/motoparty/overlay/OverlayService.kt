@@ -28,8 +28,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
- * Floating TALK / MUSIC buttons above the navigation app. Two ≥96 dp zones, tap to trigger,
- * drag anywhere to move (position is remembered). Colour = state.
+ * One floating TALK button above the navigation app: a ≥96 dp glove-sized zone, tap to toggle
+ * talk, drag to move (position is remembered). Colour = state. Since option A (2026-09-29) it is
+ * the only button: commands are spoken inside a talk, so the MUSIC zone is gone.
  *
  * The position is kept as a fraction of the usable area — the display minus the system-bar and
  * cutout insets, which is the frame this window's `x`/`y` are relative to (see [OverlayPlacement])
@@ -45,7 +46,6 @@ class OverlayService : LifecycleService() {
     private lateinit var wm: WindowManager
     private var root: LinearLayout? = null
     private lateinit var talk: TextView
-    private lateinit var music: TextView
     private lateinit var params: WindowManager.LayoutParams
 
     /** The X target: a second, untouchable window, only present while a drag is running. */
@@ -79,11 +79,9 @@ class OverlayService : LifecycleService() {
         }
         loadPosition()
         talk = zone("TALK")
-        music = zone("MUSIC")
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(talk)
-            addView(music)
             setOnTouchListener(DragOrTap())
             // WRAP_CONTENT: the real size is only known once laid out, and it changes with the
             // font scale, so the clamp is redone on every layout pass.
@@ -141,7 +139,7 @@ class OverlayService : LifecycleService() {
     private fun windowSize(): Pair<Int, Int> {
         val v = root
         if (v != null && v.width > 0 && v.height > 0) return v.width to v.height
-        return dp(ZONE_W_DP + 2 * ZONE_MARGIN_DP) to dp(2 * (ZONE_H_DP + 2 * ZONE_MARGIN_DP))
+        return dp(ZONE_W_DP + 2 * ZONE_MARGIN_DP) to dp(ZONE_H_DP + 2 * ZONE_MARGIN_DP)
     }
 
     private fun loadPosition() {
@@ -262,7 +260,7 @@ class OverlayService : LifecycleService() {
 
     private fun zone(label: String) = TextView(this).apply {
         text = label
-        textSize = 18f
+        textSize = 20f
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
         layoutParams = LinearLayout.LayoutParams(dp(ZONE_W_DP), dp(ZONE_H_DP))
@@ -272,23 +270,11 @@ class OverlayService : LifecycleService() {
     private fun render(s: LinkStatus) {
         val talkColor = when {
             s.talkOpen -> 0xE02E7D32.toInt() // green: live
-            s.clientName == null -> 0xC0616161.toInt() // grey: nobody to talk to
+            s.clientName == null -> 0xC0616161.toInt() // grey: no passenger (a press opens a solo talk)
             else -> 0xE01565C0.toInt() // blue: ready
         }
-        val musicColor = when {
-            s.listening -> 0xE0C62828.toInt() // red: mic open for a command
-            s.busy != null -> 0xE0EF6C00.toInt() // amber: searching / loading
-            s.playing -> 0xE06A1B9A.toInt() // purple: music playing
-            else -> 0xC0424242.toInt()
-        }
         talk.background = rounded(talkColor)
-        music.background = rounded(musicColor)
         talk.text = if (s.talkOpen) "TALKING" else "TALK"
-        music.text = when {
-            s.listening -> "LISTENING"
-            s.busy != null -> "…"
-            else -> "MUSIC"
-        }
     }
 
     private fun rounded(color: Int) = GradientDrawable().apply {
@@ -377,10 +363,8 @@ class OverlayService : LifecycleService() {
                         fy = OverlayPlacement.fraction(params.y, h, dh)
                         savePosition()
                     } else if (e.actionMasked == MotionEvent.ACTION_UP) {
-                        // Which zone was hit: TALK is the top half.
-                        val kind = if (e.y < talk.bottom + dp(4)) TriggerKind.TALK else TriggerKind.MUSIC
                         v.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
-                        Triggers.fire(kind, TriggerSource.OVERLAY)
+                        Triggers.fire(TriggerKind.TALK, TriggerSource.OVERLAY)
                     }
                     dragging = false
                 }
@@ -392,8 +376,9 @@ class OverlayService : LifecycleService() {
     private companion object {
         const val KEY_FX = "fx"
         const val KEY_FY = "fy"
-        const val ZONE_W_DP = 112
-        const val ZONE_H_DP = 100
+        /** One square button, well over the 96 dp glove minimum. */
+        const val ZONE_W_DP = 120
+        const val ZONE_H_DP = 120
         const val ZONE_MARGIN_DP = 4
 
         /** The X target: a 112 dp circle (> the 96 dp glove minimum), 12 dp off the bottom. */

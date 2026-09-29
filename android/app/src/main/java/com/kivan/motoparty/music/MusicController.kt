@@ -49,6 +49,13 @@ class MusicController(
         private set
     private var duckedForTalk = false
     private var talkPausing = false
+    /**
+     * A `pause` was said in this talk: nothing resumes after it, not even a track that `next` or
+     * `previous` picked later in the same talk (PROTOCOL.md "Commands", *Effect on the talk*).
+     */
+    private var resumeCancelled = false
+    /** No `music.play` is anchored before this host time (a spoken `play` that ended a talk). */
+    private var startNotBeforeMs = 0L
 
     fun setQueue(tracks: List<Track>, start: Int = 0) {
         queue = QueueEdits.capped(tracks, start)
@@ -112,6 +119,7 @@ class MusicController(
         // During talk both sides are already paused locally; a pause now only cancels the resume
         // talk was holding, so the music stays paused when talk closes.
         pausedForTalk = false
+        if (talkPausing) resumeCancelled = true
         val a = sync.anchor ?: return
         if (!a.playing) return
         val pos = a.expectedAt(hostNow()).coerceAtLeast(0)
@@ -121,12 +129,36 @@ class MusicController(
     }
 
     fun resume() {
+        resumeCancelled = false
         val a = sync.anchor ?: return
         if (a.playing) return
         playFrom(a.id, a.positionMs, START_LEAD_MS)
     }
 
     fun togglePlayPause() = if (isPlaying) pause() else resume()
+
+    /** Is there a track [resume] could start? */
+    val canResume: Boolean get() = sync.anchor != null
+
+    /**
+     * A spoken `play` is ending the talk: the music that talk paused must not come back for the
+     * second or two before the new track does. Returns whether there was a resume to drop, so the
+     * host can [resume] after all if the search fails.
+     */
+    fun dropResumeAfterTalk(): Boolean {
+        val had = pausedForTalk
+        pausedForTalk = false
+        return had
+    }
+
+    /**
+     * The next `music.play` is anchored no earlier than [atHostMs] (and started cold): a track
+     * picked by a spoken `play` must not start before the usual resume lead after the talk it
+     * closed, or both phones would start it into a headset still switching back from HFP.
+     */
+    fun startNotBefore(atHostMs: Long) {
+        startNotBeforeMs = atHostMs
+    }
 
     fun stop() {
         startJob?.cancel()
@@ -195,6 +227,7 @@ class MusicController(
             return
         }
         talkPausing = true
+        resumeCancelled = false
         if (a != null && a.playing) {
             pausedForTalk = true
             val pos = a.expectedAt(hostNow()).coerceAtLeast(0)
@@ -210,6 +243,7 @@ class MusicController(
             duckedForTalk = false
         }
         talkPausing = false
+        resumeCancelled = false
         if (!pausedForTalk) return
         pausedForTalk = false
         val a = sync.anchor ?: return
@@ -267,14 +301,17 @@ class MusicController(
 
     private fun playFrom(id: String, positionMs: Long, leadMs: Long, cold: Boolean = false) {
         if (talkPausing) {
-            // A track finished loading mid-talk: park it until talk closes.
+            // A track finished loading mid-talk (or `next`/`previous` picked it): park it until
+            // talk closes — unless a `pause` in this talk said nothing should resume.
             sync.apply(Anchor(id, positionMs, hostNow(), playing = false))
-            pausedForTalk = true
+            pausedForTalk = !resumeCancelled
             onChanged()
             return
         }
-        val a = Anchor(id, positionMs, hostNow() + leadMs, playing = true)
-        sync.apply(a, cold)
+        val at = hostNow() + leadMs
+        val late = startNotBeforeMs > at
+        val a = Anchor(id, positionMs, if (late) startNotBeforeMs else at, playing = true)
+        sync.apply(a, cold || late)
         send(MusicPlay(a.id, a.positionMs, a.atHostTimeMs))
         onChanged()
     }

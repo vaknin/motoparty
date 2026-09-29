@@ -10,7 +10,7 @@ Everything lands in the `<out-dir>` given: `run.log`, `client*.log` (the peer, e
 | `talk_cycles.sh` | open→HFP / close→media ms per cycle (6 cycles, a fast open→close→open, one 20 s talk), exceptions, final audio mode, `talk stats` per cycle, host capture alive vs DTX | earcons | left alone ~3 min |
 | `music_sync.sh` | the `SyncController` trace over play → settle → talk → 3 min A2DP; what each speed nudge led to, reading jumps with no speed change | ~5 min of music | left alone, AirPods connected |
 | `unavailable.sh` | both `talk.close{reason:"unavailable"}` paths, expectation by expectation | one error earcon | left alone; the app restarts twice |
-| `beeps.sh` | a listening test: is each earcon there, announced before it plays (live/closed, closed on silence, error) | 5 earcons and nothing else | unlocked, left alone ~1 min |
+| `beeps.sh` | a listening test: is each earcon there, announced before it plays (live/closed, error) | 3 earcons and nothing else | unlocked, left alone ~1 min |
 | `overlay_rotation.sh` | overlay frame on screen in each rotation, a TALK tap reaches the app, still on screen after a drag; then (`DISMISS=1`) the drag onto the X: the target window, the buttons gone with `overlayEnabled=false` and the position kept, and back again | none | unlocked, left alone; screen rotates; the app is restarted at the end |
 | `a2dp_codec.sh` | the Bluetooth codec music goes to the headset with (AAC or SBC; PASS on AAC), from the connected or last A2DP device | none | anything; read-only, seconds |
 | `hotspot_test.sh` + `hotspot_rtt.py` | RTT over the Pixel hotspot per phase (see the script header) | short | on its own hotspot |
@@ -47,7 +47,7 @@ drift N ms` line when there is one: that is where the nudge landed.
 **Dry run.** `DRY=1` needs no phone: it starts `motoparty-peer host` on 127.0.0.1 (fake host
 `talk` / `mic off` / `load` stand in for the Pixel) and runs the same peer-side steps and the
 summary. Proven 2026-09-19 for `talk_cycles`, `unavailable` and `music_sync` (2026-09-20 for `beeps`,
-where the dry run checks the sequence and the silence close, never the sound); the summaries
+where the dry run checks the sequence, never the sound); the summaries
 were also checked against the real logcat in `results/2026-09-19-bt-on-2.4ghz/`.
 `overlay_rotation.sh` has no dry run. **Not yet proven on the device**: every adb step of the
 four new scripts (the overlay frame parse from `dumpsys window`, the TALK tap, the

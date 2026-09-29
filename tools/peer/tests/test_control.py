@@ -129,7 +129,7 @@ def test_enums_match_the_spec():
     from motoparty_peer.protocol import SCHEMAS
 
     assert SCHEMAS["music.control"]["action"][0] == ("pause", "resume", "next", "previous")
-    assert set(SCHEMAS["talk.close"]["reason"][0]) == {"trigger", "silence", "link", "unavailable"}
+    assert set(SCHEMAS["talk.close"]["reason"][0]) == {"trigger", "link", "unavailable"}
 
 
 @pytest.mark.parametrize("by", ["host", "client"])

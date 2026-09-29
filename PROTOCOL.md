@@ -55,7 +55,7 @@ catches up.
 | `ping`          | C→H   | `id`: int, `t0`: client clock ms at send |
 | `pong`          | H→C   | `id`, `t0` (echoed), `t1`: host clock at receive, `t2`: host clock at send |
 | `talk.open`     | both  | `by`: `"host"`\|`"client"`. C→H is a request; H→C is the decision |
-| `talk.close`    | both  | `by`, `reason`: `"trigger"`\|`"silence"`\|`"link"`\|`"unavailable"` |
+| `talk.close`    | both  | `by`, `reason`: `"trigger"`\|`"link"`\|`"unavailable"` |
 | `music.load`    | H→C   | `id`: string, `path`: string (e.g. `/track/<id>.m4a`), `title`, `artist`, `album` (optional), `durationMs`: int |
 | `music.ready`   | C→H   | `id` — the file is fully cached and decodable |
 | `music.error`   | C→H   | `id`, `message` — starting with `"not decodable"` when the file downloaded but will not play (see Tracks) |
@@ -63,7 +63,7 @@ catches up.
 | `music.pause`   | H→C   | `id`, `positionMs` |
 | `music.stop`    | H→C   | (nothing) |
 | `music.control` | C→H   | `action`: `"pause"`\|`"resume"`\|`"next"`\|`"previous"` (button presses on the client; volume is local, see Commands) |
-| `command.text`  | C→H   | `text`: recognised utterance, `lang`: BCP-47 tag |
+| `command.text`  | C→H   | `text`: the recognised command, after the wake word (see Commands), `lang`: BCP-47 tag |
 | `music.search`  | C→H   | `id`: int (request id), `kind`: `"songs"`\|`"albums"`\|`"playlists"`, `query`: string. See Browsing |
 | `music.browse`  | C→H   | `id`: int, `ref`: string — the `ref` of an album or playlist result |
 | `music.results` | H→C   | `id` (echoed), `items`: array of result items, `error` (optional): string to show instead of an empty list |
@@ -175,9 +175,8 @@ link re-encodes to AAC or SBC anyway.
    switch the headset to call mode, play the "live" earcon when their mic is open, and start
    sending audio.
 3. Ends when either side triggers again (`talk.close{reason:"trigger"}`, client→host as a
-   request) or after 20 s in which neither side sent a non-DTX frame (host decides,
-   `reason:"silence"`; 20 s since 2026-09-20, was 10 s: a pause in a conversation must not
-   cost another headset profile switch) or on link loss.
+   request), when a spoken command ends it (see Commands), or on link loss. Never on silence: the 20 s silence close was removed on
+   2026-09-29, because a headset mic that never goes DTX (the AirPods) could never trigger it.
 4. Host broadcasts `talk.close` and `state{talk:false}` (except after the host's own
    `"unavailable"` answer in step 1: talk never opened and `state.talk` stayed false; a
    client's `"unavailable"` comes after the host's `talk.open`, so it is broadcast as usual).
@@ -241,9 +240,33 @@ the Music flow: an enqueued track is loaded, readied and played exactly as befor
 
 ## Commands
 
-The phone whose trigger fired records the utterance and runs on-device ASR; the client sends
-`command.text`. The host parses it (grammar below), acts, and sends `announce` to the client
-and speaks it itself.
+Commands are spoken **inside a talk** (since 2026-09-29; there is no separate command mode or
+command trigger). While a talk is open, each phone runs on-device ASR on its own talk
+microphone — the same capture that feeds the encoder, taken before the encoder so DTX does not
+cut it — one result per phrase. A phrase is a command only if it starts with the wake word
+(below); every other phrase is conversation, which is never sent and never acted on. The client
+sends the part after the wake word as `command.text`. The host parses it (grammar below), acts,
+and sends `announce` to the client and speaks it itself.
+
+**Wake word.** Normalise (as below), drop leading `hey`/`ok`/`okay` words, then the phrase must
+start with `motoparty`, `moto party` or `motor party` as whole words (ASR returns "Moto party",
+two words). The rest, possibly empty, is the command text. A phrase that is only the wake word
+arms that phone: its next phrase within 5 s is a command without the wake word, and the phone
+plays the `listen` earcon as the acknowledgement. When the host's talk has no client (a solo
+talk), every phrase on the host is a command and the wake word is optional. Vectors:
+`fixtures/wake.json` (`expect` is the command text, or `null` for "not a command").
+
+**Effect on the talk.** `play …` and `resume` end the talk: the host closes it
+(`talk.close{by: <the side that spoke>, reason:"trigger"}`) as soon as the command parses, and
+the music starts after the headset is back in media mode, like any resume after talk; its
+`announce` is spoken after that switch too. They close the talk even if they then fail (no
+search result, nothing to resume): the error is announced after the switch and music that was
+playing before the talk resumes. `end` ends the talk exactly like a press (music that was
+playing resumes) and has no `announce`: the closing earcon is its acknowledgement. A bare wake
+word while already armed re-arms.
+`pause`, `next`, `previous` and the volume commands leave the talk open: music is paused during
+a talk anyway, so `next`/`previous` choose what resumes after it and `pause` cancels that
+resume (and stays cancelled through a later `next`/`previous`). Their `announce` is spoken in the talk.
 
 Volume is local: `volume up/down` changes the volume of the phone it was spoken on (or whose
 button was pressed) and is never sent. The client therefore runs the same parser on its own
@@ -256,6 +279,7 @@ play [song|album|artist|playlist] <query>
 pause | stop | resume | continue
 next | skip | previous | back
 volume up | louder | volume down | quieter
+over | end talk | hang up                       (action "end": close the talk)
 ```
 
 Normalisation before matching, per Unicode code point (not grapheme cluster): lowercase;
@@ -276,3 +300,4 @@ else → `announce{text:"Didn't catch that", earcon:"error"}`. Vectors: `fixture
 | `fixtures/clock.json`            | offset estimator incl. negative RTT, ties, window eviction |
 | `fixtures/voice/header.json`     | UDP header encode/decode and rejection |
 | `fixtures/commands.json`         | command parser |
+| `fixtures/wake.json`             | wake word: command text after it, or not a command |

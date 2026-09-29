@@ -1,8 +1,8 @@
 """`motoparty-peer host`: a minimal fake Pixel, for testing the iOS client without the Pixel.
 
-Advertises over Bonjour, serves control/voice/HTTP, is the talk authority (incl. the 20 s
-silence close), echoes voice back to the client, serves its --track files, parses command.text
-and answers the Browsing messages (search, browse, enqueue, edit) from those files.
+Advertises over Bonjour, serves control/voice/HTTP, is the talk authority (talk ends on a
+trigger or a talk-ending command, never on silence), echoes voice back to the client, serves its
+--track files, parses command.text (with its effect on an open talk) and answers the Browsing messages (search, browse, enqueue, edit) from those files.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import discovery
-from .commands import UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, parse_command
+from .commands import TALK_ENDING, UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, parse_command
 from .music import VALID_ID, TrackInfo, browse, load_library, search
 from .opus import is_voice_activity
 from .protocol import (
@@ -85,6 +85,12 @@ class Host:
         self.talk_opened = 0
         self.last_activity = 0
         self.resume_after_talk = False
+        # A spoken `pause` in the talk cancels the resume after it, including one that a
+        # `next`/`previous` still loading would set (PROTOCOL.md "Commands", Effect on the talk).
+        self.no_resume = False
+        # A track that a spoken `play` loads does not start before the headsets are back in
+        # media mode after the talk that command ended (PROTOCOL.md "Commands").
+        self.media_at = 0
         self.library: list[TrackInfo] = load_library(args.track or [])
         self.by_id = {t.id: t for t in self.library}
         # The current track (`load` plays the first library track), the upcoming queue
@@ -131,7 +137,6 @@ class Host:
                 log(f"bonjour: advertisement failed: {type(e).__name__}: {e}")
                 adv = None
         stdin_task = asyncio.create_task(self._stdin())
-        silence_task = asyncio.create_task(self._silence_watch())
         stats_task = asyncio.create_task(self._stats())
         try:
             async with server:
@@ -139,7 +144,7 @@ class Host:
         except asyncio.CancelledError:
             pass
         finally:
-            for t in (stdin_task, silence_task, stats_task):
+            for t in (stdin_task, stats_task):
                 t.cancel()
             for c in list(self.conns):
                 c.close()
@@ -309,6 +314,7 @@ class Host:
         now = now_ms()
         self.talk = True
         self.talk_opened = now
+        self.no_resume = False
         if self.music and self.music["playing"]:
             self._freeze_music(now)
             self.resume_after_talk = True
@@ -320,16 +326,16 @@ class Host:
         self.talk = False
         log(f"TALK CLOSED (by {by}, {reason})")
         self.send({"t": "talk.close", "by": by, "reason": reason}, quiet=self.current is None)
-        if self.resume_after_talk and self.music:
-            self.resume_after_talk = False
+        # A track still loading (a `next` in the talk) starts by itself once ready, so the old
+        # one does not resume in between; it keeps `no_resume` until then.
+        if self.resume_after_talk and self.music and not self.no_resume and not self._loading():
             self._play_from(self.music["positionMs"], now_ms() + RESUME_LEAD_MS)
+        self.resume_after_talk = False
+        if self._loading():
+            self.media_at = now_ms() + RESUME_LEAD_MS
+        else:
+            self.no_resume = False
         self.send(self.state(), quiet=self.current is None)
-
-    async def _silence_watch(self) -> None:
-        while True:
-            await asyncio.sleep(0.1)
-            if self.talk and now_ms() - max(self.talk_opened, self.last_activity) >= self.args.silence_ms:
-                self._close_talk("host", "silence")
 
     # ------------------------------------------------------------------ voice
 
@@ -405,15 +411,21 @@ class Host:
             except asyncio.TimeoutError:
                 log(f"music: no music.ready within {READY_TIMEOUT_MS} ms; playing alone")
             now = now_ms()
-            if self.talk:
+            if self.talk or self.no_resume:
                 self.music = {"id": t.id, "title": t.title, "artist": t.artist, "playing": False,
                               "positionMs": 0, "atHostTimeMs": now, "durationMs": t.duration_ms}
                 if t.art:
                     self.music["art"] = t.art
-                self.resume_after_talk = True
-                log("music: talk is open; will start when it closes")
+                if self.talk:
+                    self.resume_after_talk = not self.no_resume
+                    log("music: talk is open; " + ("resume cancelled, stays paused" if self.no_resume
+                                                   else "will start when it closes"))
+                else:
+                    self.no_resume = False
+                    log("music: `pause` was said in the talk; stays paused")
             else:
-                self._play_from(0, now + PLAY_LEAD_MS)
+                # after a talk, not before the headset is back in media mode (PROTOCOL.md "Talk flow" 4)
+                self._play_from(0, max(now + PLAY_LEAD_MS, self.media_at))
             self.send_state()
         finally:
             if self.pending_ready.get(t.id) is fut:
@@ -446,6 +458,7 @@ class Host:
             return False
         if self.talk:
             self.resume_after_talk = True
+            self.no_resume = False
             return True
         self._play_from(self.music["positionMs"], now_ms() + PLAY_LEAD_MS)
         self.send_state()
@@ -539,11 +552,30 @@ class Host:
         self.send_state()
 
     def _command(self, text: str) -> None:
+        """command.text from the client. Inside a talk it has an effect on the talk
+        (PROTOCOL.md "Commands", Effect on the talk): play/resume/end close it (by the client,
+        which spoke) as soon as the command parses, and their announce goes after that close;
+        pause/next/previous leave it open and choose what happens after it."""
         cmd = parse_command(text)
         log(f"   parsed: {cmd}")
         a = cmd["action"]
+        if self.talk and a in TALK_ENDING:
+            ok = a == "resume" and self._resume()
+            if a == "play" and self.track is not None:
+                self.resume_after_talk = False  # the new track starts instead of the old one
+            log(f"   {a!r} ends the talk")
+            self._close_talk("client", "trigger")
+            self.media_at = now_ms() + RESUME_LEAD_MS
+            if a == "resume":
+                self.send({"t": "announce", "text": "Resuming" if ok else "Nothing to resume",
+                           "earcon": "ok" if ok else "error"})
+                return
         if a == "unknown":
             self.send(dict(UNKNOWN_ANNOUNCE))
+            return
+        if a == "end":
+            if not self.talk:  # it closed above if it was open
+                log("   (no talk to end)")
             return
         if a == "play":
             if self.track is None:
@@ -552,13 +584,28 @@ class Host:
             self.send({"t": "announce", "text": f"Playing {self.track.title} by {self.track.artist}", "earcon": "ok"})
             self._start(self.track)
         elif a == "pause":
-            ok = self._pause()
+            if self.talk:
+                # music is already paused for the talk: cancel the resume after it
+                ok = self.resume_after_talk and not self.no_resume
+                self.no_resume = True
+                self.resume_after_talk = False
+            else:
+                ok = self._pause()
             self.send({"t": "announce", "text": "Paused" if ok else "Nothing is playing", "earcon": "ok" if ok else "error"})
         elif a == "resume":
             ok = self._resume()
             self.send({"t": "announce", "text": "Resuming" if ok else "Nothing to resume", "earcon": "ok" if ok else "error"})
         elif a in ("next", "previous"):
-            self.send({"t": "announce", "text": "Nothing queued", "earcon": "error"})
+            # Inside a talk the track loads but stays paused until the talk closes (see
+            # _load_and_play): it chooses what resumes after the talk.
+            pool = self.queue if a == "next" else self.history
+            if not pool:
+                self.send({"t": "announce", "text": "Nothing queued" if a == "next" else "Nothing before this",
+                           "earcon": "error"})
+                return
+            title = pool[0 if a == "next" else -1].title
+            self._music_control(a)
+            self.send({"t": "announce", "text": f"{'Next' if a == 'next' else 'Back to'}: {title}", "earcon": "ok"})
         elif a in VOLUME_ACTIONS:
             # Volume is local: a client that sends a volume utterance is misbehaving
             # (PROTOCOL.md "Commands": "A host that still receives a volume utterance in

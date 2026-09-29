@@ -36,14 +36,14 @@ struct ResultList: Equatable {
 }
 
 /// Owns every component and implements the client side of PROTOCOL.md:
-/// discovery → control → voice socket; talk and music flows; commands.
+/// discovery → control → voice socket; talk and music flows; commands
+/// spoken inside a talk.
 /// Everything here runs on the main queue.
 final class AppModel: ObservableObject {
     // MARK: Published UI state
     @Published private(set) var link: LinkStatus = .idle
     @Published private(set) var talkOpen = false
     @Published private(set) var talkRequested = false
-    @Published private(set) var listening = false
     @Published private(set) var hostState: HostState?
     @Published private(set) var nowPlaying: MusicLoad?
     @Published private(set) var musicPlaying = false
@@ -83,7 +83,10 @@ final class AppModel: ObservableObject {
         return self.session.outputLatencyMs + self.settings.latencyTrimMs
     }
     private let nowPlayingCenter = NowPlaying()
+    /// Speech recognition on the talk's own mic (PROTOCOL.md "Commands").
     private let transcriber = Transcriber()
+    /// Wake word and arming window over this talk's phrases.
+    private var wake = WakeGate()
     private let announcer = Announcer()
 
     // MARK: Link / music bookkeeping
@@ -158,6 +161,7 @@ final class AppModel: ObservableObject {
         session.onMediaServicesReset = { [weak self] in self?.mediaServicesReset() }
         session.onMuteGesture = { [weak self] in
             guard let self else { return }
+            Log.app.info("remote button: mute gesture, talk=\(self.talkOpen)")
             self.remoteAction(self.settings.playPauseAction)
         }
 
@@ -171,6 +175,8 @@ final class AppModel: ObservableObject {
         voiceEngine.onCaptureUp = { [weak self] in self?.playLiveCue(fallback: false) }
 
         player.onDrift = { [weak self] drift in self?.driftMs = drift }
+
+        transcriber.onPhrase = { [weak self] phrase in self?.heard(phrase) }
 
         announcer.onSpeakingChanged = { [weak self] speaking in
             self?.player.volume = speaking ? 0.35 : 1.0
@@ -221,7 +227,6 @@ final class AppModel: ObservableObject {
         talkRequested = false
         talkOpenPending = false
         micUnavailable = false
-        if listening { transcriber.cancel(); listening = false; restoreMediaRoute() }
         // An answer can no longer arrive for a request in flight.
         failPending(&searchResults, "Link lost")
         failPending(&collectionResults, "Link lost")
@@ -367,7 +372,7 @@ final class AppModel: ObservableObject {
 
     /// Plays `currentPlay` if the track is cached and nothing needs the mic.
     private func startMusicIfPossible() {
-        guard let play = currentPlay, !talkOpen, !listening else { return }
+        guard let play = currentPlay, !talkOpen else { return }
         guard cache.isCached(play.id) else {
             if let load = loads[play.id] { prefetch(load) }
             return
@@ -447,19 +452,24 @@ final class AppModel: ObservableObject {
             return
         }
         talkOpen = true
-        if listening { transcriber.cancel(); listening = false }
         announcer.stop()
         player.suspend()
         keepAlive.stop()
         do {
             try session.activate(.talk)
             voice?.beginCapture()
+            let transcriber = transcriber
             try voiceEngine.start(
                 sendAudio: { [weak self] data in self?.voice?.sendAudio(data) },
-                skipFrame: { [weak self] in self?.voice?.skipFrame() }
+                skipFrame: { [weak self] in self?.voice?.skipFrame() },
+                tee: { buffer in transcriber.append(buffer) }
             )
             session.armMuteGesture()
             armLiveCue()
+            // After the engine: recognition that fails costs the commands,
+            // never the talk.
+            wake.reset()
+            transcriber.start(language: settings.speechLanguage)
         } catch {
             // A call in progress, a route that failed, an engine that would
             // not start: this phone cannot talk.
@@ -516,6 +526,7 @@ final class AppModel: ObservableObject {
         talkRequested = false
         talkOpen = false
         session.disarmMuteGesture()
+        stopRecognition()
         voiceEngine.stop()
         restoreMediaRoute()
         updateNowPlaying()
@@ -533,6 +544,7 @@ final class AppModel: ObservableObject {
         talkOpen = false
         cancelLiveCue()
         session.disarmMuteGesture()
+        stopRecognition()
         voiceEngine.stop()
         restoreMediaRoute()
         earcons.play("end")
@@ -547,63 +559,53 @@ final class AppModel: ObservableObject {
         audioRoute = session.outputName
     }
 
-    // MARK: - Voice command
+    // MARK: - Commands inside talk
 
-    func commandButton() {
-        if listening {
-            transcriber.finish()
-            return
+    /// One phrase recognised on this phone's mic during a talk. Only a phrase
+    /// that starts with the wake word (or follows a bare one within 5 s) is a
+    /// command; everything else is conversation, never sent or acted on. The
+    /// client is never solo, so the wake word is always required.
+    private func heard(_ phrase: String) {
+        guard talkOpen else { return }
+        let kind = wake.classify(phrase, nowMs: MonotonicClock.nowMs())
+        Log.voice.info("heard: \"\(phrase, privacy: .public)\" (\(kind.label, privacy: .public))")
+        switch kind {
+        case .conversation:
+            break
+        case .armed:
+            earcons.play("listen")
+        case .command(let text):
+            lastHeard = text
+            runCommand(text)
         }
-        guard !talkOpen else { return }
-        guard link.isConnected else {
-            earcons.play("error")
-            return
-        }
-        listening = true
-        announcer.stop()
-        player.suspend()
-        keepAlive.stop()
-        do {
-            try session.activate(.command)
-            earcons.play("ok")
-            try transcriber.start(language: settings.speechLanguage, maxSeconds: settings.commandMaxSeconds) { [weak self] text in
-                self?.commandFinished(text)
-            }
-        } catch {
-            problem = error.localizedDescription
-            commandFinished(nil)
-        }
-        audioRoute = session.outputName
     }
 
-    private func commandFinished(_ text: String?) {
-        listening = false
-        restoreMediaRoute()
-        if let text {
-            lastHeard = text
-            // Volume is local (PROTOCOL.md "Commands"): the same parser the
-            // host runs decides, and a volume result never leaves this phone.
-            switch CommandParser.parse(text) {
-            case .volumeUp:
-                earcons.play(localVolume.up() ? "ok" : "error")
-            case .volumeDown:
-                earcons.play(localVolume.down() ? "ok" : "error")
-            default:
-                send(.commandText(CommandText(text: text, lang: settings.speechLanguage)))
-            }
-        } else {
-            earcons.play("error")
-            announcer.speak("Didn't catch that", language: "en-US")
+    /// Volume is local (PROTOCOL.md "Commands"): the same parser the host runs
+    /// decides, and a volume result never leaves this phone. Everything else,
+    /// `end` included, goes to the host, which decides what it does to the
+    /// talk (play/resume/end close it with the usual talk.close).
+    private func runCommand(_ text: String) {
+        switch CommandParser.parse(text) {
+        case .volumeUp:
+            earcons.play(localVolume.up() ? "ok" : "error")
+        case .volumeDown:
+            earcons.play(localVolume.down() ? "ok" : "error")
+        default:
+            send(.commandText(CommandText(text: text, lang: settings.speechLanguage)))
         }
-        // Rejoin the host's music timeline: the current anchor, which may be
-        // a newer music.play (another track, a seek) that arrived while
-        // listening and was held — not the player's last anchor.
-        startMusicIfPossible()
+    }
+
+    private func stopRecognition() {
+        transcriber.stop()
+        wake.reset()
     }
 
     // MARK: - Buttons
 
     private func remoteButton(_ button: NowPlaying.Button) {
+        // Whether a headset gesture arrives at all during a talk (HFP up) is a
+        // device question (README): this line answers it.
+        Log.app.info("remote button: \(String(describing: button), privacy: .public), talk=\(self.talkOpen)")
         switch button {
         case .playPause: remoteAction(settings.playPauseAction)
         case .pause: if settings.pauseCommandTriggers { remoteAction(settings.playPauseAction) }
@@ -615,7 +617,6 @@ final class AppModel: ObservableObject {
     func remoteAction(_ action: RemoteAction) {
         switch action {
         case .talk: talkButton()
-        case .command: commandButton()
         case .playPause: musicControl(musicPlaying ? .pause : .resume)
         case .next: musicControl(.next)
         case .previous: musicControl(.previous)
@@ -721,15 +722,13 @@ final class AppModel: ObservableObject {
             requestTalkClose(.unavailable)
             closeTalkLocally()
         }
-        if listening { transcriber.cancel(); listening = false }
     }
 
     private func interruptionEnded(_ shouldResume: Bool) {
-        // interruptionBegan ended talk and the voice command, so unless one
-        // has started since, the session belongs in media mode — not in the
-        // route last activated (a voice command's HFP route, or .talk when
-        // switching back failed during the call).
-        if talkOpen || listening {
+        // interruptionBegan ended talk, so unless one has started since, the
+        // session belongs in media mode — not in the route last activated
+        // (.talk when switching back failed during the call).
+        if talkOpen {
             session.reactivate()
             return
         }
@@ -744,7 +743,7 @@ final class AppModel: ObservableObject {
             // Headset gone: don't blast music out of the speaker.
             if !session.hasHeadphones { player.suspend() }
         case .newDeviceAvailable:
-            if currentPlay != nil, !talkOpen, !listening { player.resume() }
+            if currentPlay != nil, !talkOpen { player.resume() }
         default:
             break
         }
@@ -752,12 +751,13 @@ final class AppModel: ObservableObject {
 
     private func mediaServicesReset() {
         Log.audio.error("media services were reset; rebuilding audio")
+        transcriber.stop()
         voiceEngine.stop()
         keepAlive.rebuild()
         if talkOpen {
             // The host is the authority on talk: tell it, as after an
             // interruption, instead of leaving it in a talk whose mic here
-            // is gone until its 20 s silence timeout.
+            // is gone until someone presses again.
             requestTalkClose(.unavailable)
             closeTalkLocally()
         } else {

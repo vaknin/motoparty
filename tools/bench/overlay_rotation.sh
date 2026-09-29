@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# The overlay after rotation: for each rotation, is the TALK/MUSIC window fully on screen, does a
-# tap on TALK reach the app (logcat "trigger TALK"), and after a drag is it still on screen.
-# The phone must be unlocked and left alone; the screen rotates. No sound (no client connected,
-# so TALK only logs "talk: no client connected"). Our own MainActivity is brought to the front for
+# The overlay after rotation: for each rotation, is the TALK button fully on screen, does a
+# tap on it reach the app (logcat "trigger TALK"), and after a drag is it still on screen.
+# The phone must be unlocked and left alone; the screen rotates. With no client connected a TALK
+# tap opens a solo talk (call route, live beep; since 2026-09-29), so each check taps a second
+# time to close it: expect a live and a closed beep per rotation. Our own MainActivity is brought to the front for
 # the run (the launcher is portrait-locked, so nothing rotates behind it) and HOME is pressed at
 # the end. Each drag gives two rows: "dragged-far" is the frame while the finger is still down,
 # "after-release" the frame once it is let go.
 # Rotation settings are ALWAYS restored on exit, and the overlay is dragged back to where it was.
 # Last, in rotation 0, comes the F6 drag-to-dismiss step (DISMISS=0 skips it): the buttons are
 # dragged onto the X target at the bottom centre and let go, which must hide them
-# (`overlayEnabled=false`, the position in overlay.xml untouched, no stray TALK/MUSIC trigger) —
+# (`overlayEnabled=false`, the position in overlay.xml untouched, no stray TALK trigger) —
 # three more rows, "dismiss-target" (the X window seen mid-drag), "dismissed" and "restored".
 # The buttons are ALWAYS brought back afterwards, also on error or Ctrl-C (see restore_overlay:
 # the shell cannot fire the notification's SHOW_OVERLAY, so it rewrites the app's own
@@ -62,11 +63,13 @@ tap_talk() {  # prints yes/no: did a TALK tap reach the app
   $ADB logcat -c
   sh1 input tap $(( ($1 + $3) / 2 )) $(( $2 + ($4 - $2) / 4 )) >/dev/null; sleep 1.5
   sh1 "logcat -d --pid=\$(pidof $PKG)" | grep -q 'trigger TALK' && echo yes || echo no
+  # The tap opened a solo talk: close it, and let the route settle before the next rotation.
+  sh1 input tap $(( ($1 + $3) / 2 )) $(( $2 + ($4 - $2) / 4 )) >/dev/null; sleep 2
 }
 
 START=$(overlay_frame); log "overlay at start: ${START:-none}, fractions: $(prefs)"
 [ -n "$START" ] || { log "FAILED: no overlay window (is the overlay on in the app?)"; exit 1; }
-set -- $START; SX=$(( ($1 + $3) / 2 )); SY=$(( $2 + ($4 - $2) * 3 / 4 ))   # grab on MUSIC: a drag, not a tap
+set -- $START; SX=$(( ($1 + $3) / 2 )); SY=$(( $2 + ($4 - $2) * 3 / 4 ))   # grab low on the button: a drag, not a tap
 for r in $ROTATIONS; do
   phone_free
   sh1 settings put system user_rotation "$r"; sleep 3
@@ -76,7 +79,7 @@ for r in $ROTATIONS; do
   f=$(overlay_frame)
   if [ -n "$f" ]; then
     set -- $f
-    dx=$(( ($1 + $3) / 2 )); dy=$(( $2 + ($4 - $2) * 3 / 4 ))   # grab on MUSIC: a drag, not a tap
+    dx=$(( ($1 + $3) / 2 )); dy=$(( $2 + ($4 - $2) * 3 / 4 ))   # grab low on the button: a drag, not a tap
     # Since F5 a drag sticks, so each rotation starts wherever the last one left the overlay: drag
     # AWAY from the corner it is in, or the swipe asks for a position it is already clamped to and
     # proves nothing. 0 is as far out of bounds as 5000: the grab point is well inside the window.
@@ -96,7 +99,7 @@ for r in $ROTATIONS; do
   fi
 done
 # Back to rotation 0 and roughly the starting position (the app stores it as a fraction). Only if
-# it really moved: a swipe shorter than the touch slop is a tap, i.e. a MUSIC trigger (the mic!),
+# it really moved: a swipe shorter than the touch slop is a tap, i.e. a TALK trigger (the mic!),
 # and the frame comes back a pixel or two off even when nothing was dragged. 2026-09-20: a 2 px
 # "restore" swipe opened the voice command; hence the 40 px threshold, not "!= $START".
 sh1 settings put system user_rotation 0; sleep 3
@@ -165,10 +168,9 @@ dismiss_step() {  # dismiss_step <rotation>
   on_exit "restore_overlay"
   tx=$(( dw / 2 )); ty=$(( dh - 20 ))          # bottom centre: inside the X in both rotations
   set -- $f; gx=$(( ($1 + $3) / 2 )); gy=$(( $2 + ($4 - $2) / 4 ))
-  # NEVER a short swipe: under the touch slop it is a TAP, and a tap on the lower (MUSIC) zone
-  # opens a voice command with the microphone (it bit us twice on 2026-09-20). The grab point is
-  # therefore in the UPPER (TALK) half, and if the buttons already sit at the bottom they are
-  # moved up first, with a swipe that is itself long.
+  # NEVER a short swipe: under the touch slop it is a TAP, which opens a talk with the microphone
+  # (a tap on the old MUSIC zone bit us twice on 2026-09-20). If the button already sits at the
+  # bottom it is moved up first, with a swipe that is itself long.
   if [ $(( ty - gy )) -lt 40 ]; then
     upy=$(( dh / 5 ))
     if [ $(( gy - upy )) -gt 40 ]; then
@@ -199,21 +201,19 @@ dismiss_step() {  # dismiss_step <rotation>
   pref1=$(prefs)
   en=$(sh1 run-as $PKG cat shared_prefs/settings.xml | grep -o 'name="overlayEnabled" value="[a-z]*"')
   ov=${en##*value=\"}; ov=${ov%\"}              # true / false / empty if the key is not there
-  nm=$(tail -n +$(( mark + 1 )) "$OUT/logcat_all.txt" | grep -c 'trigger MUSIC')
   nt=$(tail -n +$(( mark + 1 )) "$OUT/logcat_all.txt" | grep -c 'trigger TALK')
   nh=$(tail -n +$(( mark + 1 )) "$OUT/logcat_all.txt" | grep -c 'hidden by drag to the X')
   bad=
   [ -n "$after" ] && bad="$bad buttons-still-up($after)"
   [ "$ov" = false ] || bad="$bad overlayEnabled=${ov:-absent}"
   [ "$pref1" = "$pref0" ] || bad="$bad fx/fy-changed"
-  [ "$nm" = 0 ] || bad="$bad trigger-MUSIC-x$nm"
   [ "$nt" = 0 ] || bad="$bad trigger-TALK-x$nt"
   note="ok pref=false fx/fy=same no stray trigger"
   [ -n "$bad" ] && note="FAIL:$bad"
   # Hub.log goes to Log.i(tag Motoparty); it is a nice-to-have, never the verdict.
   note="$note, Hub.log line: $([ "$nh" = 0 ] && echo no || echo yes)"
   log "dismiss: after release buttons=${after:-none}, overlayEnabled=${ov:-absent}, fractions $pref1," \
-      "trigger MUSIC x$nm TALK x$nt, 'hidden by drag' x$nh"
+      "trigger TALK x$nt, 'hidden by drag' x$nh"
   row dismissed "$rot" "$note" "$after"
   restore_overlay
   rframe=$(overlay_frame)

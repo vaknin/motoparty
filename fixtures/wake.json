@@ -1,0 +1,69 @@
+{
+ "_doc": "Wake-word vectors. See PROTOCOL.md 'Commands', Wake word. expect = the command text after the wake word (normalised; empty = the bare wake word, which arms the next phrase), or null = not a command.",
+ "cases": [
+  {
+   "text": "Moto party, play Pink Floyd",
+   "expect": "play pink floyd"
+  },
+  {
+   "text": "motoparty next",
+   "expect": "next"
+  },
+  {
+   "text": "Hey Moto Party pause",
+   "expect": "pause"
+  },
+  {
+   "text": "OK motoparty, over",
+   "expect": "over"
+  },
+  {
+   "text": "Motor party resume",
+   "expect": "resume"
+  },
+  {
+   "text": "moto-party play album Abbey Road",
+   "expect": "play album abbey road"
+  },
+  {
+   "text": "Moto party",
+   "expect": ""
+  },
+  {
+   "text": "Motoparty.",
+   "expect": ""
+  },
+  {
+   "text": "hey hey motoparty skip",
+   "expect": "skip"
+  },
+  {
+   "text": "play pink floyd",
+   "expect": null
+  },
+  {
+   "text": "I told the moto party guy",
+   "expect": null
+  },
+  {
+   "text": "motopartying is fun",
+   "expect": null
+  },
+  {
+   "text": "moto parties",
+   "expect": null
+  },
+  {
+   "text": "moto",
+   "expect": null
+  },
+  {
+   "text": "hey",
+   "expect": null
+  },
+  {
+   "text": "",
+   "expect": null
+  }
+ ]
+}

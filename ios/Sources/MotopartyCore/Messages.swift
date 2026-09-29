@@ -60,7 +60,7 @@ public enum ControlMessage: Equatable, Sendable {
 public enum Role: String, Codable, Sendable { case host, client }
 
 public enum TalkCloseReason: String, Codable, Sendable {
-    case trigger, silence, link
+    case trigger, link
     /// The sender cannot open its microphone (PROTOCOL.md "Talk flow" step 1).
     case unavailable
 }

@@ -17,7 +17,6 @@ data class LinkStatus(
     val clientSkewMs: Long? = null,
     val lastPingAgeMs: Long? = null,
     val talkOpen: Boolean = false,
-    val listening: Boolean = false,
     val jitterTargetMs: Int = 0,
     val underruns: Int = 0,
     val udpIn: Long = 0,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .protocol import CONTROL_PORT, TALK_SILENCE_MS
+from .protocol import CONTROL_PORT
 
 
 def _device(v: str):
@@ -46,8 +46,6 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--voice-port", type=int, help="voice UDP port (default 47801; 0 = any)")
     h.add_argument("--http-port", type=int, help="track HTTP port (default 47802; 0 = any)")
     h.add_argument("--no-mdns", action="store_true", help="do not advertise over Bonjour")
-    h.add_argument("--silence-ms", type=int, default=TALK_SILENCE_MS,
-                   help="talk silence timeout (default %(default)s, the spec value)")
     h.add_argument("-v", "--verbose", action="store_true", help="also print ping/pong frames")
     return p
 

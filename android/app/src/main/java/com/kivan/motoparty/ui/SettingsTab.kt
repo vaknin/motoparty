@@ -50,12 +50,9 @@ fun SettingsTab(s: LinkStatus, settings: Settings, cb: Callbacks, modifier: Modi
             SwitchRow("Play / pause starts a talk", "Off: it plays and pauses the music", settings.headsetPlayPause == "talk") { v ->
                 update { it.copy(headsetPlayPause = if (v) "talk" else "music") }
             }
-            SwitchRow("Next track listens for a command", "Off: it skips to the next song", settings.headsetNext == "command") { v ->
-                update { it.copy(headsetNext = if (v) "command" else "next") }
-            }
         }
         Group("On screen") {
-            SwitchRow("Floating TALK and MUSIC buttons", "Shown over other apps, like maps", settings.overlayEnabled) { v ->
+            SwitchRow("Floating TALK button", "Shown over other apps, like maps", settings.overlayEnabled) { v ->
                 update { it.copy(overlayEnabled = v) }
             }
         }
@@ -156,7 +153,7 @@ private fun Diagnostics(s: LinkStatus, settings: Settings, cb: Callbacks) {
                     KeyValue("Audio devices", s.audioDevices ?: "–")
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Record talk mic to WAV (files/captures). With no passenger, TALK records solo", Modifier.weight(1f).padding(end = 8.dp))
+                        Text("Record talk mic to WAV (files/captures), also in a solo talk", Modifier.weight(1f).padding(end = 8.dp))
                         Switch(settings.captureDump, { v -> cb.onSettings { it.copy(captureDump = v) } })
                     }
                     OutlinedButton(onClick = { cb.onAction(UiAction.UsbStereoProbe) }, Modifier.fillMaxWidth()) {

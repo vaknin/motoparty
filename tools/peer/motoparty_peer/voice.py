@@ -71,7 +71,7 @@ class VoiceSender:
             self._last_frame_ms = now_ms()
             # Skip what libopus says need not be sent (<= 2 bytes) and also the comfort-noise
             # updates it emits every ~400 ms while in DTX: then every audio packet on the wire
-            # is a "non-DTX frame" for the peer's talk silence timer (see README).
+            # is a "non-DTX frame" (PROTOCOL.md; see README).
             if is_dtx_packet(packet) or self.encoder.in_dtx:
                 self.stats.dtx_skipped += 1
                 return False

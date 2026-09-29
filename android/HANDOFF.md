@@ -15,8 +15,9 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `core/ClockEstimator.kt` | done (8-sample window, min RTT, ties most recent, negative RTT takes no slot, >500 ms jump clears window). Host doesn't use it; it's for parity/tests |
 | `core/VoicePacket.kt` | done |
 | `core/JitterBuffer.kt` | done per the latest spec: talk-spurt start plays `target` ms after arrival; underrun = packet after its slot, +20 ms at most once per spurt; -20 ms after 10 s; changes apply at next spurt; keepalive seqs never count as loss; seq-contiguous ts jump = silence; FEC/PLC; brief PLC then silence on an empty buffer. A packet that came too late to play also counts as "seen" for the silence-gap test (fixed 2026-09-19 night). Per-talk counters for `talk stats` (layer 2, section 3 item 3) |
-| `core/CommandParser.kt` | done per the latest spec (per code point, U+2019 -> `'`, keep L*/M*/N*) |
-| `link/TalkController.kt` | done (pure state machine, 20 s silence close since 2026-09-20 F6, link loss) |
+| `core/CommandParser.kt` | done per the latest spec (per code point, U+2019 -> `'`, keep L*/M*/N*); `Command.End` since 2026-09-29 |
+| `core/WakeWord.kt`, `core/CommandEffect.kt` | new 2026-09-29, pure, tested: the wake word + arming + solo rule (`WakeWord`, `PhraseGate`) and "command + talk state → effect" (`CommandEffect`). Section 2, "Commands inside talk" |
+| `link/TalkController.kt` | done (pure state machine: trigger, link loss, `onCommandClose(by)` for a spoken `play`/`resume`/`end`; the 20 s silence close of F6 was removed 2026-09-29) |
 | `link/ControlServer.kt` | done. One writer coroutine per connection (socket writes on main threw NetworkOnMainThreadException), pong answered on the reader thread, second hello replaces client (old one gets `bye`), 6 s liveness watchdog |
 | `link/VoiceSocket.kt` | done. UDP 47801, peer = source of last valid packet from the control client's IP, running 16 kHz `ts` clock from a random start (`currentTs()`), keepalive every 1 s idle carrying current ts, shared seq |
 | `link/Discovery.kt` | done (NSD `_motoparty._tcp`, TXT proto/voice/http) |
@@ -38,11 +39,11 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `music/Player.kt` | done (ExoPlayer, no auto audio focus, MediaSession with `onMediaButtonEvent`, `speed`). Outside controllers (KDE Connect, lock screen, watch): `onConnectAsync` accepts every controller with full commands, because media3's default gives an untrusted one read access only, and KDE Connect is untrusted here (package visibility hides it: "Package org.kde.kdeconnect_tp doesn't exist"), which is why its pause did nothing. `SessionPlayer`, a `ForwardingPlayer`, turns play/pause/stop/next/previous into `RemoteAction`s that `LinkHost` routes like the client's `music.control`, so they act on both phones; seek, speed and playlist commands are not offered |
 | `music/SyncController.kt` | done. Prepared start with a learned start-up latency lead, check 2 s after start then every 10 s, 80 ms–1 s corrected by speed nudge (≤5 %), >1 s re-seek. The lead is now learned with a damped 1/4 step (`LEARN_DIVISOR`), not a mean of two, which was ringing on A2DP. `PlayerControls` was split out of `Player` so all of this is unit-tested. Two learned leads now: `startLatencyMs` (warm) and `coldStartLatencyMs` (a start into a route that was just rebuilt — the resume after talk or a voice command); `hold`/`release` are nesting. Layer 2 logging: `nudge done:` and the `trace:` lines (section 3 item 3); logging only. Since D2: every drift figure is a 9-sample/2 s median, and 80 ms..1 s is corrected only after a second, agreeing reading (section 3 item 3, "D2 bench") |
 | `music/MusicController.kt` | done (queue, load → ready ≤8 s / music.error → play at now+300, pause/resume, next/previous, talk pause + resume at now+resumeLeadMs, duck mode, mid-track join on client connect, prefetch + music.load of next) |
-| `voicecmd/Transcriber.kt` | done (on-device recognizer when available, falls back to default on language/client errors) |
-| `voicecmd/Announcer.kt` | done (TTS, USAGE_ASSISTANT, earcon first) |
-| `LinkHost.kt` | done: all wiring and protocol decisions, main thread, `guarded{}` around event loops. Talk and recognizer audio work goes through `AudioThread`; `talkSession` drops late callbacks of an earlier talk |
-| `LinkService.kt` | done (FGS types microphone\|mediaPlayback\|connectedDevice, drops microphone if SecurityException; wake + Wi-Fi low-latency locks; notification actions Talk/Command/Stop, where "Command" becomes "Show buttons" while the overlay is off). Since F6 it also collects `settings.overlayEnabled` and starts/stops the overlay itself, so the switch works with the activity gone |
-| `overlay/OverlayService.kt` + `overlay/OverlayPlacement.kt` | done. The position is stored as a fraction of the free travel and clamped on restore, on every layout, on rotation and during the drag itself; the landscape bug is fixed in code. Since the D4 overlay bench (2026-09-20) the clamp runs against the **usable** area, not the display bounds: `params.x/y` are relative to the window's parent frame, which excludes the status bar / cutout / navigation bar (rotation 0: `parent=[0,132][1080,2337]` on 1080x2400), so a far-corner drag used to end 132 px below the screen. `usableSize()` now subtracts `currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(systemBars \| displayCutout)` (API 30+; `displayMetrics` below that), and `OverlayPlacement.usable()` is the pure arithmetic for it. `ACTION_CANCEL` now ends the drag and saves the position like `ACTION_UP` (it never fires a trigger) — before, a cancelled drag was dropped and the next layout pass snapped the buttons back. Both are device-unverified. F6 (2026-09-20) adds drag-to-dismiss: a second, untouchable X window at the bottom centre while a drag runs, and dropping the buttons on it restores the pre-drag position, sets `overlayEnabled=false` and stops the service (see section 2, "F6", for the geometry, the hit rule and the window titles). `OverlayPlacement` is pure and unit-tested (21) |
+| `voicecmd/TalkRecognizer.kt` + `audio/PcmTee.kt` | new 2026-09-29 (replaces the one-shot `Transcriber`, deleted): in-talk recognition on the talk's own capture. Device-unverified |
+| `voicecmd/Announcer.kt` | done (TTS, USAGE_ASSISTANT, earcon first; in a talk USAGE_VOICE_COMMUNICATION + call-route earcon; `spokeWithin` for the solo echo guard) |
+| `LinkHost.kt` | done: all wiring and protocol decisions, main thread, `guarded{}` around event loops. Talk audio work goes through `AudioThread`; `talkSession` drops late callbacks of an earlier talk |
+| `LinkService.kt` | done (FGS types microphone\|mediaPlayback\|connectedDevice, drops microphone if SecurityException; wake + Wi-Fi low-latency locks; notification actions Talk/Stop, plus "Show buttons" while the overlay is off; the "Command" action went with the command mode on 2026-09-29). Since F6 it also collects `settings.overlayEnabled` and starts/stops the overlay itself, so the switch works with the activity gone |
+| `overlay/OverlayService.kt` + `overlay/OverlayPlacement.kt` | done. Since 2026-09-29 one 120×120 dp TALK button (the MUSIC zone is gone). The position is stored as a fraction of the free travel and clamped on restore, on every layout, on rotation and during the drag itself; the landscape bug is fixed in code. Since the D4 overlay bench (2026-09-20) the clamp runs against the **usable** area, not the display bounds: `params.x/y` are relative to the window's parent frame, which excludes the status bar / cutout / navigation bar (rotation 0: `parent=[0,132][1080,2337]` on 1080x2400), so a far-corner drag used to end 132 px below the screen. `usableSize()` now subtracts `currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(systemBars \| displayCutout)` (API 30+; `displayMetrics` below that), and `OverlayPlacement.usable()` is the pure arithmetic for it. `ACTION_CANCEL` now ends the drag and saves the position like `ACTION_UP` (it never fires a trigger) — before, a cancelled drag was dropped and the next layout pass snapped the buttons back. Both are device-unverified. F6 (2026-09-20) adds drag-to-dismiss: a second, untouchable X window at the bottom centre while a drag runs, and dropping the buttons on it restores the pre-drag position, sets `overlayEnabled=false` and stops the service (see section 2, "F6", for the geometry, the hit rule and the window titles). `OverlayPlacement` is pure and unit-tested (21) |
 | `trigger/Trigger.kt` | done |
 | `ui/MainScreen.kt`, `MainActivity.kt` | done (status, permissions, TALK/COMMAND, now playing/queue, search, settings, log). Still not seen rendered: the one screenshot attempt caught another app in the foreground |
 | `Settings.kt`, `Hub.kt`, `MotopartyApp.kt` | done |
@@ -50,7 +51,7 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 
 Tests (`app/src/test/...`), 153 in all by the last run (the list may lag), 2 skipped: `CodecTest` (14), `ClockEstimatorTest` (1),
 `VoicePacketTest` (3), `CommandParserTest` (2), `JitterBufferTest` (20), `TalkStatsTest` (4),
-`TalkControllerTest` (8, incl. the 20 s silence close), `ControlServerTest` (7, real loopback sockets), `TrackServerTest` (5),
+`TalkControllerTest` (7), `ControlServerTest` (7, real loopback sockets), `TrackServerTest` (5),
 `SyncControllerTest` (23), `MainLagTest` (3), `StepTimerTest` (2), `TalkAudioTest` (7),
 `LiveCueTest` (12: the live-earcon rule — normal order, capture before the link, the link before the
 route, all three signals in each arrival order, an SCO flap, a non-Bluetooth route (needs neither
@@ -732,6 +733,75 @@ button under the first ("start long Lark recording" / "Stop long Lark recording"
 route re-read every second (`route changed to …` — a pulled receiver would otherwise fall back to the
 built-in mic silently). `LinkHost.stop()` ends it. Installed 2026-09-28 23:41; Desk check 23:49: 47.7 s with the
 screen locked 2.7 s in, 0 dropped, route stayed `usb_device`.
+
+### Commands inside talk, option A (2026-09-29) — one button, commands spoken in the talk
+
+**Why.** The user chose option A (root `HANDOFF.md`, "Decisions in force"): a press toggles talk,
+everywhere, and commands are phrases that start with the wake word, spoken inside the talk. The
+two-zone command path (its own route switch, a fixed `SCO_SETTLE_MS`, the reply spoken across the
+teardown) is gone. Spec: `PROTOCOL.md` "Commands" (*Wake word*, *Effect on the talk*),
+`fixtures/commands.json` (35), `fixtures/wake.json` (16).
+
+**Removed.** `TriggerKind.MUSIC` (the enum keeps `TALK` only), `LinkHost.listenForCommand` + its
+route switching + `SCO_SETTLE_MS` + `listenJob`, `voicecmd/Transcriber.kt`, `LinkService.ACTION_MUSIC`
+and the notification's "Command" action, the overlay's MUSIC zone, the Ride tab's MUSIC button,
+`Settings.headsetNext` (next is always next track; a stored `headsetNext` is ignored and removed on
+the next save), `LinkStatus.listening`, `Palette.Music`/`Listening`. `UiAction.Command` stays (typed
+path, no UI sends it today) and goes through `executeCommand` like everything else.
+
+**Built.**
+- `core/WakeWord.kt`: `WakeWord.commandText(text)` (null = conversation, "" = bare wake word, else
+  the normalised command text) and `PhraseGate` (arming: the next phrase within 5 s is a command; a
+  bare wake word while armed re-arms; solo = every phrase is a command). `core/CommandEffect.kt`:
+  `CommandEffect.of(cmd, talkOpen, fromClient)` → `closeBy` (speaker's role, or null) + `Reply`
+  (`MEDIA`, `CALL` = spoken in the talk now, `AFTER_CLOSE`, `NONE`) + `callVolume`.
+- `audio/PcmTee.kt`: the capture loop tees every raw frame (before the encoder, so DTX cannot cut
+  it) through a pool + bounded queue to a writer thread that writes PCM16 LE into the pipe; drops and
+  counts when full, never blocks the capture thread (`VoiceEngine.tee`, a volatile set from Main).
+- `voicecmd/TalkRecognizer.kt`: when the talk's capture is up (`onCaptureUp`, or already up on a
+  collapsed re-open), an on-device `SpeechRecognizer` with the spike's extras
+  (`EXTRA_AUDIO_SOURCE` = pipe read end, 16 kHz mono PCM16, `EXTRA_SEGMENTED_SESSION`, biasing
+  strings); on-device refusal → the default service; a session that ends while the talk lasts is
+  restarted (500 ms, given up after 3 quick failures in a row). Talk close → EOF (write end closed),
+  destroy on the end callback or after 3 s. API < 33: logged once, talk without commands. Errors are
+  logged only (`talk recognizer: …`); they never touch the talk.
+- `LinkHost.onPhrase`: one line per phrase, `heard: "<text>" (command|conversation|armed)`, plus
+  `(after the talk, ignored)` and, in a solo talk only, `(own speech, ignored)` for a phrase within
+  2 s of our own TTS (otherwise "Didn't catch that" could recognise itself forever). Armed → LISTEN
+  earcon on the call route. `command.text` from the client takes the same `executeCommand(…,
+  fromClient = true)`.
+- Effects: `play` drops the resume the talk was holding, sets `MusicController.startNotBefore(close
+  + resumeLeadMs)` and closes the talk; after the search *and* the teardown (`talkClosed.join()`) it
+  `setQueue`s and announces — on failure the music the talk paused resumes and the error is
+  announced. `resume` parks the track (`music.resume()` in a talk), closes, and the ordinary
+  after-talk resume starts it; "Resuming" / "Nothing to resume" after the teardown. `end` closes
+  like a press (music resumes), no announce. `pause` cancels the resume and it stays cancelled
+  through a later `next`/`previous` in the same talk (`MusicController.resumeCancelled`);
+  `next`/`previous` park the new track for after the talk. Their replies are spoken in the talk
+  (`Announcer` with `USAGE_VOICE_COMMUNICATION`, earcon `call = true`). Volume in a talk:
+  `STREAM_VOICE_CALL`, tone on the call route; outside, media as before.
+- Solo talk: with no client a press always opens one (`captureDump` only decides the WAV). Log line
+  `talk: no client connected, recording solo (WAV|no WAV)` — the bench's substring is intact.
+
+**Tests.** `WakeWordTest` (fixture + parse), `PhraseGateTest` (7), `CommandEffectTest` (5),
+`PcmTeeTest` (5: never blocks and drops when full, a stuck pipe blocks only the writer, LE bytes +
+EOF on close, wrong-size frames, broken pipe), `TalkControllerTest` +1, `CommandParserTest` reads
+`end`; `ScreensTest` +1 (`2b-ride-talking-solo`). 243 tests, 0 fail, 5 skipped; `lintDebug` 0 errors.
+
+**Verify on the device.**
+1. Earbud press during a talk: does the AirPods press reach the app at all under HFP (media key,
+   call control, or nothing)? This decides whether a press can end a talk from the earbuds.
+2. The recognizer is fed while the phone holds `MODE_IN_COMMUNICATION`: `talk recognizer:
+   listening (on-device …)`, `heard:` lines during a talk, `pcm tee: N frames, 0 dropped` at the end,
+   and **no change** to `capture: read N frames … (N expected)` or the `live cue:` timing.
+3. Wake word recognition through the AirPods mic at speed and at rest: how often "Moto party" comes
+   back as something else (read the `heard:` lines; add spellings to `WakeWord.forms` if needed).
+4. "Moto party, play …" and "Moto party, resume": the talk closes at once (`talk closed (by host,
+   trigger)`), music starts after A2DP is back (no play into HFP, `media cue` for the announce), and
+   the passenger's copy too.
+5. Bare "Moto party": LISTEN earcon in the call route, then "next" within 5 s works.
+6. Solo talk (no iPhone): a press opens it, "play …" without the wake word works, and our own
+   replies are not recognised as commands (`own speech, ignored`).
 
 ## 3. Not done, in priority order
 

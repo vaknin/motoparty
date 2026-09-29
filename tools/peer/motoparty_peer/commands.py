@@ -19,7 +19,18 @@ _EXACT = {
     "louder": "volumeUp",
     "volume down": "volumeDown",
     "quieter": "volumeDown",
+    "over": "end",
+    "end talk": "end",
+    "hang up": "end",
 }
+
+# Wake word (PROTOCOL.md "Commands"): whole words, after dropping leading hey/ok/okay.
+WAKE_WORDS = (("motoparty",), ("moto", "party"), ("motor", "party"))
+_WAKE_FILLERS = ("hey", "ok", "okay")
+ARM_MS = 5000  # a bare wake word makes the next phrase within this a command
+
+# Actions that end the talk they are spoken in (PROTOCOL.md "Commands", Effect on the talk).
+TALK_ENDING = ("play", "resume", "end")
 
 UNKNOWN_ANNOUNCE = {"t": "announce", "text": "Didn't catch that", "earcon": "error"}
 
@@ -35,10 +46,14 @@ def _keep(ch: str) -> bool:
     return unicodedata.category(ch)[0] in "LMN"
 
 
-def normalise(text: str) -> list[str]:
+def _words(text: str) -> list[str]:
     """Lowercase, U+2019 -> apostrophe, anything else not kept -> space, split on whitespace."""
-    cleaned = "".join(ch if _keep(ch) else " " for ch in text.lower().replace("\u2019", "'"))
-    words = cleaned.split()
+    return "".join(ch if _keep(ch) else " " for ch in text.lower().replace("\u2019", "'")).split()
+
+
+def normalise(text: str) -> list[str]:
+    """`_words`, then drop leading "hey"/"please" words and one trailing "please"."""
+    words = _words(text)
     while words and words[0] in ("hey", "please"):
         words.pop(0)
     if words and words[-1] == "please":
@@ -63,3 +78,15 @@ def parse_command(text: str) -> dict[str, str]:
         return {"action": "play", "kind": kind, "query": " ".join(rest)}
     action = _EXACT.get(" ".join(words))
     return {"action": action} if action else {"action": "unknown"}
+
+
+def wake(text: str) -> str | None:
+    """-> the normalised command text after the wake word ("" = the bare wake word, which arms
+    the next phrase), or None when the phrase does not start with it (conversation)."""
+    words = _words(text)
+    while words and words[0] in _WAKE_FILLERS:
+        words.pop(0)
+    for w in WAKE_WORDS:
+        if tuple(words[: len(w)]) == w:
+            return " ".join(words[len(w) :])
+    return None

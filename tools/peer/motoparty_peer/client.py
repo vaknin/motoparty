@@ -11,7 +11,7 @@ from pathlib import Path
 from . import discovery
 from .audio import Mic, Speaker, Tone
 from .clock import ClockEstimator
-from .commands import VOLUME_ACTIONS, parse_command
+from .commands import ARM_MS, VOLUME_ACTIONS, parse_command, wake
 from .music import LocalPlayer, cache_path, check_decodable, download
 from .protocol import (
     CONTROL_PORT,
@@ -29,7 +29,8 @@ from .protocol import (
 from .util import js, log, stdin_lines
 from .voice import Pacer, VoiceProtocol, VoiceReceiver, VoiceSender
 
-HELP = """commands: talk | say <text> | pause | resume | next | previous | vol+ | vol- (local) |
+HELP = """commands: talk | hear <phrase> (recognised in the talk: wake word rule) |
+          say <text> (command.text as is) | pause | resume | next | previous | vol+ | vol- (local) |
           unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
           browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit clear |
           stats | raw <json> (send unvalidated) | quit"""
@@ -48,6 +49,7 @@ class Client:
         self.clock = ClockEstimator()
         self.conn: discovery.Connection | None = None
         self.talk = False
+        self.armed_until = 0  # a bare wake word makes the next phrase a command until then
         self.ping_id = 0
         self.last_rx = 0
         self.sender: VoiceSender | None = None
@@ -292,8 +294,30 @@ class Client:
             log(f"TALK OPEN - sending {what}")
         else:
             self._stop_source()
+            self.armed_until = 0
             if not quiet:
                 log("TALK CLOSED")
+
+    def _hear(self, phrase: str) -> None:
+        """A phrase the on-device ASR recognised on the talk microphone (PROTOCOL.md "Commands"):
+        only one that starts with the wake word, or follows a bare one within 5 s, is a command."""
+        if not self.talk:
+            log("hear: no talk open; commands are spoken inside a talk, nothing sent")
+            return
+        text = wake(phrase)
+        if text is None and now_ms() < self.armed_until:
+            text = phrase.strip()
+        self.armed_until = 0
+        if text is None:
+            log(f"hear: {phrase!r} is conversation, not sent")
+        elif text == "":
+            self.armed_until = now_ms() + ARM_MS
+            log(f"hear: wake word; the next phrase within {ARM_MS} ms is a command [earcon listen]")
+        elif parse_command(text)["action"] in VOLUME_ACTIONS:
+            log(f"local: {parse_command(text)['action']} handled here [earcon ok]; "
+                f"no command.text sent (the peer has no real volume)")
+        else:
+            self.send({"t": "command.text", "text": text, "lang": self.args.lang})
 
     def _start_source(self) -> str:
         if self.args.tone:
@@ -516,6 +540,11 @@ class Client:
                         f"no command.text sent (the peer has no real volume)")
                 else:
                     self.send({"t": "command.text", "text": text, "lang": self.args.lang})
+            elif cmd == "hear":
+                if rest.strip():
+                    self._hear(rest)
+                else:
+                    log("usage: hear <phrase>")
             elif cmd in LOCAL_VOLUME:
                 log(f"local: {LOCAL_VOLUME[cmd]} handled here [earcon ok]; "
                     f"nothing sent (the peer has no real volume)")

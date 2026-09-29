@@ -13,6 +13,8 @@ public enum Command: Equatable, Sendable {
     case previous
     case volumeUp
     case volumeDown
+    /// Close the talk and change nothing else (PROTOCOL.md "Commands").
+    case end
     case unknown
 
     public enum Kind: String, Equatable, Sendable, CaseIterable {
@@ -29,6 +31,7 @@ public enum Command: Equatable, Sendable {
         case .previous: "previous"
         case .volumeUp: "volumeUp"
         case .volumeDown: "volumeDown"
+        case .end: "end"
         case .unknown: "unknown"
         }
     }
@@ -46,6 +49,7 @@ public enum CommandParser {
         "previous": .previous, "back": .previous,
         "volume up": .volumeUp, "louder": .volumeUp,
         "volume down": .volumeDown, "quieter": .volumeDown,
+        "over": .end, "end talk": .end, "hang up": .end,
     ]
 
     private static let kinds: [String: Command.Kind] =
@@ -102,5 +106,74 @@ public enum CommandParser {
             return rest.isEmpty ? .unknown : .play(kind: kind, query: rest.joined(separator: " "))
         }
         return phrases[words.joined(separator: " ")] ?? .unknown
+    }
+
+    /// The wake-word rule (PROTOCOL.md "Commands", Wake word): normalise, drop
+    /// leading "hey"/"ok"/"okay" words, then the phrase must start with
+    /// "motoparty", "moto party" or "motor party" as whole words. Returns nil
+    /// when it does not (conversation), "" for the bare wake word (arms the
+    /// next phrase), else the normalised command text after it.
+    public static func wakeCommand(_ text: String) -> String? {
+        var words = normalize(text)[...]
+        while let first = words.first, wakePrefixes.contains(first) { words.removeFirst() }
+        for wake in wakeWords where words.starts(with: wake) {
+            return words.dropFirst(wake.count).joined(separator: " ")
+        }
+        return nil
+    }
+
+    private static let wakePrefixes: Set<String> = ["hey", "ok", "okay"]
+    private static let wakeWords: [[String]] = [["motoparty"], ["moto", "party"], ["motor", "party"]]
+}
+
+/// What one recognised phrase of a talk is (PROTOCOL.md "Commands", Wake word).
+public enum HeardPhrase: Equatable, Sendable {
+    /// Talk between the riders: never sent, never acted on.
+    case conversation
+    /// The bare wake word: the next phrase within the window is a command.
+    case armed
+    /// Command text (normalised, without the wake word), for `CommandParser`
+    /// and `command.text`.
+    case command(String)
+
+    public var label: String {
+        switch self {
+        case .conversation: "conversation"
+        case .armed: "armed"
+        case .command: "command"
+        }
+    }
+}
+
+/// Classifies the phrases of one talk: the wake-word rule plus the arming
+/// window. The client is never solo, so the wake word is always required.
+public struct WakeGate: Sendable {
+    /// How long a bare wake word keeps the next phrase a command.
+    public static let armWindowMs: Double = 5_000
+
+    private var armedAtMs: Double?
+
+    public init() {}
+
+    public var isArmed: Bool { armedAtMs != nil }
+
+    /// A new talk (or its end) starts unarmed.
+    public mutating func reset() { armedAtMs = nil }
+
+    public mutating func classify(_ phrase: String, nowMs: Double) -> HeardPhrase {
+        let armed = armedAtMs.map { nowMs - $0 <= Self.armWindowMs } ?? false
+        armedAtMs = nil
+        if let text = CommandParser.wakeCommand(phrase) {
+            // A second bare wake word re-arms; "moto party next" after one is
+            // simply the command.
+            if text.isEmpty {
+                armedAtMs = nowMs
+                return .armed
+            }
+            return .command(text)
+        }
+        guard armed else { return .conversation }
+        let text = CommandParser.normalize(phrase).joined(separator: " ")
+        return text.isEmpty ? .conversation : .command(text)
     }
 }

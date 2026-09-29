@@ -6,13 +6,12 @@ import Foundation
 enum AudioRoute: String {
     /// `.playback`: AirPods on A2DP (stereo, full quality). Mic closed.
     case media
-    /// `.playAndRecord` + `.voiceChat` + Bluetooth HFP: talk (voice processing).
+    /// `.playAndRecord` + `.voiceChat` + Bluetooth HFP: talk (voice processing),
+    /// and the speech recognition of commands, which listens to the talk's mic.
     case talk
-    /// `.playAndRecord` + Bluetooth HFP, no voice processing: speech recognition.
-    case command
 }
 
-/// Owns AVAudioSession: switches music (A2DP) ↔ talk/command (HFP) and turns
+/// Owns AVAudioSession: switches music (A2DP) ↔ talk (HFP) and turns
 /// session notifications into callbacks (all on the main queue).
 ///
 /// The A2DP↔HFP switch takes ~1-2 s on AirPods; the mic only opens on demand.
@@ -56,8 +55,6 @@ final class SessionController {
             try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP])
             try? session.setPreferredSampleRate(16_000)
             try? session.setPreferredIOBufferDuration(0.01)
-        case .command:
-            try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetoothHFP])
         }
         try session.setActive(true)
         if newRoute != .media { preferBluetoothInput() }

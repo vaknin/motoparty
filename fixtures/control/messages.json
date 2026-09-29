@@ -34,7 +34,7 @@
   {
    "t": "talk.close",
    "by": "host",
-   "reason": "silence"
+   "reason": "link"
   },
   {
    "t": "talk.close",

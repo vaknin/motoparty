@@ -16,16 +16,14 @@ data class Settings(
     val asrLanguage: String = "en-US",
     /** Headset play/pause: "talk" toggles talk, "music" toggles music playback. */
     val headsetPlayPause: String = "talk",
-    /** Headset next (AirPods double press): "command" starts a voice command, "next" skips. */
-    val headsetNext: String = "command",
     val overlayEnabled: Boolean = true,
     /**
      * Debug: write every talk's captured microphone PCM to a WAV file under
      * `Android/data/com.kivan.motoparty/files/captures/` (see [com.kivan.motoparty.audio.PcmDump]).
      * Off by default and meant to be turned on for one ride: it is how one microphone is compared
-     * with another (Stage A of the wired-mic plan, 2026-09-20). While it is on, a talk trigger
-     * with no client connected opens a solo talk instead of being refused, so a microphone can be
-     * recorded on a ride alone.
+     * with another (Stage A of the wired-mic plan, 2026-09-20). A talk with no client connected is
+     * a solo talk whether this is on or not (it is how a command is given alone); this only
+     * decides whether its WAV is written.
      */
     val captureDump: Boolean = false,
 )
@@ -44,7 +42,6 @@ class SettingsStore(context: Context) {
             latencyTrimMs = prefs.getInt("latencyTrimMs", d.latencyTrimMs),
             asrLanguage = prefs.getString("asrLanguage", d.asrLanguage) ?: d.asrLanguage,
             headsetPlayPause = prefs.getString("headsetPlayPause", d.headsetPlayPause) ?: d.headsetPlayPause,
-            headsetNext = prefs.getString("headsetNext", d.headsetNext) ?: d.headsetNext,
             overlayEnabled = prefs.getBoolean("overlayEnabled", d.overlayEnabled),
             captureDump = prefs.getBoolean("captureDump", d.captureDump),
         )
@@ -58,7 +55,9 @@ class SettingsStore(context: Context) {
             .putInt("latencyTrimMs", s.latencyTrimMs.coerceIn(-500, 500))
             .putString("asrLanguage", s.asrLanguage)
             .putString("headsetPlayPause", s.headsetPlayPause)
-            .putString("headsetNext", s.headsetNext)
+            // Gone with the command mode (2026-09-29): next is always next track. An old stored
+            // value is never read; drop it the first time anything is saved.
+            .remove("headsetNext")
             .putBoolean("overlayEnabled", s.overlayEnabled)
             .putBoolean("captureDump", s.captureDump)
             .apply()

@@ -31,8 +31,6 @@ class VoiceEngine(
     private val send: (ts: Long, payload: ByteArray) -> Unit,
     /** The sender's running 16 kHz clock (PROTOCOL.md: random start, runs while talk is closed). */
     private val clockTs: () -> Long,
-    /** A kind-1 packet was sent or received (drives the 20 s silence close). */
-    private val onActivity: () -> Unit,
     /**
      * The capture loop read its first frame of this session, i.e. the microphone is delivering
      * (F7: half of what the "live" earcon means; see [LiveCue]). Called once per [start], from
@@ -88,6 +86,12 @@ class VoiceEngine(
      * are already in the call, and no new [onMicLive] will ever come.
      */
     @Volatile var micLiveAtMs: Long? = null; private set
+    /**
+     * Where the in-talk recognizer gets its audio, or null (no talk, API < 33, or it failed). Set
+     * and cleared on Main while the engine runs; read by the capture loop once per frame. Frames
+     * go in raw, before the encoder, so DTX cannot cut a command (PROTOCOL.md "Commands").
+     */
+    @Volatile var tee: PcmTee? = null
     /** F9a's condition (c), fed by the capture loop; only that loop and [start] touch it. */
     private val micLive = MicLive()
     private var underrunsAtStart = 0
@@ -107,7 +111,6 @@ class VoiceEngine(
             }
             jitter.insert(packet.seq, packet.ts, packet.payload)
         }
-        onActivity() // every kind-1 packet is voice activity: senders drop DTX frames
     }
 
     /**
@@ -269,6 +272,8 @@ class VoiceEngine(
                 // The frame exactly as the microphone delivered it, before the encoder or anything
                 // else touches it: that is the recording an A/B of two microphones is made from.
                 dump?.offer(pcm)
+                // Same frame, same rule, for the recognizer: never blocks (see [PcmTee]).
+                tee?.offer(pcm)
                 routeReport.getAndSet(null)?.let { noteRouted(it.type, it.atMs) }
                 // Backstop while the input device is still unknown: a getter read inside a loop that
                 // runs anyway (every ~500 ms), never a sleep.
@@ -305,7 +310,6 @@ class VoiceEngine(
                 if (!encoder.inDtx && packet.size > 2) {
                     send(ts, packet)
                     framesSent++
-                    onActivity()
                 }
                 ts = (ts + FRAME) and 0xffffffffL
                 slowestWorkNanos = maxOf(slowestWorkNanos, System.nanoTime() - workFrom)

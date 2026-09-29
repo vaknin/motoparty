@@ -1,4 +1,5 @@
 #if os(iOS)
+import MotopartyCore
 import SwiftUI
 
 struct SettingsView: View {
@@ -20,9 +21,6 @@ struct SettingsView: View {
                             in: -500...1_000, step: 10) {
                         Text("Latency trim: \(Int(settings.latencyTrimMs)) ms")
                     }
-                    Stepper(value: $settings.commandMaxSeconds, in: 3...15, step: 1) {
-                        Text("Command max length: \(Int(settings.commandMaxSeconds)) s")
-                    }
                 }
 
                 Section {
@@ -33,7 +31,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Headset buttons")
                 } footer: {
-                    Text("AirPods: single, double, triple press. Other buds: set their gestures to play/pause, next and previous in their own app. Buds send “pause” when taken out of the ear, so that is ignored by default.")
+                    Text("AirPods: single, double, triple press. Other buds: set their gestures to play/pause, next and previous in their own app. Buds send “pause” when taken out of the ear, so that is ignored by default. Voice commands need no button: in a talk, say “Moto party, next”.")
                 }
 
                 Section("Link") {

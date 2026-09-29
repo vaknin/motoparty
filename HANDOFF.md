@@ -83,9 +83,8 @@ framework what devices the phone has.
   23.9 s, 763520 bytes, 0 dropped` — `dropped` is the only number that means something is wrong.
 - **Solo talk (2026-09-22).** With `captureDump` on and **no client connected**, a talk trigger is
   no longer refused: it opens the ordinary talk path (call route, `VOICE_COMMUNICATION` capture,
-  live beep, the WAV) with no far end, so the baseline ride needs no passenger and no peer. The
-  20 s silence close is skipped while it is solo; it ends on the trigger. `LinkHost.soloTalk`, log
-  line `talk: no client connected, recording solo`. With the switch off the refusal is unchanged.
+  live beep, the WAV) with no far end, so the baseline ride needs no passenger and no peer. It
+  ends on the trigger, like every talk. Log line `talk: no client connected, recording solo`. With the switch off the refusal is unchanged.
   The user's position as of this date: **music and talk are never wanted at the same time**, so
   the HFP profile switch is not a cost in itself; whether the in-ear mic survives the helmet at
   speed is the only open question about AirPods-only, and this recording is what answers it.
@@ -140,10 +139,12 @@ framework what devices the phone has.
      hook-and-loop cut to the TX back (`research/MIC.md` §"Status").
    - **In between** → the honest case for the whole `research/` plan, and the one where the user's
      ears, not this file, decide.
-3. **Silence close: decided 2026-09-29, option B (for now)** — talk ends on a press only. Not yet
-   implemented: remove the 20 s silence close from `PROTOCOL.md` and the host, and fix `beeps.sh`'s
-   silence step. See "Decisions in force". The user also asked for a rethink of the whole talk /
-   command control (next item).
+3. **Talk/command control: option A built offline (2026-09-29), device-unverified** — see
+   "Decisions in force"; the device checklist is `android/HANDOFF.md` "Commands inside talk,
+   option A" and `ios/README.md` "What only a real iPhone can answer". Press-only talk is done too.
+   First device question, before anything else: does an earbud press reach the app while a talk
+   is open (look for `trigger TALK` on the Pixel, `remote button:` on the iPhone)? If not, a talk
+   ends from the overlay, the notification, or "Moto party, over".
 4. **Only if the ride says buy:** the staged plan in `~/.claude/plans/dynamic-bubbling-lemon.md`
    (Stage B the bench hour, C the routing code, D the music setting, E the A/B ride) still stands
    as written, with `research/MIC.md` overriding its Hardware table on what to buy.
@@ -152,10 +153,10 @@ framework what devices the phone has.
 
 | Component | State |
 |---|---|
-| `android/` | The host. 223 tests, 0 fail, 5 skipped (2026-09-29, incl. 8 screenshot tests; the 5 skipped are the live YouTube tests, which pass with `-Pnetwork`). Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
-| `ios/` | The passenger. `swift test`: 71 pass on Linux (2026-09-29); `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. 2026-09-29: release build clean (xtool auth valid to 2027-09), audit items fixed; next is `xtool dev -c release` with the iPhone 15 on USB-C. |
-| `tools/peer` | Python/uv fake host + client. `.venv/bin/python -m pytest -q`: 184 pass (2026-09-29; `uv run pytest` fails until `.venv` is recreated, its pytest script points at an old path). |
-| `tools/bench` | `talk_cycles.sh`, `music_sync.sh`, `unavailable.sh`, `overlay_rotation.sh`, `beeps.sh`, shared `lib.sh`, summaries in `bench.py` (`summary.txt`, last line `VERDICT:`). All adb paths are proven on the device except `beeps.sh`'s silence step. `HOST_IP` is overridable. `results/*/logcat_all.txt` (whole-phone dumps) are gitignored; the filtered `logcat.txt` is committed. |
+| `android/` | The host. 243 tests, 0 fail, 5 skipped (2026-09-29, after option A; incl. 9 screenshot tests; the 5 skipped are the live YouTube tests, which pass with `-Pnetwork`). Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
+| `ios/` | The passenger. `swift test`: 80 pass on Linux (2026-09-29, after option A; release build clean); `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. 2026-09-29: release build clean (xtool auth valid to 2027-09), audit items fixed; next is `xtool dev -c release` with the iPhone 15 on USB-C. |
+| `tools/peer` | Python/uv fake host + client. `.venv/bin/python -m pytest -q`: 213 pass (2026-09-29, after option A; `hear <phrase>` simulates an in-talk phrase, `say` is unchanged; `uv run pytest` fails until `.venv` is recreated, its pytest script points at an old path). |
+| `tools/bench` | `talk_cycles.sh`, `music_sync.sh`, `unavailable.sh`, `overlay_rotation.sh`, `beeps.sh`, shared `lib.sh`, summaries in `bench.py` (`summary.txt`, last line `VERDICT:`). All adb paths are proven on the device (`beeps.sh`'s silence step is gone with the silence close; it now expects 3 beeps). `HOST_IP` is overridable. `results/*/logcat_all.txt` (whole-phone dumps) are gitignored; the filtered `logcat.txt` is committed. |
 | `spikes/recognizer-pfd/` | Throwaway app, its question answered (see "Recognizer" below). Still installed on the Pixel. |
 | git | Remote `origin` = https://github.com/vaknin/motoparty (**public**: nothing personal in commits). **Commit only when the user asks.** |
 
@@ -221,18 +222,34 @@ on Android has still never produced a positive log line either.
 - **Overlay:** dropping the buttons on the ✕ sets `overlayEnabled=false`; they come back via the
   notification's "Show buttons" and the app's switch. **No auto-hide** — always shown while the
   service runs. The ✕ is "a bit ugly"; cosmetic, parked. Pixel only; iOS has no overlay and won't.
-- **Single button:** wanted, and the spike says it is buildable. Replan it rather than resuming the
-  old steps 6a/6b. Note its motivation is **back to full strength**: on the AirPods route every
+- **Single button:** wanted, and the spike says it is buildable; option A (below) is its plan now,
+  not the old steps 6a/6b. Note its motivation is **back to full strength**: on the AirPods route every
   talk pays the 1–1.5 s switch, so a press that does the right thing first time is worth more, not
   less.
 - **`duckDuringTalk` stays off**, and the Stage D "setting flippable on the road, defaulting per
   mode" is **on hold with Stage D** — it only ever made sense on a route that does not switch. On
   the AirPods route music cannot play through a talk at all, and the user does not want it to.
-- **Talk ends on a press only** (user, 2026-09-29, "option B for now"). The 20 s silence close in
-  `PROTOCOL.md` cannot fire on the AirPods mic (never DTX, below) and is to be removed; a
-  level-over-noise-floor detector was the rejected alternative. "For now": the user finds the
-  current talk/command control clunky (two buttons) and wants a better UX designed — a redesign
-  may replace this.
+- **Talk ends on a press only** (user, 2026-09-29). The 20 s silence close could not fire on the
+  AirPods mic (never DTX, below); a level-over-noise-floor detector was the rejected alternative.
+  **Removed 2026-09-29** from `PROTOCOL.md`, `fixtures/`, the host (`TalkController` has no clock
+  now, `VoiceEngine` no `onActivity`, `soloTalk` gone), the iOS enum and the Python peer
+  (`--silence-ms` gone; `is_voice_activity` stays for its stats line). `"silence"` is no longer a
+  valid `talk.close` reason, so it is dropped like any unknown enum value.
+- **Talk/command control: option A, "commands inside talk"** (user, 2026-09-29; built offline the
+  same day, spec in `PROTOCOL.md` "Commands", vectors `fixtures/wake.json`; chosen over tap/hold on
+  one button, handlebar-only, and hands-free). A press with no client connected always opens a solo
+  talk now (commands alone; `captureDump` only decides the WAV). One action everywhere: a press toggles talk. While
+  a talk is open, each phone also runs speech recognition on the mic that is already live; a phrase
+  that starts with "Moto party" is a command, anything else is conversation. A music command
+  (`play …`, `resume`) also ends the talk. The separate command mode, its route switch and the
+  overlay's MUSIC zone go; the overlay becomes one big button; next/previous gestures go back to
+  track skip. The handlebar box (Honda node) is later one physical button for the same action;
+  hands-free (wake word, open-on-voice) is parked until the mic direction is known — it needs a mic
+  that is open all the time without the HFP route, which the Lark could be. **Unknowns to settle
+  on the device before relying on it:** (1) whether an earbud press reaches the app at all while
+  HFP is up (`android/README.md` "Known gaps" says they arrive as call controls; a self-managed
+  Telecom `ConnectionService` would turn a hang-up press into `onDisconnect` — iOS the same
+  question for `MPRemoteCommandCenter` under `.playAndRecord`); (2) recognition quality at speed.
 - **Wire format:** 16 kHz Opus, 20 ms frames, 24 kbps VOIP. A sample-rate change is out of scope —
   8 hard-coded constants across three implementations, ~40 test assertions, and the Python peer's
   silence detector reads the SILK VAD bit and stops working above 16 kHz. There is no negotiation
@@ -303,12 +320,7 @@ Pixel 8 / Android 17 / AirPods Pro, 2026-09-19 and 2026-09-20.
 
 ## Parked, not lost
 
-- **Rethink talk and command control** (user, 2026-09-29): "the current method is clunky, perhaps
-  instead of two buttons we can do something else, with a better UX". Open design question;
-  propose options to the user before building. Constraints: gloves, 110 km/h wind, AirPods
-  squeeze/Redmi gestures, the wired handlebar switch box agreed with the Honda telemetry project,
-  talk is never declinable, music and talk never at once.
-- The **single button** — worth building for gloves; replan on a non-switching route.
+- The **single button** is now part of option A (above).
 - The **SCO flap**, and the pointless SCO bounce on a refused talk (the host enters the call route
   for a talk the client refuses and leaves it 1.5 s later).
 - **`bench.py` parses none of** the `live cue` / `media cue` / `mic trace` / `capture dump` /

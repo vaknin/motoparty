@@ -24,6 +24,7 @@ class CommandParserTest {
                 "previous" -> Command.Previous
                 "volumeUp" -> Command.VolumeUp
                 "volumeDown" -> Command.VolumeDown
+                "end" -> Command.End
                 "unknown" -> Command.Unknown
                 else -> error("unexpected action $action")
             }

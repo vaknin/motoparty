@@ -14,7 +14,6 @@ object Role {
 
 object CloseReason {
     const val TRIGGER = "trigger"
-    const val SILENCE = "silence"
     const val LINK = "link"
 
     /**
@@ -67,7 +66,7 @@ internal val ENUM_FIELDS: Map<Pair<String, String>, Set<String>> = mapOf(
     ("talk.open" to "by") to setOf(Role.HOST, Role.CLIENT),
     ("talk.close" to "by") to setOf(Role.HOST, Role.CLIENT),
     ("talk.close" to "reason") to
-        setOf(CloseReason.TRIGGER, CloseReason.SILENCE, CloseReason.LINK, CloseReason.UNAVAILABLE),
+        setOf(CloseReason.TRIGGER, CloseReason.LINK, CloseReason.UNAVAILABLE),
     ("music.control" to "action") to
         setOf(ControlAction.PAUSE, ControlAction.RESUME, ControlAction.NEXT, ControlAction.PREVIOUS),
     ("announce" to "earcon") to setOf(Earcon.OK, Earcon.ERROR),

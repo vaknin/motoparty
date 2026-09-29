@@ -2,7 +2,7 @@
 import MotopartyCore
 import SwiftUI
 
-/// Three tabs: Ride (talk, voice command, now playing), Search (browse and
+/// Three tabs: Ride (talk, now playing), Search (browse and
 /// queue music by touch, PROTOCOL.md "Browsing") and Queue.
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel

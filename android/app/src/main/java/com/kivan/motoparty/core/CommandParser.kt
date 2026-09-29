@@ -9,6 +9,8 @@ sealed interface Command {
     data object Previous : Command
     data object VolumeUp : Command
     data object VolumeDown : Command
+    /** "over" / "end talk" / "hang up": close the talk and change nothing else. */
+    data object End : Command
     data object Unknown : Command
 
     enum class Kind(val word: String) { SONG("song"), ALBUM("album"), ARTIST("artist"), PLAYLIST("playlist") }
@@ -24,6 +26,7 @@ object CommandParser {
         "previous" to Command.Previous, "back" to Command.Previous,
         "volume up" to Command.VolumeUp, "louder" to Command.VolumeUp,
         "volume down" to Command.VolumeDown, "quieter" to Command.VolumeDown,
+        "over" to Command.End, "end talk" to Command.End, "hang up" to Command.End,
     )
 
     /** PROTOCOL.md "Commands": per code point, keep letters, marks, numbers, `'` and whitespace. */

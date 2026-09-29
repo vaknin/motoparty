@@ -23,6 +23,7 @@ import com.kivan.motoparty.audio.VoiceEngine
 import com.kivan.motoparty.core.Announce
 import com.kivan.motoparty.core.Bye
 import com.kivan.motoparty.core.Command
+import com.kivan.motoparty.core.CommandEffect
 import com.kivan.motoparty.core.CommandParser
 import com.kivan.motoparty.core.CommandText
 import com.kivan.motoparty.core.Codec
@@ -33,6 +34,7 @@ import com.kivan.motoparty.core.Earcon
 import com.kivan.motoparty.core.Hello
 import com.kivan.motoparty.core.MainLag
 import com.kivan.motoparty.core.PROTO_VERSION
+import com.kivan.motoparty.core.PhraseGate
 import com.kivan.motoparty.core.Message
 import com.kivan.motoparty.core.MusicBrowse
 import com.kivan.motoparty.core.MusicControl
@@ -69,7 +71,7 @@ import com.kivan.motoparty.trigger.TriggerKind
 import com.kivan.motoparty.trigger.TriggerSource
 import com.kivan.motoparty.trigger.Triggers
 import com.kivan.motoparty.voicecmd.Announcer
-import com.kivan.motoparty.voicecmd.Transcriber
+import com.kivan.motoparty.voicecmd.TalkRecognizer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -100,7 +102,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private val deviceName: String =
         AndroidSettings.Global.getString(context.contentResolver, AndroidSettings.Global.DEVICE_NAME) ?: Build.MODEL
 
-    private val talk: TalkController = TalkController(clock)
+    private val talk: TalkController = TalkController()
     // The route teardown invalidates the cached link state at once, so a talk opened in the window
     // before the framework reports the teardown cannot see a stale "connected" (F8). The same two
     // edges are what a media-route sound waits for, in the other direction (F9b, [MediaCue]) —
@@ -136,7 +138,6 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private val voice: VoiceEngine = VoiceEngine(
         send = { ts, p -> voiceSocket.sendAudio(ts, p) },
         clockTs = { voiceSocket.currentTs() },
-        onActivity = talk::noteActivity,
         // From the capture thread, on its first frame: never block it, hop to Main.
         onCaptureUp = { atMs -> scope.launch { onCaptureUp(atMs) } },
         // Same thread, same rule: the headset's own mic signal is arriving (F9a).
@@ -161,8 +162,16 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private val voiceSocket: VoiceSocket = VoiceSocket(clientIp = { control.clientAddress }, onPacket = { voice.onPacket(it) })
     private val trackServer = TrackServer(scope, lookup = { caches.active.cached(it) })
     private val discovery = Discovery(context, deviceName)
-    private val transcriber = Transcriber(context)
-    private val announcer = Announcer(context, earconPlayer = { earcon(it) })
+    private val announcer = Announcer(context, earconPlayer = { kind, call -> earcon(kind, call) })
+    /** In-talk speech recognition on the talk's own capture (PROTOCOL.md "Commands"). Main only. */
+    private val recognizer = TalkRecognizer(
+        context,
+        attach = { voice.tee = it },
+        onPhrase = ::onPhrase,
+        log = Hub::log,
+    )
+    /** Wake word and arming, per talk. Main only. */
+    private val phrases = PhraseGate()
     private val music: MusicController = MusicController(
         scope, caches, sync, player, clock,
         send = control::send,
@@ -192,19 +201,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     /** The sounds [mediaCue] is holding, by the id it knows them under. Main only. */
     private val pendingSounds = HashMap<Int, () -> Unit>()
     private var mediaSoundSeq = 0
-    private var listenJob: Job? = null
+    /** The teardown of the last talk that closed; a command that closed it waits on this. */
+    private var talkClosed: Job? = null
     /**
      * Bumped on every talk open, on Main. Audio work finishes asynchronously, so a failure or the
      * live earcon of an earlier talk can reach Main after the next one opened; they carry the
      * number they were started with and are dropped when it is no longer current.
      */
     private var talkSession = 0
-    /**
-     * The open talk was started with nobody connected, to record this phone's own microphone
-     * through the real talk path (see [onTrigger]). Main only. It stops mattering the moment a
-     * client connects: from then on it is an ordinary talk.
-     */
-    private var soloTalk = false
     private var clientName: String? = null
     /** Debug, gate S4: the Lark receiver as stereo, outside the talk path. Files beside the dumps. */
     private val usbProbe = UsbStereoProbe(
@@ -241,15 +245,6 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         scope.launch { Hub.actions.collect { guarded("ui action") { onUiAction(it) } } }
         scope.launch {
             while (isActive) {
-                delay(500)
-                // A solo recording has no far end to fall silent, and in a quiet room its own
-                // frames go DTX: it ends on the trigger, not on the 20 s silence close.
-                if (soloTalk && !control.hasClient()) continue
-                talk.tick()?.let(::applyTalk)
-            }
-        }
-        scope.launch {
-            while (isActive) {
                 refreshStatus()
                 delay(1000)
             }
@@ -257,15 +252,15 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     }
 
     fun stop() {
-        listenJob?.cancel()
         usbProbe.stopLong()
         if (talk.isOpen) applyTalk(TalkController.Action.Close(Role.HOST, "link"))
         control.stop()
         voiceSocket.stop()
         trackServer.stop()
         discovery.stop()
+        recognizer.stop()
         // Behind whatever talk teardown is still queued, then the thread retires. exitAll: a
-        // cancelled recognizer's route-back arrives after shutdown and is dropped, so do it here.
+        // route-back still queued behind the shutdown would be dropped, so do it here.
         audio.post("shutdown") {
             voice.stop()
             router.exitAll()
@@ -424,6 +419,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 pushState()
                 val session = ++talkSession
                 liveCue.open(session, clock())
+                phrases.reset()
                 // Switching the headset to HFP blocks for about a second; messages went out first.
                 // A failure here is this phone's "cannot open the microphone" case. enterCall
                 // counts itself before it can throw, so the close that follows balances it.
@@ -434,7 +430,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                     opened.join()
                     // A collapsed re-open kept a running engine, whose first frame — and whose
                     // established headset mic (F9a) — are behind us; no new callback will come.
-                    voice.captureUpAtMs?.let { fireLive(liveCue.captureUp(session, it)) }
+                    voice.captureUpAtMs?.let {
+                        fireLive(liveCue.captureUp(session, it))
+                        startRecognizer(session)
+                    }
                     voice.micLiveAtMs?.let { fireLive(liveCue.micLive(session, it)) }
                     // `sco.connected` can only still be true here if the route was never released
                     // (a re-open that kept it), which is exactly when it may count — see F8 and
@@ -450,9 +449,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is TalkController.Action.Close -> {
                 control.send(TalkClose(action.by, action.reason))
                 pushState()
-                soloTalk = false
                 // A talk that closed before its microphone was live never gets its go-beep.
                 liveCue.close()
+                // EOF to the recognizer; the voice engine stops teeing at once.
+                recognizer.stop()
                 // The client is told to resume at now + resumeLeadMs and is not kept waiting for
                 // our headset. Our own player is a different matter: A2DP does not exist again
                 // until exitCall has finished, and a play() into a route that is still being
@@ -463,6 +463,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 if (resuming) sync.hold()
                 music.onTalkClose(settings.value.resumeLeadMs.toLong())
                 val closed = talkAudio.close()
+                talkClosed = closed
                 Hub.log("talk closed (by ${action.by}, ${action.reason})")
                 if (resuming) scope.launch {
                     closed.join()
@@ -478,6 +479,48 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      */
     private fun onCaptureUp(atMs: Long) {
         fireLive(liveCue.captureUp(talkAudio.ownerSession, atMs))
+        startRecognizer(talkAudio.ownerSession)
+    }
+
+    // ---- commands inside a talk (PROTOCOL.md "Commands") ----
+
+    /**
+     * The talk [session]'s microphone is delivering: listen to it for commands. Once per talk
+     * ([TalkRecognizer.start] ignores a second call); a stale session is ignored.
+     */
+    private fun startRecognizer(session: Int) {
+        if (!talk.isOpen || session != talkSession) return
+        recognizer.start(session, settings.value.asrLanguage)
+    }
+
+    /**
+     * One phrase the rider said during talk [session] (on Main, from [TalkRecognizer]). Logged
+     * locally, every one of them, as `heard: "<text>" (command|conversation|armed)` — the ride
+     * tunes the wake word from these lines. Conversation never goes on the wire.
+     */
+    private fun onPhrase(session: Int, text: String) {
+        if (!talk.isOpen || session != talkSession) {
+            Hub.log("heard: \"$text\" (after the talk, ignored)")
+            return
+        }
+        // With no client every phrase is a command, so a reply of ours that the talk microphone
+        // hears back ("Next: …" → "Didn't catch that" → …) must not become the next one.
+        val solo = !control.hasClient()
+        if (solo && announcer.spokeWithin(ECHO_MS)) {
+            Hub.log("heard: \"$text\" (own speech, ignored)")
+            return
+        }
+        when (val h = phrases.onPhrase(text, solo, clock())) {
+            is PhraseGate.Heard.Command -> {
+                Hub.log("heard: \"$text\" (command)")
+                executeCommand(h.text)
+            }
+            PhraseGate.Heard.Armed -> {
+                Hub.log("heard: \"$text\" (armed)")
+                earcon(Earcons.Kind.LISTEN, call = true)
+            }
+            PhraseGate.Heard.Conversation -> Hub.log("heard: \"$text\" (conversation)")
+        }
     }
 
     /**
@@ -613,38 +656,29 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     private fun onTrigger(kind: TriggerKind, source: TriggerSource) {
         Hub.log("trigger $kind from $source")
-        when (kind) {
-            TriggerKind.TALK -> {
-                val solo = !talk.isOpen && !control.hasClient()
-                // A talk with nobody to talk to is an error — unless the rider is recording the
-                // microphone: then it is the whole talk path (call route, capture, live beep, the
-                // WAV) with no far end, which is how a microphone is judged on a ride alone.
-                if (solo && !settings.value.captureDump) {
-                    errorEarcon()
-                    Hub.log("talk: no client connected")
-                    return
-                }
-                // Our own trigger with no usable mic: error earcon, and no talk.open goes out.
-                if (!talk.isOpen && !micAvailable()) {
-                    errorEarcon()
-                    return
-                }
-                // The USB probe holds the receiver (51 s, or a whole ride); a talk opening under it
-                // would record neither properly.
-                if (usbProbe.isRunning) {
-                    errorEarcon()
-                    Hub.log("talk: usb probe running")
-                    return
-                }
-                listenJob?.cancel()
-                if (solo) {
-                    soloTalk = true
-                    Hub.log("talk: no client connected, recording solo")
-                }
-                applyTalk(talk.onLocalTrigger())
-            }
-            TriggerKind.MUSIC -> listenForCommand()
+        // One action everywhere since option A (2026-09-29): a press toggles talk. Commands are
+        // spoken inside it.
+        val solo = !talk.isOpen && !control.hasClient()
+        // Our own trigger with no usable mic: error earcon, and no talk.open goes out.
+        if (!talk.isOpen && !micAvailable()) {
+            errorEarcon()
+            return
         }
+        // The USB probe holds the receiver (51 s, or a whole ride); a talk opening under it
+        // would record neither properly.
+        if (usbProbe.isRunning) {
+            errorEarcon()
+            Hub.log("talk: usb probe running")
+            return
+        }
+        // With nobody connected the talk is solo: the whole talk path (call route, capture, live
+        // beep) with no far end. It is how a command is given alone — every phrase is one — and,
+        // with the capture-dump setting on, how a microphone is recorded on a ride alone. The
+        // bench greps the first half of this line.
+        if (solo) {
+            Hub.log("talk: no client connected, recording solo" + if (settings.value.captureDump) " (WAV)" else " (no WAV)")
+        }
+        applyTalk(talk.onLocalTrigger())
     }
 
     private fun onMediaKey(keyCode: Int): Boolean {
@@ -654,101 +688,95 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             KeyEvent.KEYCODE_HEADSETHOOK ->
                 if (s.headsetPlayPause == "talk") Triggers.fire(TriggerKind.TALK, TriggerSource.MEDIA_BUTTON)
                 else music.togglePlayPause()
-            KeyEvent.KEYCODE_MEDIA_NEXT ->
-                if (s.headsetNext == "command") Triggers.fire(TriggerKind.MUSIC, TriggerSource.MEDIA_BUTTON)
-                else music.next()
+            KeyEvent.KEYCODE_MEDIA_NEXT -> music.next()
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> music.previous()
             else -> return false
         }
         return true
     }
 
-    private fun listenForCommand() {
-        if (talk.isOpen) {
-            Hub.log("command ignored: talk is open")
-            return
-        }
-        if (listenJob?.isActive == true) {
-            listenJob?.cancel()
-            return
-        }
-        if (!hasMic()) {
-            announce("Microphone permission missing", Earcon.ERROR)
-            return
-        }
-        listenJob = scope.launch {
-            Hub.status.update { it.copy(listening = true) }
-            sync.hold()
-            // Queued, never cancelled: the block always runs, so enter and exit stay paired even
-            // if this job is cancelled while waiting for the route.
-            val entered = audio.post("recognizer route") { router.enterCall() }
-            var routeBack: Job? = null
-            fun leaveCall() {
-                if (routeBack == null) routeBack = audio.post("recognizer route back") { router.exitCall() }
-            }
-            try {
-                entered.join()
-                delay(SCO_SETTLE_MS)
-                earcon(Earcons.Kind.LISTEN, call = true)
-                delay(250)
-                val r = transcriber.listen(settings.value.asrLanguage)
-                leaveCall()
-                when (r) {
-                    is Transcriber.Result.Text -> {
-                        Hub.log("heard: \"${r.text}\"")
-                        executeCommand(r.text)
-                    }
-                    is Transcriber.Result.Failed -> {
-                        Hub.log("recognition failed: error ${r.error}")
-                        announce("Didn't catch that", Earcon.ERROR)
-                    }
-                }
-            } finally {
-                leaveCall()
-                Hub.status.update { it.copy(listening = false) }
-                // In its own coroutine: this one may be cancelled, and the music must not restart
-                // before the route is back (cold, for the same reason as after talk).
-                val back = routeBack
-                scope.launch {
-                    back?.join()
-                    sync.release(cold = true)
-                }
-            }
-        }
-    }
-
     // ---- commands ----
 
-    /** [fromClient] distinguishes the passenger's utterance from our own rider's. */
+    /**
+     * A command: typed on the Ride screen, the passenger's `command.text` ([fromClient]), or a
+     * phrase our rider said in a talk. What it does to the talk and where its reply is heard is
+     * [CommandEffect]'s decision (PROTOCOL.md "Commands", *Effect on the talk*); this carries it out.
+     */
     private fun executeCommand(text: String, fromClient: Boolean = false) {
-        Hub.log("command: \"$text\"")
-        when (val cmd = CommandParser.parse(text)) {
+        Hub.log("command: \"$text\"${if (fromClient) " (client)" else ""}")
+        val cmd = CommandParser.parse(text)
+        val effect = CommandEffect.of(cmd, talk.isOpen, fromClient)
+        val inTalk = effect.reply == CommandEffect.Reply.CALL
+        fun reply(t: String, earcon: String) = announce(t, earcon, inTalk)
+        // What must happen before the talk closes: `resume` parks the track, so the close resumes
+        // it the usual way (held over the route switch); `play` drops the resume, so the music the
+        // talk paused does not come back for the second before the new track does.
+        var canResume = false
+        var hadResume = false
+        when (cmd) {
+            Command.Resume -> {
+                canResume = music.canResume
+                if (effect.closeBy != null) music.resume()
+            }
+            is Command.Play -> if (effect.closeBy != null) {
+                hadResume = music.dropResumeAfterTalk()
+                music.startNotBefore(clock() + settings.value.resumeLeadMs)
+            }
+            else -> Unit
+        }
+        val closed: Job? = effect.closeBy?.let { by ->
+            talk.onCommandClose(by)?.let(::applyTalk)
+            talkClosed
+        }
+        when (cmd) {
             is Command.Play -> scope.launch {
                 Hub.status.update { it.copy(busy = "Searching ${cmd.kind.word} \"${cmd.query}\"") }
-                try {
-                    val result = catalog.search(cmd.kind, cmd.query)
-                    music.setQueue(result.tracks)
-                    announce("Playing ${result.label}", Earcon.OK)
+                val found = try {
+                    catalog.search(cmd.kind, cmd.query)
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Catalog.NotFound) {
-                    announce("Couldn't find ${cmd.query}", Earcon.ERROR)
-                } catch (e: IOException) {
-                    announce("No coverage", Earcon.ERROR)
                 } catch (e: Exception) {
-                    Hub.log("search failed: $e")
-                    announce("Search failed", Earcon.ERROR)
+                    e
                 } finally {
                     Hub.status.update { it.copy(busy = null) }
                 }
+                // The music and the reply come after the headset is back in media mode.
+                closed?.join()
+                when (found) {
+                    is Catalog.Result -> {
+                        music.setQueue(found.tracks)
+                        announce("Playing ${found.label}", Earcon.OK)
+                    }
+                    else -> {
+                        // The talk is closed anyway; the music it paused comes back.
+                        if (hadResume) music.resume()
+                        announce(searchFailure(found as Exception, cmd.query), Earcon.ERROR)
+                    }
+                }
             }
-            Command.Pause -> { music.pause(); announce("Paused", Earcon.OK) }
-            Command.Resume -> { music.resume(); announce("Resuming", Earcon.OK) }
-            Command.Next -> { music.next(); announce(music.current?.let { "Next: ${it.title}" } ?: "End of queue", Earcon.OK) }
-            Command.Previous -> { music.previous(); announce(music.current?.let { "Playing ${it.title}" } ?: "Nothing to play", Earcon.OK) }
-            Command.VolumeUp -> onVolumeCommand(fromClient, AudioManager.ADJUST_RAISE)
-            Command.VolumeDown -> onVolumeCommand(fromClient, AudioManager.ADJUST_LOWER)
-            Command.Unknown -> announce("Didn't catch that", Earcon.ERROR)
+            Command.Pause -> { music.pause(); reply("Paused", Earcon.OK) }
+            Command.Resume -> {
+                if (closed == null) music.resume()
+                val (t, e) = if (canResume) "Resuming" to Earcon.OK else "Nothing to resume" to Earcon.ERROR
+                if (closed == null) reply(t, e) else scope.launch { closed.join(); announce(t, e) }
+            }
+            // No reply: the talk's closing earcon is the acknowledgement.
+            Command.End -> if (effect.closeBy == null) Hub.log("end: no talk to end")
+            Command.Next -> { music.next(); reply(music.current?.let { "Next: ${it.title}" } ?: "End of queue", Earcon.OK) }
+            Command.Previous -> { music.previous(); reply(music.current?.let { "Playing ${it.title}" } ?: "Nothing to play", Earcon.OK) }
+            Command.VolumeUp -> onVolumeCommand(fromClient, AudioManager.ADJUST_RAISE, effect)
+            Command.VolumeDown -> onVolumeCommand(fromClient, AudioManager.ADJUST_LOWER, effect)
+            Command.Unknown -> reply("Didn't catch that", Earcon.ERROR)
+        }
+    }
+
+    /** The spoken reply to a `play` whose search threw [e]. */
+    private fun searchFailure(e: Exception, query: String): String = when (e) {
+        is Catalog.NotFound -> "Couldn't find $query"
+        is IOException -> "No coverage"
+        else -> {
+            Hub.log("search failed: $e")
+            "Search failed"
         }
     }
 
@@ -784,31 +812,37 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * spoken on and is never sent. Our rider's utterance changes this phone, with an earcon and
      * no `announce` — the passenger must not be told. A volume utterance arriving from the client
      * means the client failed to handle it locally, and is answered "Didn't catch that".
+     *
+     * In a talk the rider hears the call stream, so that is the one that changes
+     * ([CommandEffect.callVolume]) and the tone plays on the call route; outside one, the media
+     * volume as always.
      */
-    private fun onVolumeCommand(fromClient: Boolean, direction: Int) {
+    private fun onVolumeCommand(fromClient: Boolean, direction: Int, effect: CommandEffect) {
+        val inTalk = effect.reply == CommandEffect.Reply.CALL
         if (fromClient) {
-            announce("Didn't catch that", Earcon.ERROR)
+            announce("Didn't catch that", Earcon.ERROR, inTalk)
             return
         }
+        val stream = if (effect.callVolume) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_MUSIC
         // Two steps: one step is barely audible under a helmet. Off Main with the earcon, in the
         // same block: adjustStreamVolume is a binder call into the audio service like any other.
         audio.post("volume") {
-            repeat(2) { audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0) }
+            repeat(2) { audioManager.adjustStreamVolume(stream, direction, 0) }
         }
-        // A spoken "louder" comes straight out of the recogniser's own route teardown, so the
-        // confirmation tone waits for the media route like every other sound on it (F9b). It is
-        // still posted to the audio thread, i.e. still behind the volume change above.
-        mediaSound(MediaCue.Kind.OK) { earcon(Earcons.Kind.OK) }
-        Hub.log("volume ${if (direction == AudioManager.ADJUST_RAISE) "up" else "down"} (local)")
+        // In a talk the tone goes on the call route, behind the change on the audio thread. Outside
+        // one it is a media-route sound like every other (F9b).
+        if (inTalk) earcon(Earcons.Kind.OK, call = true)
+        else mediaSound(MediaCue.Kind.OK) { earcon(Earcons.Kind.OK) }
+        Hub.log("volume ${if (direction == AudioManager.ADJUST_RAISE) "up" else "down"} (local, ${if (effect.callVolume) "call" else "media"})")
     }
 
     /**
-     * The passenger is told over the wire at once; this phone's own earcon + speech are a
-     * media-route sound and wait for the media route (F9b). A spoken reply is the commonest case
-     * of all: it follows the recogniser's `exitCall` by a few ms, which is exactly the teardown the
-     * first syllable used to be lost in.
+     * The passenger is told over the wire at once. This phone's own earcon + speech are either a
+     * media-route sound that waits for the media route (F9b) — the reply to a command that ended
+     * a talk follows that talk's `exitCall` by a few ms, exactly the teardown the first syllable
+     * used to be lost in — or, [inTalk], spoken now on the call route the headset is in.
      */
-    private fun announce(text: String, earcon: String?) {
+    private fun announce(text: String, earcon: String?, inTalk: Boolean = false) {
         control.send(Announce(text, earcon))
         val kind = when (earcon) {
             Earcon.OK -> Earcons.Kind.OK
@@ -816,7 +850,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             else -> null
         }
         val language = settings.value.asrLanguage
-        mediaSound(MediaCue.Kind.ANNOUNCE) { announcer.announce(text, kind, language) }
+        if (inTalk) announcer.announce(text, kind, language, call = true)
+        else mediaSound(MediaCue.Kind.ANNOUNCE) { announcer.announce(text, kind, language) }
         Hub.status.update { it.copy(lastAnnounce = text) }
         Hub.log("announce: $text")
     }
@@ -985,8 +1020,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * "Talk flow" step 1. Deliberately *not* a preference: there is no way to decline talk, only
      * to be unable to serve it.
      *
-     * `MODE_IN_COMMUNICATION` is not treated as busy — that is the mode our own talk and our own
-     * recognizer put the device in.
+     * `MODE_IN_COMMUNICATION` is not treated as busy — that is the mode our own talk puts the
+     * device in.
      *
      * Every check here is local: a permission lookup, a flag and the mode [AudioModeWatch] keeps
      * cached. Asking `AudioManager` for the mode directly would be a binder call into the audio
@@ -1026,6 +1061,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     companion object {
-        private const val SCO_SETTLE_MS = 700L
+        /** In a solo talk, phrases this soon after our own speech are taken for its echo. */
+        private const val ECHO_MS = 2_000L
     }
 }

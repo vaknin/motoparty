@@ -128,7 +128,7 @@ locked() { sh1 dumpsys window | grep -q -E 'isKeyguardShowing=true|mShowingLocks
 # overlay_frame: "x1 y1 x2 y2" of our TYPE_APPLICATION_OVERLAY window, empty if not shown.
 overlay_frame() { sh1 dumpsys window windows | python3 "$BENCH/bench.py" frame "$PKG"; }
 # host_talk: press TALK on the host. DRY: the fake host's `talk`. Phone: tap the overlay's TALK
-# zone (the upper of its two zones); LinkService's TALK intent is not exported.
+# button (one button since 2026-09-29); LinkService's TALK intent is not exported.
 host_talk() {
   if [ "$DRY" = 1 ]; then host_cmd talk; return; fi
   phone_free

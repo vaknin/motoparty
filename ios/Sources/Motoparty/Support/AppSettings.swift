@@ -1,23 +1,6 @@
 #if os(iOS)
 import Foundation
-
-/// What a headset / lock-screen button does.
-enum RemoteAction: String, CaseIterable, Identifiable {
-    case talk, command, playPause, next, previous, none
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .talk: "Talk on/off"
-        case .command: "Voice command"
-        case .playPause: "Music play/pause"
-        case .next: "Next track"
-        case .previous: "Previous track"
-        case .none: "Nothing"
-        }
-    }
-}
+import MotopartyCore
 
 final class AppSettings: ObservableObject {
     private let defaults = UserDefaults.standard
@@ -37,18 +20,17 @@ final class AppSettings: ObservableObject {
     /// iOS also sends "pause" when an AirPod is taken out of the ear, so the
     /// explicit pause command is ignored unless this is on.
     @Published var pauseCommandTriggers: Bool { didSet { defaults.set(pauseCommandTriggers, forKey: "pauseCommandTriggers") } }
-    /// Longest voice command recording, seconds.
-    @Published var commandMaxSeconds: Double { didSet { defaults.set(commandMaxSeconds, forKey: "commandMaxSeconds") } }
 
     init() {
         deviceName = defaults.string(forKey: "deviceName") ?? "iPhone"
         latencyTrimMs = defaults.object(forKey: "latencyTrimMs") as? Double ?? 0
         speechLanguage = defaults.string(forKey: "speechLanguage") ?? "en-US"
-        playPauseAction = RemoteAction(rawValue: defaults.string(forKey: "playPauseAction") ?? "") ?? .talk
-        nextTrackAction = RemoteAction(rawValue: defaults.string(forKey: "nextTrackAction") ?? "") ?? .command
-        previousTrackAction = RemoteAction(rawValue: defaults.string(forKey: "previousTrackAction") ?? "") ?? .previous
+        playPauseAction = RemoteAction.stored(defaults.string(forKey: "playPauseAction"), fallback: .defaultPlayPause)
+        nextTrackAction = RemoteAction.stored(defaults.string(forKey: "nextTrackAction"), fallback: .defaultNext)
+        previousTrackAction = RemoteAction.stored(defaults.string(forKey: "previousTrackAction"), fallback: .defaultPrevious)
         pauseCommandTriggers = defaults.object(forKey: "pauseCommandTriggers") as? Bool ?? false
-        commandMaxSeconds = defaults.object(forKey: "commandMaxSeconds") as? Double ?? 6
+        // The removed command mode's setting (2026-09-29).
+        defaults.removeObject(forKey: "commandMaxSeconds")
     }
 
     static let languages = ["en-US", "en-GB", "he-IL", "de-DE", "fr-FR", "es-ES", "it-IT", "ru-RU"]

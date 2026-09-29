@@ -93,10 +93,10 @@ def track(tmp_path_factory):
     return out
 
 
-def start_pair(tmp_path, track, *client_args, silence_ms=20_000):
+def start_pair(tmp_path, track, *client_args):
     cp, vp, hp = free_port(), free_port(socket.SOCK_DGRAM), free_port()
     host_args = ["host", "--no-mdns", "--bind", "127.0.0.1", "--port", str(cp), "--voice-port", str(vp),
-                 "--http-port", str(hp), "--name", "Test Host", "--silence-ms", str(silence_ms)]
+                 "--http-port", str(hp), "--name", "Test Host"]
     if track:
         host_args += ["--track", str(track)]
     host = Proc(*host_args)
@@ -208,15 +208,18 @@ def test_full_session(tmp_path, track):
         host.stop()
 
 
-def test_silence_closes_talk(tmp_path):
-    # no --tone and no audio: the client sends only keepalives, so the host must close talk
-    host, client, _ = start_pair(tmp_path, None, silence_ms=1500)
+def test_silence_does_not_close_talk(tmp_path):
+    # no --tone and no audio: the client sends only keepalives. Talk ends on a trigger only.
+    host, client, _ = start_pair(tmp_path, None)
     try:
         client.msg("<<", "hello")
         client.send("talk")
         client.msg("<<", "talk.open")
-        close = client.msg("<<", "talk.close", timeout=4)
-        assert close == {"t": "talk.close", "by": "host", "reason": "silence"}
+        with pytest.raises(AssertionError):
+            client.msg("<<", "talk.close", timeout=3)
+        client.send("talk")
+        close = client.msg("<<", "talk.close")
+        assert close == {"t": "talk.close", "by": "client", "reason": "trigger"}
     finally:
         client.stop()
         host.stop()
@@ -336,6 +339,116 @@ def test_host_rejects_oversize_frame_and_survives(tmp_path):
         host.expect(r"protocol error: frame length 65537 exceeds 65536; closing")
         client.send("say pause")  # the real client is unaffected
         client.msg("<<", "announce")
+    finally:
+        client.stop()
+        host.stop()
+
+
+def _open_talk(client) -> None:
+    client.send("talk")
+    client.msg("<<", "talk.open")
+    assert client.msg("<<", "state")["talk"] is True
+
+
+def test_spoken_phrases_in_a_talk(tmp_path):
+    """PROTOCOL.md "Commands": the wake word rule on the client, `end` and `pause` on the host."""
+    host, client, _ = start_pair(tmp_path, None)
+    try:
+        client.msg("<<", "hello")
+        client.send("hear moto party pause")  # outside a talk: nothing is sent
+        client.expect("hear: no talk open")
+        _open_talk(client)
+
+        client.send("hear what a view")  # conversation
+        client.expect(r"hear: 'what a view' is conversation, not sent")
+        client.send("hear moto party louder")  # volume stays local
+        client.expect(r"local: volumeUp handled here \[earcon ok\]")
+
+        # a bare wake word arms the next phrase: it goes without the wake word, the talk stays open
+        client.send("hear Moto party.")
+        client.expect(r"hear: wake word; the next phrase within 5000 ms is a command \[earcon listen\]")
+        client.send("hear pause")
+        assert client.msg(">>", "command.text") == {"t": "command.text", "text": "pause", "lang": "en-US"}
+        assert client.msg("<<", "announce")["text"] == "Nothing is playing"
+        client.send("hear pause")  # disarmed again: conversation
+        client.expect(r"hear: 'pause' is conversation, not sent")
+        assert sum('"command.text"' in line for line in client.lines) == 1
+        assert not any('"talk.close"' in line for line in client.lines)
+
+        # `over` closes the talk, by the client that spoke it, and nothing else happens
+        client.send("hear Hey motoparty, over")
+        assert client.msg(">>", "command.text")["text"] == "over"
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
+        assert client.msg("<<", "state")["talk"] is False
+        with pytest.raises(AssertionError):
+            client.expect(r'<< \{"t":"(music\.play|announce)"', timeout=1)
+        client.send("hear moto party over")
+        client.expect("hear: no talk open")
+    finally:
+        client.stop()
+        host.stop()
+
+
+def _load(host, client) -> dict:
+    host.send("load")
+    load = client.msg("<<", "music.load")
+    client.msg(">>", "music.ready")
+    client.msg("<<", "music.play")
+    return load
+
+
+def test_spoken_resume_ends_the_talk_and_music_follows(tmp_path, track):
+    if track is None:
+        pytest.skip("ffmpeg not available")
+    host, client, _ = start_pair(tmp_path, track)
+    try:
+        client.msg("<<", "hello")
+        load = _load(host, client)
+        _open_talk(client)
+        client.send("hear moto party resume")
+        assert client.msg(">>", "command.text")["text"] == "resume"
+        # the close comes first, then the resume after the usual lead, then the announce
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
+        play = client.msg("<<", "music.play")
+        assert play["id"] == load["id"]
+        m = client.expect(r"music: play \S+ from \d+ ms at host \d+ = local [\d.]+ \(in (\d+) ms\)")
+        assert 1300 <= int(m.group(1)) <= 1510  # the clock estimate may be a millisecond off
+        assert client.msg("<<", "state")["talk"] is False
+        assert client.msg("<<", "announce") == {"t": "announce", "text": "Resuming", "earcon": "ok"}
+    finally:
+        client.stop()
+        host.stop()
+
+
+def test_spoken_play_and_pause_in_a_talk(tmp_path, track):
+    if track is None:
+        pytest.skip("ffmpeg not available")
+    host, client, _ = start_pair(tmp_path, track)
+    try:
+        client.msg("<<", "hello")
+        _load(host, client)
+
+        # `pause` in the talk cancels the resume after it; the talk stays open
+        _open_talk(client)
+        client.send("hear motoparty pause")
+        assert client.msg("<<", "announce") == {"t": "announce", "text": "Paused", "earcon": "ok"}
+        client.send("talk")
+        client.msg("<<", "talk.close")
+        assert client.msg("<<", "state")["music"]["playing"] is False
+        with pytest.raises(AssertionError):
+            client.msg("<<", "music.play", timeout=1)
+
+        # `play …` ends the talk; the track starts once the headset is back in media mode
+        _open_talk(client)
+        client.send("hear Moto party, play Bench Tone")
+        assert client.msg(">>", "command.text")["text"] == "play bench tone"
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
+        assert client.msg("<<", "state")["talk"] is False
+        assert client.msg("<<", "announce")["text"] == "Playing Bench Tone by Peer"
+        client.msg("<<", "music.load")
+        client.msg("<<", "music.play")
+        m = client.expect(r"music: play \S+ from 0 ms at host \d+ = local [\d.]+ \(in (\d+) ms\)")
+        assert int(m.group(1)) >= 1000  # the resume lead, not the 300 ms play lead
     finally:
         client.stop()
         host.stop()

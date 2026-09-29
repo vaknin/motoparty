@@ -10,8 +10,6 @@ object Palette {
     /** The same pairs as the iPhone's buttons, so both phones read alike. */
     val Talk = Color(0xFFFF7A2F)
     val TalkOpen = Color(0xFFE5484D)
-    val Music = Color(0xFF3B82F6)
-    val Listening = Color(0xFF8B5CF6)
     val Good = Color(0xFF4ADE80)
     val Waiting = Color(0xFFFBBF24)
     val Off = Color(0xFF6B7280)

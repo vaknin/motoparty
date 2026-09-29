@@ -9,7 +9,9 @@ import os
 ///
 /// Capture: inputNode → AVAudioSinkNode (render-cycle sized buffers, unlike a
 /// tap's 100 ms minimum) → channel 0 → capture queue → resample to 16 kHz →
-/// 320-sample frames → Opus → `sendAudio` (or `skipFrame` for DTX).
+/// 320-sample frames → Opus → `sendAudio` (or `skipFrame` for DTX). Each
+/// 16 kHz buffer also goes to `tee` (speech recognition inside the talk)
+/// before the encoder, so DTX never cuts what the recogniser hears.
 /// Playback: AVAudioSourceNode (16 kHz mono) pulls 20 ms frames from the
 /// JitterBuffer and decodes them with Opus in the render callback.
 ///
@@ -30,6 +32,7 @@ final class VoiceEngine {
     private var configObserver: NSObjectProtocol?
     private var sendAudio: ((Data) -> Void)?
     private var skipFrame: (() -> Void)?
+    private var tee: ((AVAudioPCMBuffer) -> Void)?
 
     private let format16k = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000,
                                           channels: 1, interleaved: false)!
@@ -40,6 +43,7 @@ final class VoiceEngine {
     private var captureMonoFormat: AVAudioFormat?
     private var fifo: [Float] = []
     private var encoder: OpusVoiceEncoder?
+    private var captureTee: ((AVAudioPCMBuffer) -> Void)?
 
     // Receive side, shared by the network queue and the render thread.
     private struct Rx {
@@ -57,10 +61,15 @@ final class VoiceEngine {
 
     var isRunning: Bool { engine?.isRunning ?? false }
 
-    func start(sendAudio: @escaping (Data) -> Void, skipFrame: @escaping () -> Void) throws {
+    /// `tee` gets every 16 kHz mono capture buffer on the capture queue. It
+    /// must return at once (hand the buffer off, never wait): it runs in line
+    /// with the encoder.
+    func start(sendAudio: @escaping (Data) -> Void, skipFrame: @escaping () -> Void,
+               tee: ((AVAudioPCMBuffer) -> Void)? = nil) throws {
         stop()
         self.sendAudio = sendAudio
         self.skipFrame = skipFrame
+        self.tee = tee
 
         let engine = AVAudioEngine()
         let input = engine.inputNode
@@ -78,6 +87,7 @@ final class VoiceEngine {
             self.converter = converter
             self.captureMonoFormat = mono
             self.encoder = encoder
+            self.captureTee = tee
             self.fifo.removeAll()
         }
         rx.withLockUnchecked { $0 = Rx(running: true, jitter: JitterBuffer(), decoder: decoder) }
@@ -127,7 +137,7 @@ final class VoiceEngine {
             try? engine.inputNode.setVoiceProcessingEnabled(false)
         }
         engine = nil
-        captureQueue.async { self.fifo.removeAll() }
+        captureQueue.async { self.fifo.removeAll(); self.captureTee = nil }
     }
 
     /// Network queue → jitter buffer.
@@ -181,6 +191,8 @@ final class VoiceEngine {
             return inBuffer
         }
         guard status != .error, let data = out.floatChannelData else { return }
+        // A fresh buffer every call, so the recogniser may keep it.
+        if out.frameLength > 0 { captureTee?(out) }
         fifo.append(contentsOf: UnsafeBufferPointer(start: data[0], count: Int(out.frameLength)))
 
         while fifo.count >= VoiceFormat.frameSamples {
@@ -226,7 +238,7 @@ final class VoiceEngine {
         guard engine != nil, let sendAudio, let skipFrame else { return }
         Log.audio.info("voice engine configuration changed; restarting")
         do {
-            try start(sendAudio: sendAudio, skipFrame: skipFrame)
+            try start(sendAudio: sendAudio, skipFrame: skipFrame, tee: tee)
         } catch {
             Log.audio.error("voice engine restart failed: \(error.localizedDescription, privacy: .public)")
             stop()

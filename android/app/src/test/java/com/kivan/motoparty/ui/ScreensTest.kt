@@ -90,6 +90,10 @@ class ScreensTest {
         listOf(Permission("Microphone", true, "m"), Permission("Draw over other apps", false, "o")),
     )
 
+    /** A solo talk: the one button reads END TALK, and the hint says the wake word is optional. */
+    @Test
+    fun rideTalkingSolo() = shoot("2b-ride-talking-solo", playing.copy(clientName = null, talkOpen = true, playing = false), Tab.RIDE)
+
     @Test
     fun searchSongs() = shoot(
         "3-search-songs",

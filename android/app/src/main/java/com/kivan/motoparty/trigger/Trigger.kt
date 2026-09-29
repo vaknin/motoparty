@@ -3,8 +3,11 @@ package com.kivan.motoparty.trigger
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 
-/** TALK toggles the intercom; MUSIC opens the mic for a voice command. */
-enum class TriggerKind { TALK, MUSIC }
+/**
+ * TALK toggles the intercom. The only kind since option A (2026-09-29): commands are spoken
+ * inside a talk, so there is no separate command trigger any more.
+ */
+enum class TriggerKind { TALK }
 
 enum class TriggerSource { OVERLAY, MEDIA_BUTTON, UI }
 

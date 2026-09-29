@@ -14,16 +14,18 @@ Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            Messages (all control messages, Codable), Framing (u32, 64 KiB cap),
                            ClockSync, VoicePacket/VoiceSequencer, JitterBuffer, Opus wrapper,
                            MusicAnchor/DriftController, LinkMath (sweep, liveness, TXT), Earcons (WAV synth),
-                           CommandParser (the grammar, run here too because volume is local)
+                           CommandParser (the grammar, run here too because volume is local; the
+                           wake-word rule and WakeGate, its 5 s arming window), RemoteAction
 Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK):
   Link/                    Discovery (NWBrowser + /24 sweep), ControlClient, VoiceSocket
   Audio/                   SessionController (A2DP music ↔ HFP talk), VoiceEngine, KeepAlive, EarconPlayer,
                            LocalVolume (this phone's system volume)
   Music/                   TrackCache (URLSession), SyncedPlayer (AVPlayer setRate atHostTime), NowPlaying
-  Voice/                   Transcriber (on-device SFSpeechRecognizer), Announcer (AVSpeechSynthesizer)
-  UI/                      SwiftUI tabs: Ride (link pill, now playing + transport, TALK/MUSIC),
+  Voice/                   Transcriber (on-device SFSpeechRecognizer fed by the talk's mic, one
+                           request per phrase), Announcer (AVSpeechSynthesizer)
+  UI/                      SwiftUI tabs: Ride (link pill, now playing + transport, TALK),
                            Search (songs/albums/playlists, album detail), Queue; Settings sheet
-  AppModel.swift           ties it together (talk / music / command flows)
+  AppModel.swift           ties it together (talk / music flows, commands inside talk)
 Tests/MotopartyCoreTests/ XCTest: every fixture file, jitter buffer, Opus round trip + FEC
 scripts/fetch-opus.sh    re-vendors libopus (verifies SHA-256)
 ```
@@ -82,7 +84,7 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 71 tests: fixtures, command parser, jitter buffer, Opus, drift controller
+swift test            # 80 tests: fixtures, command parser + wake word, jitter buffer, Opus, drift controller
 ```
 
 Opus prints "compiling without optimization" in debug builds. That is expected. Use
@@ -222,12 +224,12 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 
 ## Behaviour notes
 
-- **No floating buttons on iOS.** The TALK/MUSIC overlay above other apps exists on the Pixel
+- **No floating buttons on iOS.** The TALK overlay above other apps exists on the Pixel
   only (decided with the user 2026-09-20): iOS cannot draw over other apps, and nothing in
   `ios/` tries to. The passenger's triggers are the app's own buttons and the headset controls.
 - **Screens:** three tabs. **Ride** has the link pill (host name and round trip), the
   now-playing card (cover from `state.music.art`, progress, previous / play-pause / next as
-  `music.control`), the downloading line, TALK and MUSIC, and the last heard / announced /
+  `music.control`), the downloading line, TALK, and the last command heard / announced /
   problem lines; the gear opens Settings (latency trim, headset buttons, link details).
   **Search** sends `music.search` (Songs / Albums / Playlists); a song tap is
   `music.enqueue{mode:"now"}` with that track, its ⋯ menu (or a swipe) is Play next / Add to
@@ -274,8 +276,31 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   case — `talk.close{reason:"unavailable"}` answering our own `talk.open`, so talk never
   opened and `state.talk` stayed false — only clears the "requesting" state and plays the
   error earcon: no audio session is torn down and no music is resumed, because none was paused.
+- **Commands inside talk** (option A, 2026-09-29; PROTOCOL.md "Commands"). There is no
+  command mode and no MUSIC button: one press toggles talk, and while a talk is open the
+  phone recognises speech on the mic the talk already has. `VoiceEngine` tees every 16 kHz
+  capture buffer, on the capture queue and before the Opus encoder (so DTX never cuts it), to
+  `Transcriber.append`, which only counts and hops to its own queue (at most 50 buffers
+  waiting; past that they are dropped), so the capture path never waits for the recogniser.
+  The recogniser is on-device when the language has a model, and runs one
+  `SFSpeechAudioBufferRecognitionRequest` per phrase: a final result, or 1.2 s without new
+  partial text, ends the request, hands its text to `AppModel`, and the next request starts at
+  once, until the talk closes. Errors (typically "no speech detected" after a quiet stretch)
+  are logged in the `voice` category and the chain restarts, backing off 1, 2, 4 … 10 s while
+  it keeps failing at once; the talk itself is never touched, and a missing recogniser or
+  speech authorisation only means this talk has no commands. `AppModel` passes each phrase
+  through `WakeGate`: the client is never solo, so the wake word is always required
+  ("motoparty", "moto party" or "motor party" first, after any "hey"/"ok"/"okay";
+  `fixtures/wake.json`). A phrase that is only the wake word arms the gate and plays the
+  `listen` earcon (one 1175 Hz blip, Android's `LISTEN`): the next phrase within 5 s is a
+  command without it. Anything else is conversation, never sent or acted on. Every phrase is
+  logged as `heard: "<text>" (command|conversation|armed)`. A command's text (after the wake
+  word, normalised) goes through `CommandParser`: volume is handled here (below); everything
+  else, `end` ("over", "end talk", "hang up") included, is sent as
+  `command.text{text, lang}` and the host decides what it does to the talk (`play`, `resume`
+  and `end` close it with the usual `talk.close`).
 - **Volume is local** (PROTOCOL.md "Commands"): `MotopartyCore.CommandParser` runs on this
-  phone's own utterance before anything is sent, and `volume up`/`louder`/`volume down`/
+  phone's own command before anything is sent, and `volume up`/`louder`/`volume down`/
   `quieter` change *this* phone's volume with the `ok` earcon and no `command.text`. Everything
   else goes to the host unchanged. `music.control` has no volume actions any more (one on the
   wire is a malformed message and is dropped). iOS has no public system-volume setter, so
@@ -305,8 +330,10 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 - **Track cache:** a download lands as `<id>.part.m4a` and is renamed to `<id>.m4a` only after
   AVFoundation reports it playable with a duration, so nothing plays or answers `music.ready`
   from a file that is still being checked. Leftover `.part.m4a` files are deleted at launch.
-- **Buttons:** by default an AirPods single press is talk, a double press is a voice command,
-  and a triple press is previous track (configurable in Settings). The app only sees the remote
+- **Buttons:** by default play/pause (AirPods single press) is talk, next (double press) is
+  next track and previous (triple press) is previous track (configurable in Settings). A
+  "command" action saved by an older build falls back to that button's default
+  (`RemoteAction.stored`). The app only sees the remote
   commands play/pause, next and previous, so other buds (the passenger's Redmi Buds 6 Pro) work
   once their own app maps gestures to those three. iOS also sends `pause` when
   an AirPod leaves the ear, so an explicit `pause` is ignored unless enabled in Settings. While
@@ -318,3 +345,27 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   stays one action.
 - **Keep-alive:** a silent AVAudioEngine runs whenever talk is closed, so the locked app is
   never suspended. `UIRequiresPersistentWiFi` stops iOS from powering Wi-Fi down.
+
+## What only a real iPhone can answer
+
+The app has never run on a device. These are the open questions, in the order a ride needs
+them:
+
+- **Do the Redmi Buds 6 Pro gestures reach `MPRemoteCommandCenter` during a talk**, while the
+  session is `.playAndRecord`/`.voiceChat` with Bluetooth HFP up? A press is the only way to
+  end a talk besides saying "Moto party, over"; if HFP turns gestures into call controls (or
+  into the mute gesture, as AirPods do on iOS 17) nothing here sees them. Every press is logged in
+  the `app` category as `remote button: <which>, talk=<bool>` (the mute gesture included).
+- **Does on-device `SFSpeechRecognizer` keep up when fed from the talk's buffers**:
+  voice-processed (AGC, noise suppression), 16 kHz mono float, one request per phrase,
+  restarted every few seconds for a whole ride? Look for `recognition failed … retrying` in
+  the `voice` log, phrases arriving late, or the recogniser refusing a second request while
+  one is being cancelled.
+- **Wake-word accuracy** at speed in a helmet: how "Moto party" comes back (the
+  `contextualStrings` bias it; only three spellings count), how often conversation starts
+  with something that sounds like it, and whether 1.2 s of silence splits "Moto party …
+  play …" into two phrases (the 5 s arming window is meant to cover that).
+- Whether the `listen` / `ok` earcons, played by `AVAudioPlayer` outside the voice-processing
+  engine, leak into the mic (and to the rider) during a talk.
+- The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
+  the AirPods A2DP ↔ HFP switch time.

@@ -42,7 +42,7 @@ import com.kivan.motoparty.UiAction
 import com.kivan.motoparty.core.ControlAction
 import com.kivan.motoparty.trigger.TriggerKind
 
-/** The screen for the road: who is connected, what is playing, and the two big buttons. */
+/** The screen for the road: who is connected, what is playing, and the one big button. */
 @Composable
 fun RideTab(
     s: LinkStatus,
@@ -58,22 +58,15 @@ fun RideTab(
         StatusBar(s, cb)
         if (permissions.any { !it.granted }) PermissionsCard(permissions, cb.onGrant)
         NowPlayingCard(s, cb, onOpenQueue)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BigButton(
-                title = if (s.talkOpen) "END TALK" else "TALK",
-                icon = Icons.Mic,
-                color = if (s.talkOpen) Palette.TalkOpen else Palette.Talk,
-                modifier = Modifier.weight(1f),
-            ) { cb.onTrigger(TriggerKind.TALK) }
-            BigButton(
-                title = if (s.listening) "LISTENING" else "MUSIC",
-                icon = Icons.Note,
-                color = if (s.listening) Palette.Listening else Palette.Music,
-                modifier = Modifier.weight(1f),
-            ) { cb.onTrigger(TriggerKind.MUSIC) }
-        }
+        BigButton(
+            title = if (s.talkOpen) "END TALK" else "TALK",
+            icon = Icons.Mic,
+            color = if (s.talkOpen) Palette.TalkOpen else Palette.Talk,
+            modifier = Modifier.fillMaxWidth(),
+        ) { cb.onTrigger(TriggerKind.TALK) }
         Text(
-            "MUSIC listens for a command: “play album …”, “next”, “pause”.",
+            "In a talk, say “Moto party, play album …”, “… next”, “… pause”, “… over”." +
+                if (s.clientName == null) " Alone, the “Moto party” is optional." else "",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp),
@@ -136,7 +129,7 @@ private fun NowPlayingCard(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit
                         color = if (t == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        t?.artist ?: "Find something on the Search tab, or press MUSIC and say “play …”",
+                        t?.artist ?: "Find something on the Search tab, or press TALK and say “Moto party, play …”",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -216,7 +209,7 @@ private fun Transport(playing: Boolean, control: (String) -> Unit) {
 private fun Small(text: String) =
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-/** Glove-sized: the same two buttons the overlay and the headset trigger. */
+/** Glove-sized: the same one action the overlay and the headset trigger. */
 @Composable
 private fun BigButton(title: String, icon: ImageVector, color: Color, modifier: Modifier, onClick: () -> Unit) {
     Button(
