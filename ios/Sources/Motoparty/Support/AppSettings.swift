@@ -11,26 +11,16 @@ final class AppSettings: ObservableObject {
     @Published var latencyTrimMs: Double { didSet { defaults.set(latencyTrimMs, forKey: "latencyTrimMs") } }
     /// BCP-47 tag for on-device ASR and TTS.
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "speechLanguage") } }
-    /// Headset play/pause (AirPods single press) / lock-screen play-pause.
-    @Published var playPauseAction: RemoteAction { didSet { defaults.set(playPauseAction.rawValue, forKey: "playPauseAction") } }
-    /// Headset next track (AirPods double press).
-    @Published var nextTrackAction: RemoteAction { didSet { defaults.set(nextTrackAction.rawValue, forKey: "nextTrackAction") } }
-    /// Headset previous track (AirPods triple press).
-    @Published var previousTrackAction: RemoteAction { didSet { defaults.set(previousTrackAction.rawValue, forKey: "previousTrackAction") } }
-    /// iOS also sends "pause" when an AirPod is taken out of the ear, so the
-    /// explicit pause command is ignored unless this is on.
-    @Published var pauseCommandTriggers: Bool { didSet { defaults.set(pauseCommandTriggers, forKey: "pauseCommandTriggers") } }
 
     init() {
         deviceName = defaults.string(forKey: "deviceName") ?? "iPhone"
         latencyTrimMs = defaults.object(forKey: "latencyTrimMs") as? Double ?? 0
         speechLanguage = defaults.string(forKey: "speechLanguage") ?? "en-US"
-        playPauseAction = RemoteAction.stored(defaults.string(forKey: "playPauseAction"), fallback: .defaultPlayPause)
-        nextTrackAction = RemoteAction.stored(defaults.string(forKey: "nextTrackAction"), fallback: .defaultNext)
-        previousTrackAction = RemoteAction.stored(defaults.string(forKey: "previousTrackAction"), fallback: .defaultPrevious)
-        pauseCommandTriggers = defaults.object(forKey: "pauseCommandTriggers") as? Bool ?? false
-        // The removed command mode's setting (2026-09-29).
-        defaults.removeObject(forKey: "commandMaxSeconds")
+        // Removed 2026-09-29: the command mode, and headset buttons as talk
+        // triggers (the earbuds sit inside the helmet).
+        for key in ["commandMaxSeconds", "playPauseAction", "nextTrackAction", "previousTrackAction", "pauseCommandTriggers"] {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     static let languages = ["en-US", "en-GB", "he-IL", "de-DE", "fr-FR", "es-ES", "it-IT", "ru-RU"]

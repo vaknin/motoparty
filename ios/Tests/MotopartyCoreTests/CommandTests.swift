@@ -129,22 +129,3 @@ final class WakeWordTests: XCTestCase {
         XCTAssertEqual(gate.classify("skip", nowMs: 3_100), .conversation)
     }
 }
-
-final class RemoteActionTests: XCTestCase {
-    func testStaleCommandFallsBackToTheDefault() {
-        // "command" was a RemoteAction until the command mode went (2026-09-29).
-        XCTAssertNil(RemoteAction(rawValue: "command"))
-        XCTAssertEqual(RemoteAction.stored("command", fallback: .defaultNext), .next)
-        XCTAssertEqual(RemoteAction.stored(nil, fallback: .defaultPlayPause), .talk)
-        XCTAssertEqual(RemoteAction.stored("", fallback: .defaultPrevious), .previous)
-        XCTAssertEqual(RemoteAction.stored("none", fallback: .defaultNext), RemoteAction.none)
-        XCTAssertEqual(RemoteAction.stored("talk", fallback: .defaultNext), .talk)
-    }
-
-    func testDefaults() {
-        XCTAssertEqual(RemoteAction.defaultPlayPause, .talk)
-        XCTAssertEqual(RemoteAction.defaultNext, .next)
-        XCTAssertEqual(RemoteAction.defaultPrevious, .previous)
-        XCTAssertEqual(RemoteAction.allCases.map(\.rawValue), ["talk", "playPause", "next", "previous", "none"])
-    }
-}

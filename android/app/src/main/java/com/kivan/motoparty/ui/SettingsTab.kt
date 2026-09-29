@@ -46,11 +46,6 @@ fun SettingsTab(s: LinkStatus, settings: Settings, cb: Callbacks, modifier: Modi
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Group("Headset buttons") {
-            SwitchRow("Play / pause starts a talk", "Off: it plays and pauses the music", settings.headsetPlayPause == "talk") { v ->
-                update { it.copy(headsetPlayPause = if (v) "talk" else "music") }
-            }
-        }
         Group("On screen") {
             SwitchRow("Floating TALK button", "Shown over other apps, like maps", settings.overlayEnabled) { v ->
                 update { it.copy(overlayEnabled = v) }

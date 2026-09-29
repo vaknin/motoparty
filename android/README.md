@@ -102,9 +102,9 @@ to the newest tag on https://github.com/TeamNewPipe/NewPipeExtractor/releases an
 - Client `volumeUp/volumeDown` (`music.control`) changes the **host's** media volume; the
   protocol has no H→C volume message. A spoken volume command is local (PROTOCOL.md): in a talk
   the rider's changes the call stream, outside one the media stream.
-- **The key device question:** while talk is open the headset is in HFP, so earbud presses may
-  arrive as call controls, not media keys — then a press cannot *end* a talk from the earbuds.
-  End it with the overlay/notification/UI, or say "Moto party, over". Talk ends on a press (or
+- Earbud presses never touch a talk (2026-09-29: the earbuds sit inside the helmet); media keys
+  control the music only. A talk starts and ends on the overlay/notification/UI, or with "Moto
+  party, over". Talk ends on a press (or
   `end`/`play`/`resume`) only: there is no silence close (removed 2026-09-29).
 - In-talk commands need Android 13 (`EXTRA_AUDIO_SOURCE`); below it talk works without them
   (logged once). Whether the recognizer is fed properly while the phone is in

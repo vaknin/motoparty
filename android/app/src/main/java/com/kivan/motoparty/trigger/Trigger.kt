@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.SharedFlow
  */
 enum class TriggerKind { TALK }
 
-enum class TriggerSource { OVERLAY, MEDIA_BUTTON, UI }
+enum class TriggerSource { OVERLAY, UI }
 
 data class Trigger(val kind: TriggerKind, val source: TriggerSource)
 

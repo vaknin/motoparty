@@ -15,7 +15,7 @@ Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            ClockSync, VoicePacket/VoiceSequencer, JitterBuffer, Opus wrapper,
                            MusicAnchor/DriftController, LinkMath (sweep, liveness, TXT), Earcons (WAV synth),
                            CommandParser (the grammar, run here too because volume is local; the
-                           wake-word rule and WakeGate, its 5 s arming window), RemoteAction
+                           wake-word rule and WakeGate, its 5 s arming window)
 Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK):
   Link/                    Discovery (NWBrowser + /24 sweep), ControlClient, VoiceSocket
   Audio/                   SessionController (A2DP music ↔ HFP talk), VoiceEngine, KeepAlive, EarconPlayer,
@@ -330,19 +330,14 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 - **Track cache:** a download lands as `<id>.part.m4a` and is renamed to `<id>.m4a` only after
   AVFoundation reports it playable with a duration, so nothing plays or answers `music.ready`
   from a file that is still being checked. Leftover `.part.m4a` files are deleted at launch.
-- **Buttons:** by default play/pause (AirPods single press) is talk, next (double press) is
-  next track and previous (triple press) is previous track (configurable in Settings). A
-  "command" action saved by an older build falls back to that button's default
-  (`RemoteAction.stored`). The app only sees the remote
-  commands play/pause, next and previous, so other buds (the passenger's Redmi Buds 6 Pro) work
-  once their own app maps gestures to those three. iOS also sends `pause` when
-  an AirPod leaves the ear, so an explicit `pause` is ignored unless enabled in Settings. While
-  the mic is open, the iOS 17 AirPods mute gesture is treated as the single-press action; this
-  is untested (Spike 2). `AVAudioApplication.setInputMuteStateChangeHandler` is **macOS only**
-  (`API_UNAVAILABLE(ios)`): on iOS the system does the muting itself and only reports it, so
-  `SessionController` observes `AVAudioApplication.inputMuteStateChangeNotification`, unmutes
-  again with `setInputMuted(false)`, and ignores the unmute's own notification so one press
-  stays one action.
+- **Buttons:** no headset button starts or ends a talk (2026-09-29: the earbuds sit inside the
+  helmet). Talk is the Ride tab's TALK button. Remote commands (lock screen, Control Center, a
+  headset) control the music only: play/pause, next, previous; `pause` alone is ignored, since
+  buds send it when they leave the ear. While the mic is open the iOS 17 AirPods mute gesture
+  would mute it: `SessionController` observes
+  `AVAudioApplication.inputMuteStateChangeNotification` and unmutes again with
+  `setInputMuted(false)` (`setInputMuteStateChangeHandler` is macOS only), and the gesture does
+  nothing else.
 - **Keep-alive:** a silent AVAudioEngine runs whenever talk is closed, so the locked app is
   never suspended. `UIRequiresPersistentWiFi` stops iOS from powering Wi-Fi down.
 
@@ -351,11 +346,6 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 The app has never run on a device. These are the open questions, in the order a ride needs
 them:
 
-- **Do the Redmi Buds 6 Pro gestures reach `MPRemoteCommandCenter` during a talk**, while the
-  session is `.playAndRecord`/`.voiceChat` with Bluetooth HFP up? A press is the only way to
-  end a talk besides saying "Moto party, over"; if HFP turns gestures into call controls (or
-  into the mute gesture, as AirPods do on iOS 17) nothing here sees them. Every press is logged in
-  the `app` category as `remote button: <which>, talk=<bool>` (the mute gesture included).
 - **Does on-device `SFSpeechRecognizer` keep up when fed from the talk's buffers**:
   voice-processed (AGC, noise suppression), 16 kHz mono float, one request per phrase,
   restarted every few seconds for a whole ride? Look for `recognition failed … retrying` in

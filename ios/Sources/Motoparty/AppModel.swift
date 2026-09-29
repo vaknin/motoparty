@@ -161,8 +161,8 @@ final class AppModel: ObservableObject {
         session.onMediaServicesReset = { [weak self] in self?.mediaServicesReset() }
         session.onMuteGesture = { [weak self] in
             guard let self else { return }
-            Log.app.info("remote button: mute gesture, talk=\(self.talkOpen)")
-            self.remoteAction(self.settings.playPauseAction)
+            // The earbuds sit inside the helmet: no gesture starts or ends a talk (2026-09-29).
+            Log.app.info("remote button: mute gesture, talk=\(self.talkOpen) (ignored)")
         }
 
         voiceEngine.onFailure = { [weak self] error in
@@ -602,25 +602,17 @@ final class AppModel: ObservableObject {
 
     // MARK: - Buttons
 
+    /// Lock screen, Control Center, or a headset: music only. The earbuds sit
+    /// inside the helmet, so no button starts or ends a talk (2026-09-29).
     private func remoteButton(_ button: NowPlaying.Button) {
-        // Whether a headset gesture arrives at all during a talk (HFP up) is a
-        // device question (README): this line answers it.
         Log.app.info("remote button: \(String(describing: button), privacy: .public), talk=\(self.talkOpen)")
         switch button {
-        case .playPause: remoteAction(settings.playPauseAction)
-        case .pause: if settings.pauseCommandTriggers { remoteAction(settings.playPauseAction) }
-        case .next: remoteAction(settings.nextTrackAction)
-        case .previous: remoteAction(settings.previousTrackAction)
-        }
-    }
-
-    func remoteAction(_ action: RemoteAction) {
-        switch action {
-        case .talk: talkButton()
         case .playPause: musicControl(musicPlaying ? .pause : .resume)
+        // Buds send "pause" when taken out of the ear (a helmet coming off):
+        // that must not stop the ride's music.
+        case .pause: break
         case .next: musicControl(.next)
         case .previous: musicControl(.previous)
-        case .none: break
         }
     }
 

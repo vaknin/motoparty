@@ -23,17 +23,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Section {
-                    actionPicker("Play / pause", $settings.playPauseAction)
-                    actionPicker("Next track", $settings.nextTrackAction)
-                    actionPicker("Previous track", $settings.previousTrackAction)
-                    Toggle("Explicit “pause” also counts", isOn: $settings.pauseCommandTriggers)
-                } header: {
-                    Text("Headset buttons")
-                } footer: {
-                    Text("AirPods: single, double, triple press. Other buds: set their gestures to play/pause, next and previous in their own app. Buds send “pause” when taken out of the ear, so that is ignored by default. Voice commands need no button: in a talk, say “Moto party, next”.")
-                }
-
                 Section("Link") {
                     LabeledContent("Status", value: model.link.label)
                     LabeledContent("Round trip", value: model.rttMs.map { "\(Int($0.rounded())) ms" } ?? "–")
@@ -47,12 +36,6 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
-        }
-    }
-
-    private func actionPicker(_ title: String, _ binding: Binding<RemoteAction>) -> some View {
-        Picker(title, selection: binding) {
-            ForEach(RemoteAction.allCases) { Text($0.label).tag($0) }
         }
     }
 }

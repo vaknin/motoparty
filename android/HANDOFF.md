@@ -789,8 +789,7 @@ EOF on close, wrong-size frames, broken pipe), `TalkControllerTest` +1, `Command
 `end`; `ScreensTest` +1 (`2b-ride-talking-solo`). 243 tests, 0 fail, 5 skipped; `lintDebug` 0 errors.
 
 **Verify on the device.**
-1. Earbud press during a talk: does the AirPods press reach the app at all under HFP (media key,
-   call control, or nothing)? This decides whether a press can end a talk from the earbuds.
+1. (Dropped 2026-09-29: earbud presses no longer trigger talk — the earbuds sit inside the helmet.)
 2. The recognizer is fed while the phone holds `MODE_IN_COMMUNICATION`: `talk recognizer:
    listening (on-device …)`, `heard:` lines during a talk, `pcm tee: N frames, 0 dropped` at the end,
    and **no change** to `capture: read N frames … (N expected)` or the `live cue:` timing.

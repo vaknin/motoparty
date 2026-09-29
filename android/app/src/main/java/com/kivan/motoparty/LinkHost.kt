@@ -681,13 +681,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         applyTalk(talk.onLocalTrigger())
     }
 
+    /**
+     * Headset and media keys control the music only. The earbuds sit inside the helmet, so no
+     * press starts or ends a talk (2026-09-29): talk is the overlay, the notification or the UI.
+     */
     private fun onMediaKey(keyCode: Int): Boolean {
-        val s = settings.value
         when (keyCode) {
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
-            KeyEvent.KEYCODE_HEADSETHOOK ->
-                if (s.headsetPlayPause == "talk") Triggers.fire(TriggerKind.TALK, TriggerSource.MEDIA_BUTTON)
-                else music.togglePlayPause()
+            KeyEvent.KEYCODE_HEADSETHOOK -> music.togglePlayPause()
             KeyEvent.KEYCODE_MEDIA_NEXT -> music.next()
             KeyEvent.KEYCODE_MEDIA_PREVIOUS -> music.previous()
             else -> return false

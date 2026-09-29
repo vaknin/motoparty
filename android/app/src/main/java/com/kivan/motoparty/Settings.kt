@@ -14,8 +14,6 @@ data class Settings(
     val latencyTrimMs: Int = 0,
     /** BCP-47 language for speech recognition. */
     val asrLanguage: String = "en-US",
-    /** Headset play/pause: "talk" toggles talk, "music" toggles music playback. */
-    val headsetPlayPause: String = "talk",
     val overlayEnabled: Boolean = true,
     /**
      * Debug: write every talk's captured microphone PCM to a WAV file under
@@ -41,7 +39,6 @@ class SettingsStore(context: Context) {
             resumeLeadMs = prefs.getInt("resumeLeadMs", d.resumeLeadMs),
             latencyTrimMs = prefs.getInt("latencyTrimMs", d.latencyTrimMs),
             asrLanguage = prefs.getString("asrLanguage", d.asrLanguage) ?: d.asrLanguage,
-            headsetPlayPause = prefs.getString("headsetPlayPause", d.headsetPlayPause) ?: d.headsetPlayPause,
             overlayEnabled = prefs.getBoolean("overlayEnabled", d.overlayEnabled),
             captureDump = prefs.getBoolean("captureDump", d.captureDump),
         )
@@ -54,10 +51,10 @@ class SettingsStore(context: Context) {
             .putInt("resumeLeadMs", s.resumeLeadMs.coerceIn(0, 5000))
             .putInt("latencyTrimMs", s.latencyTrimMs.coerceIn(-500, 500))
             .putString("asrLanguage", s.asrLanguage)
-            .putString("headsetPlayPause", s.headsetPlayPause)
-            // Gone with the command mode (2026-09-29): next is always next track. An old stored
-            // value is never read; drop it the first time anything is saved.
+            // Gone 2026-09-29 (the command mode; headset presses as talk triggers, the earbuds
+            // sit inside the helmet). Old stored values are never read; drop them on first save.
             .remove("headsetNext")
+            .remove("headsetPlayPause")
             .putBoolean("overlayEnabled", s.overlayEnabled)
             .putBoolean("captureDump", s.captureDump)
             .apply()

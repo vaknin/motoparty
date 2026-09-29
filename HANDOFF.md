@@ -142,9 +142,10 @@ framework what devices the phone has.
 3. **Talk/command control: option A built offline (2026-09-29), device-unverified** — see
    "Decisions in force"; the device checklist is `android/HANDOFF.md` "Commands inside talk,
    option A" and `ios/README.md` "What only a real iPhone can answer". Press-only talk is done too.
-   First device question, before anything else: does an earbud press reach the app while a talk
-   is open (look for `trigger TALK` on the Pixel, `remote button:` on the iPhone)? If not, a talk
-   ends from the overlay, the notification, or "Moto party, over".
+   Earbud presses no longer touch a talk on either phone (user, 2026-09-29: the earbuds sit
+   inside the helmet); media keys control the music only. Talk is the Pixel overlay /
+   notification / Ride tab and the iPhone's TALK button. The wake word is under review: the user
+   asked to brainstorm alternatives (2026-09-29).
 4. **Only if the ride says buy:** the staged plan in `~/.claude/plans/dynamic-bubbling-lemon.md`
    (Stage B the bench hour, C the routing code, D the music setting, E the A/B ride) still stands
    as written, with `research/MIC.md` overriding its Hardware table on what to buy.
@@ -242,14 +243,11 @@ on Android has still never produced a positive log line either.
   a talk is open, each phone also runs speech recognition on the mic that is already live; a phrase
   that starts with "Moto party" is a command, anything else is conversation. A music command
   (`play …`, `resume`) also ends the talk. The separate command mode, its route switch and the
-  overlay's MUSIC zone go; the overlay becomes one big button; next/previous gestures go back to
-  track skip. The handlebar box (Honda node) is later one physical button for the same action;
+  overlay's MUSIC zone go; the overlay becomes one big button. The handlebar box (Honda node) is later one physical button for the same action;
   hands-free (wake word, open-on-voice) is parked until the mic direction is known — it needs a mic
-  that is open all the time without the HFP route, which the Lark could be. **Unknowns to settle
-  on the device before relying on it:** (1) whether an earbud press reaches the app at all while
-  HFP is up (`android/README.md` "Known gaps" says they arrive as call controls; a self-managed
-  Telecom `ConnectionService` would turn a hang-up press into `onDisconnect` — iOS the same
-  question for `MPRemoteCommandCenter` under `.playAndRecord`); (2) recognition quality at speed.
+  that is open all the time without the HFP route, which the Lark could be. **Earbud presses
+  trigger nothing** (user, 2026-09-29: the earbuds sit inside the helmet): media keys control the
+  music only, on both phones; the settings for them are gone. Open: recognition quality at speed.
 - **Wire format:** 16 kHz Opus, 20 ms frames, 24 kbps VOIP. A sample-rate change is out of scope —
   8 hard-coded constants across three implementations, ~40 test assertions, and the Python peer's
   silence detector reads the SILK VAD bit and stops working above 16 kHz. There is no negotiation
