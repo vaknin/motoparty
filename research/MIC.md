@@ -120,6 +120,21 @@ to near-silence between words: **on the ride, listen for clipped word starts wit
 are no dropout signature while it is on. Which level (Low or High) the press lands on is not
 confirmed. AirPods were not connected (media out `speaker`).
 
+*Mounting in the helmet (2026-09-29):* the rider's helmet is an **Arai Quantic**. The A1 TX has no
+clip, only a magnet, and the chin bar lining has no opening to hide the magnet behind, so the mount is
+adhesive. First ride: cloth tape on the fabric lining at the corner of the mouth, clear of the fur,
+the button and the chin vent's airflow (vent closed), plus a thread tether taped to a second spot.
+Then **hook-and-loop tape cut to shape**: [AliExpress 1005008938790125](https://www.aliexpress.com/item/1005008938790125.html),
+Black 1M, 20mm, ₪5.97 (Choice, 4.7, 10,000+ sold, 2026-09-29; both halves in the pack; thickness and
+glue unstated), in the user's cart. Round dots were rejected: the TX back is 30 × 16.3 mm with
+**three charging contacts at the bottom**, leaving ~25 × 15 mm clear, and a cut piece **13 mm wide ×
+~18–22 mm** (to the fur's edge) grips ~230–290 mm² against 177 for a 15 mm dot, with no overhang to
+snag fur or hair. Fitting: round the corners; clean the TX back with alcohol, press 30 s, wait a day
+before riding; hook side on the TX, straight onto the lining if the fabric holds it (half the
+thickness of a mated pair), else a slightly larger loop piece on the lining. Never on bare EPS, no
+glue. Whether the piece still lets the TX into its charging dock (+~1.5 mm if it's a slot) is
+unchecked.
+
 *The RX's HID interface, read on the laptop (2026-09-28, `/sys/class/hidraw/hidraw1/device/
 report_descriptor`, no root):* report 3 = Consumer Control **input** (16 bits: mute, volume ±,
 play/pause, next/previous and similar — the RX can send media keys); report 6 = vendor page `0xFF52`,

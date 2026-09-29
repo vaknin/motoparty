@@ -136,7 +136,8 @@ framework what devices the phone has.
      desk-checked** (button "start long Lark recording"; runs with the screen locked, 0 dropped; ENC
      on drops the background ~16 dB and gates to near-silence between words). **Next: the ride** —
      ENC Off then On on the same stretch, gain 2, EQ "Equalization". "Schedule power off" (15 min)
-     applies only to an unpaired TX (user read the ⓘ).
+     applies only to an unpaired TX (user read the ⓘ). Helmet mount: tape for the first ride, then
+     hook-and-loop cut to the TX back (`research/MIC.md` §"Status").
    - **In between** → the honest case for the whole `research/` plan, and the one where the user's
      ears, not this file, decide.
 3. **The silence-close decision** (see "Decisions in force") is owed either way and blocks nothing
@@ -329,8 +330,9 @@ paused, locked if it was locked, settings restored. Keep the screen awake with `
 ## Waiting on the user
 
 - ~~**The ride recording**~~ — done 2026-09-27, verdict mush (see "Do now" step 2). Now waiting on:
-  the helmet test, then A4 and the ride on the Lark A1 Duo (arrived 2026-09-28; S1–S4 and A2 pass,
-  gain now 3; gap measurement waived, A3 soak skipped — both user decisions).
+  **the ride** on the Lark A1 Duo, ENC Off then On (arrived 2026-09-28; S1–S4, A2 and the helmet
+  test pass, gain now 2; gap measurement waived, A3 soak folded into the ride, A4 deferred — user
+  decisions). Hook-and-loop tape for the helmet mount is in the user's AliExpress cart.
   Return window is running from 2026-09-28.
 - An iPhone on USB with Developer Mode on, then `cd ios && xtool dev` (Spike 1). The user logged into
   `xtool auth` with their **personal Apple ID**, was told about the 0xe8008024 ban reports and
