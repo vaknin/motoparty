@@ -67,6 +67,8 @@ fun TrackRow(
     modifier: Modifier = Modifier,
     placeholder: ImageVector = Icons.Note,
     highlighted: Boolean = false,
+    /** The track is in the cache: a small mark before [subtitle], so it plays without coverage. */
+    downloaded: Boolean = false,
     onClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
@@ -87,13 +89,23 @@ fun TrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (downloaded) {
+                    Icon(
+                        Icons.DownloadDone,
+                        "Downloaded",
+                        Modifier.padding(end = 4.dp).size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         trailing()
     }

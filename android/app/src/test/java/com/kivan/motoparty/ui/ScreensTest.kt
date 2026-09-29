@@ -17,6 +17,9 @@ import com.kivan.motoparty.SearchState
 import com.kivan.motoparty.Settings
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.music.CollectionItem
+import com.kivan.motoparty.music.DownloadProgress
+import com.kivan.motoparty.music.History
+import com.kivan.motoparty.music.RecentSearch
 import com.kivan.motoparty.music.Track
 import org.junit.Before
 import org.junit.Rule
@@ -75,8 +78,14 @@ class ScreensTest {
         )
     }
 
-    private fun shoot(name: String, status: LinkStatus, tab: Tab, permissions: List<Permission> = emptyList()) {
-        compose.setContent { MotopartyTheme { Motoparty(status, Settings(), permissions, Callbacks(), tab) } }
+    private fun shoot(
+        name: String,
+        status: LinkStatus,
+        tab: Tab,
+        permissions: List<Permission> = emptyList(),
+        history: History = History(),
+    ) {
+        compose.setContent { MotopartyTheme { Motoparty(status, Settings(), permissions, Callbacks(), tab, history) } }
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")
     }
@@ -90,9 +99,21 @@ class ScreensTest {
         listOf(Permission("Microphone", true, "m"), Permission("Draw over other apps", false, "o")),
     )
 
-    /** A solo talk: the one button reads END TALK, and the hint says the wake word is optional. */
+    /** A solo talk: the one button reads END TALK, and the commands card says every phrase is one. */
     @Test
     fun rideTalkingSolo() = shoot("2b-ride-talking-solo", playing.copy(clientName = null, talkOpen = true, playing = false), Tab.RIDE)
+
+    /** The Lark setting is on and no receiver is enumerated: the amber warning under the status. */
+    @Test
+    fun rideLarkMissing() = shoot("2c-ride-lark-missing", playing.copy(larkMissing = "no USB input"), Tab.RIDE)
+
+    /** …and a talk that opened anyway runs on the earbud mics: the warning turns red. */
+    @Test
+    fun rideLarkMissingInTalk() = shoot(
+        "2d-ride-lark-missing-talk",
+        playing.copy(larkMissing = "no USB input", talkOpen = true, talkOnEarbudsFallback = true, playing = false),
+        Tab.RIDE,
+    )
 
     @Test
     fun searchSongs() = shoot(
@@ -113,6 +134,38 @@ class ScreensTest {
                     CollectionItem("a3", "The Wall", "Pink Floyd", 26, "art5"),
                     CollectionItem("a4", "Animals", "Pink Floyd", 5, null),
                 ),
+            ),
+        ),
+        Tab.SEARCH,
+    )
+
+    /** An empty search box: recent searches and recently played, some of them downloaded. */
+    @Test
+    fun searchHistory() = shoot(
+        "4b-search-history",
+        playing.copy(cached = setOf("id2", "id3")),
+        Tab.SEARCH,
+        history = History(
+            searches = listOf(
+                RecentSearch(SearchKind.ALBUMS, "dark side of the moon"),
+                RecentSearch(SearchKind.SONGS, "comfortably numb"),
+                RecentSearch(SearchKind.PLAYLISTS, "road trip"),
+            ),
+            played = songs.drop(1).take(4),
+        ),
+    )
+
+    /** An album downloading for the ride: progress on the button, marks on the songs already in. */
+    @Test
+    fun albumDownloading() = shoot(
+        "5b-album-downloading",
+        playing.copy(
+            cached = setOf("id0", "id1"),
+            downloads = mapOf("a1" to DownloadProgress(2, 5)),
+            browse = BrowseState(
+                CollectionItem("a1", "The Dark Side of the Moon", "Pink Floyd", 5, "art0"),
+                loading = false,
+                tracks = songs.take(5),
             ),
         ),
         Tab.SEARCH,

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -28,6 +30,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,15 +50,20 @@ import com.kivan.motoparty.UiAction
 import com.kivan.motoparty.core.EnqueueMode
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.music.CollectionItem
+import com.kivan.motoparty.music.History
+import com.kivan.motoparty.music.RecentSearch
 import com.kivan.motoparty.music.Track
 
-/** Search YouTube Music; tap a song to play it, open an album or playlist to see its songs first. */
+/**
+ * Search YouTube Music; tap a song to play it, open an album or playlist to see its songs first.
+ * With the box empty: recent searches and recently played ([History]).
+ */
 @Composable
-fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier) {
+fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, history: History = History()) {
     val browse = s.browse
     if (browse != null) {
         BackHandler { cb.onAction(UiAction.CloseBrowse) }
-        CollectionScreen(browse, cb, modifier)
+        CollectionScreen(browse, s, cb, modifier)
         return
     }
     var query by rememberSaveable { mutableStateOf(s.search.query) }
@@ -107,10 +115,32 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier) {
         val shown = r.kind == kind && r.query.isNotEmpty()
         when {
             !s.running -> item { EmptyState(Icons.Search, "Motoparty is off", "Start it on the Ride tab to search.") }
+            query.isBlank() && (history.searches.isNotEmpty() || history.played.isNotEmpty()) -> {
+                if (history.searches.isNotEmpty()) {
+                    item {
+                        Heading("Recent searches") {
+                            TextButton(onClick = { cb.onHistory { it.withoutSearches() } }) { Text("Clear") }
+                        }
+                    }
+                    items(history.searches, key = { "q/${it.query}" }) { past ->
+                        RecentSearchRow(past) {
+                            query = past.query
+                            kind = past.kind
+                            run(past.kind)
+                        }
+                    }
+                }
+                if (history.played.isNotEmpty()) {
+                    item { Heading("Recently played") }
+                    items(history.played, key = { "p/${it.id}" }) { t ->
+                        SongRow(t, highlighted = t.id == s.nowPlaying?.id, downloaded = t.id in s.cached, cb)
+                    }
+                }
+            }
             shown && r.loading -> item { Loading() }
             shown && r.error != null -> item { EmptyState(Icons.Search, r.error, "Try again when there is signal.") }
             shown && kind == SearchKind.SONGS && r.songs.isNotEmpty() -> itemsIndexed(r.songs) { _, t ->
-                SongRow(t, highlighted = t.id == s.nowPlaying?.id, cb)
+                SongRow(t, highlighted = t.id == s.nowPlaying?.id, downloaded = t.id in s.cached, cb)
             }
             shown && kind != SearchKind.SONGS && r.collections.isNotEmpty() -> itemsIndexed(r.collections) { _, c ->
                 TrackRow(
@@ -136,13 +166,38 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier) {
 
 private val KINDS = listOf(SearchKind.SONGS to "Songs", SearchKind.ALBUMS to "Albums", SearchKind.PLAYLISTS to "Playlists")
 
+/** A past search: tap runs it again, with the chip it had. */
 @Composable
-private fun SongRow(t: Track, highlighted: Boolean, cb: Callbacks, onPlay: (() -> Unit)? = null) {
+private fun RecentSearchRow(r: RecentSearch, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(Icons.History, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            r.query,
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            KINDS.firstOrNull { it.first == r.kind }?.second ?: "",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SongRow(t: Track, highlighted: Boolean, downloaded: Boolean, cb: Callbacks, onPlay: (() -> Unit)? = null) {
     TrackRow(
         t.title,
         byline(t.artist, t.durationMs.takeIf { it > 0 }?.let(::mmss)),
         t.art,
         highlighted = highlighted,
+        downloaded = downloaded,
         onClick = onPlay ?: { cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, listOf(t))) },
         trailing = { QueueMenu { mode -> cb.onAction(UiAction.Enqueue(mode, listOf(t))) } },
     )
@@ -170,7 +225,7 @@ private fun QueueMenu(onPick: (String) -> Unit) {
 }
 
 @Composable
-private fun CollectionScreen(b: BrowseState, cb: Callbacks, modifier: Modifier) {
+private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modifier: Modifier) {
     val c: CollectionItem = b.collection
     LazyColumn(modifier.fillMaxSize()) {
         item {
@@ -221,6 +276,7 @@ private fun CollectionScreen(b: BrowseState, cb: Callbacks, modifier: Modifier) 
                         Text("Add to queue", Modifier.padding(start = 8.dp))
                     }
                 }
+                if (b.tracks.isNotEmpty()) DownloadButton(b, s, cb)
             }
         }
         when {
@@ -229,9 +285,47 @@ private fun CollectionScreen(b: BrowseState, cb: Callbacks, modifier: Modifier) 
             b.tracks.isEmpty() -> item { EmptyState(Icons.Album, "No songs in this one") }
             // Tapping a song plays the collection from there, so the rest of it follows.
             else -> itemsIndexed(b.tracks) { i, t ->
-                SongRow(t, highlighted = false, cb) { cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, b.tracks.drop(i))) }
+                SongRow(t, highlighted = false, downloaded = t.id in s.cached, cb) {
+                    cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, b.tracks.drop(i)))
+                }
             }
         }
+    }
+}
+
+/**
+ * Every song of this album or playlist into the cache, for patchy coverage. Shows the progress
+ * ("Downloading 5/14") and cancels on a second tap; "Downloaded" once every song is cached.
+ */
+@Composable
+private fun DownloadButton(b: BrowseState, s: LinkStatus, cb: Callbacks) {
+    val p = s.downloads[b.collection.id]
+    val allCached = b.tracks.all { it.id in s.cached }
+    val running = p?.running == true
+    val done = !running && (allCached || (p != null && p.failed == 0))
+    OutlinedButton(
+        onClick = {
+            if (running) cb.onAction(UiAction.CancelDownload(b.collection.id))
+            else cb.onAction(UiAction.Download(b.collection, b.tracks))
+        },
+        enabled = !done,
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+    ) {
+        if (running) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        } else {
+            Icon(if (done) Icons.DownloadDone else Icons.Download, null)
+        }
+        Text(
+            when {
+                done -> "Downloaded"
+                p != null -> p.label + if (running) "  ·  Stop" else ""
+                else -> "Download"
+            },
+            Modifier.padding(start = 8.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

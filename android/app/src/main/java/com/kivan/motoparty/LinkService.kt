@@ -68,12 +68,18 @@ class LinkService : LifecycleService() {
         }
     }
 
+    /** Why the service is going away, for the "host stopping" log line; unset = the system. */
+    private var stopReason: String? = null
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         // Re-claim the service types: RECORD_AUDIO may have been granted since onCreate.
         if (intent?.action == null) startInForeground()
         when (intent?.action) {
-            ACTION_STOP -> stopSelf()
+            ACTION_STOP -> {
+                stopReason = "notification Stop"
+                stopSelf()
+            }
             ACTION_TALK -> Triggers.fire(TriggerKind.TALK, TriggerSource.UI)
             // The way back from a drag onto the X. Only the setting is written; the collector in
             // onCreate starts the overlay and re-posts this notification.
@@ -83,13 +89,25 @@ class LinkService : LifecycleService() {
     }
 
     override fun onDestroy() {
-        host?.stop()
+        host?.stop(stopReason ?: appStopReason ?: "service destroyed by the system")
+        appStopReason = null
         host = null
         hostScope.cancel()
         stopService(Intent(this, OverlayService::class.java))
         wakeLock?.takeIf { it.isHeld }?.release()
         wifiLock?.takeIf { it.isHeld }?.release()
         super.onDestroy()
+    }
+
+    /** Android 15+: a foreground-service type ran out of time; the system stops us right after. */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        stopReason = "foreground service timeout (type $fgsType)"
+        stopSelf()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        Hub.log("app swiped away from recents (host keeps running)")
     }
 
     private fun startInForeground() {
@@ -164,12 +182,17 @@ class LinkService : LifecycleService() {
         const val ACTION_STOP = "com.kivan.motoparty.STOP"
         const val ACTION_TALK = "com.kivan.motoparty.TALK"
         const val ACTION_SHOW_OVERLAY = "com.kivan.motoparty.SHOW_OVERLAY"
+        /** Set by [stop] just before stopService, so onDestroy can tell the app's button apart. */
+        @Volatile private var appStopReason: String? = null
 
         fun start(context: Context) {
+            appStopReason = null
             context.startForegroundService(Intent(context, LinkService::class.java))
         }
 
+        /** The app's Stop button. */
         fun stop(context: Context) {
+            appStopReason = "Stop button in the app"
             context.stopService(Intent(context, LinkService::class.java))
         }
 

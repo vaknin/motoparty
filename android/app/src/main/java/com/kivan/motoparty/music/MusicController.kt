@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.random.Random
 
 /**
  * The host's music authority (PROTOCOL.md "Music flow"): queue, load -> ready -> play
@@ -21,14 +22,18 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 class MusicController(
     private val scope: CoroutineScope,
-    private val caches: TrackCaches,
+    private val caches: TrackStore,
     private val sync: SyncController,
-    private val player: Player,
+    private val player: LocalPlayer,
     private val hostNow: () -> Long,
     private val send: (Message) -> Unit,
     private val hasClient: () -> Boolean,
     private val onChanged: () -> Unit,
     private val onError: (String) -> Unit,
+    /** The lines a bench run reads (`pause at …`, ignored `music.error`s); logcat by default. */
+    private val log: (String) -> Unit = { Log.i(TAG, it) },
+    /** A track really started playing (not parked, not a resume of the same one): for history. */
+    private val onStarted: (Track) -> Unit = {},
 ) {
     var queue: List<Track> = emptyList()
         private set
@@ -39,7 +44,15 @@ class MusicController(
     val isPlaying: Boolean get() = sync.anchor?.playing == true
 
     private var startJob: Job? = null
+    /** Where [startJob] is: [MusicPhase.LOADING] or [MusicPhase.WAITING_CLIENT]; null once it plays. */
+    private var starting: MusicPhase? = null
+    /** A `music.load` sent for the id, awaiting its `music.ready` (or `music.error`). */
     private val readyWaiters = HashMap<String, CompletableDeferred<Unit>>()
+    /**
+     * The current track once its file is cached, i.e. once `GET /track/<id>.m4a` can serve it;
+     * until then `state` does not name it (see [musicState]).
+     */
+    private var servableId: String? = null
     private val clientReady = HashSet<String>()
     /** Tracks already re-sent after a "not decodable"; one retry each. */
     private val resent = HashSet<String>()
@@ -56,6 +69,12 @@ class MusicController(
     private var resumeCancelled = false
     /** No `music.play` is anchored before this host time (a spoken `play` that ended a talk). */
     private var startNotBeforeMs = 0L
+    /** The track [onStarted] was last called for since its [startCurrent]; a resume is not a start. */
+    private var startedId: String? = null
+    /** The next track whose `music.load` [prefetchNext] sent, so a re-run does not repeat it. */
+    private var sentNextId: String? = null
+    /** The running [prefetchNext]; a newer queue replaces it. */
+    private var prefetchJob: Job? = null
 
     fun setQueue(tracks: List<Track>, start: Int = 0) {
         queue = QueueEdits.capped(tracks, start)
@@ -70,10 +89,10 @@ class MusicController(
     fun enqueue(mode: String, tracks: List<Track>) {
         if (tracks.isEmpty()) return
         if (mode == EnqueueMode.NOW || current == null) return setQueue(tracks, 0)
-        val nextBefore = upcoming.firstOrNull()
+        val aheadBefore = upcoming.take(PREFETCH_AHEAD)
         queue = QueueEdits.inserted(queue, index, mode, tracks)
         onChanged()
-        if (upcoming.firstOrNull() != nextBefore) prefetchNext()
+        if (upcoming.take(PREFETCH_AHEAD) != aheadBefore) prefetchNext()
     }
 
     /** `music.edit jump`: play `upcoming[i]` now. False when [id] no longer sits at [i] (stale). */
@@ -83,12 +102,27 @@ class MusicController(
         return true
     }
 
+    /** Would [jump] accept `upcoming[i]` = [id]? A stale jump must not end a talk (Browsing step 3). */
+    fun canJump(i: Int, id: String): Boolean = QueueEdits.at(queue, index, i, id) != null
+
+    /**
+     * Spoken `shuffle` (PROTOCOL.md "Commands"): shuffle the upcoming tracks, the current one plays
+     * on. False, and nothing changes, with fewer than two upcoming.
+     */
+    fun shuffleUpcoming(random: Random = Random.Default): Boolean {
+        if (upcoming.size < 2) return false
+        queue = QueueEdits.shuffled(queue, index, random)
+        onChanged()
+        prefetchNext()
+        return true
+    }
+
     /** `music.edit remove`: drop `upcoming[i]`. False when [id] no longer sits at [i] (stale). */
     fun remove(i: Int, id: String): Boolean {
         val at = QueueEdits.at(queue, index, i, id) ?: return false
         queue = queue.toMutableList().apply { removeAt(at) }
         onChanged()
-        if (i == 0) prefetchNext()
+        if (i < PREFETCH_AHEAD) prefetchNext()
         return true
     }
 
@@ -123,6 +157,7 @@ class MusicController(
         val a = sync.anchor ?: return
         if (!a.playing) return
         val pos = a.expectedAt(hostNow()).coerceAtLeast(0)
+        log("pause at $pos ms")
         sync.apply(a.copy(positionMs = pos, atHostTimeMs = hostNow(), playing = false))
         send(MusicPause(a.id, pos))
         onChanged()
@@ -132,6 +167,8 @@ class MusicController(
         resumeCancelled = false
         val a = sync.anchor ?: return
         if (a.playing) return
+        // playFrom parks it while talk holds the music; say so, or the log reads like a dead play.
+        log(if (talkPausing) "resume parked: talk open (at ${a.positionMs} ms)" else "resume from ${a.positionMs} ms")
         playFrom(a.id, a.positionMs, START_LEAD_MS)
     }
 
@@ -152,6 +189,16 @@ class MusicController(
     }
 
     /**
+     * A `play` — spoken, or by touch (PROTOCOL.md "Browsing" step 3) — is about to end the talk:
+     * [dropResumeAfterTalk] and [startNotBefore] ([notBeforeMs]) together, called before the talk
+     * closes. Returns whether there was a resume to drop.
+     */
+    fun beforePlayEndsTalk(notBeforeMs: Long): Boolean {
+        startNotBefore(notBeforeMs)
+        return dropResumeAfterTalk()
+    }
+
+    /**
      * The next `music.play` is anchored no earlier than [atHostMs] (and started cold): a track
      * picked by a spoken `play` must not start before the usual resume lead after the talk it
      * closed, or both phones would start it into a headset still switching back from HFP.
@@ -162,6 +209,8 @@ class MusicController(
 
     fun stop() {
         startJob?.cancel()
+        starting = null
+        servableId = null
         sync.apply(null)
         player.stop()
         queue = emptyList()
@@ -187,9 +236,21 @@ class MusicController(
         if (joinMidTrack && a != null) send(MusicPlay(a.id, a.positionMs, a.atHostTimeMs))
     }
 
+    /**
+     * A `music.error`. It ends the wait for `music.ready` (PROTOCOL.md "Music flow" step 3: the
+     * host then plays alone) only when it is about the track whose `music.load` is being waited
+     * for; any other — a prefetched next track, or a leftover from before the load was sent — is
+     * logged as ignored. (First two-phone run, 2026-09-29: a `state` that named a track before it
+     * was cached made the client fetch it, get a 404, and that error then started the host alone.)
+     */
     fun onClientError(id: String, message: String) {
-        Log.w(TAG, "client could not load $id: $message")
-        readyWaiters.remove(id)?.complete(Unit)
+        val waiter = readyWaiters.remove(id)
+        if (waiter != null) {
+            log("music.error for $id: $message; playing without the client")
+            waiter.complete(Unit)
+        } else {
+            log("music.error for $id ignored (no music.load awaiting it): $message")
+        }
         if (!message.startsWith(NOT_DECODABLE)) return
         // The one format the client may not play is Opus in MP4 (AVPlayer, iOS 17+, unverified on
         // a real iPhone): from now on every track is AAC, for both phones. The host keeps playing
@@ -206,9 +267,15 @@ class MusicController(
     fun onClientConnected() {
         clientReady.clear()
         resent.clear()
+        sentNextId = null
         val t = current ?: return
-        if (caches.active.cached(t.id) != null) send(load(t))
-        upcoming.firstOrNull()?.let { if (caches.active.cached(it.id) != null) send(load(it)) }
+        if (caches.cached(t.id) != null) send(load(t))
+        upcoming.firstOrNull()?.let {
+            if (caches.cached(it.id) != null) {
+                sentNextId = it.id
+                send(load(it))
+            }
+        }
     }
 
     fun onClientGone() {
@@ -254,8 +321,27 @@ class MusicController(
 
     // ---- state ----
 
+    /**
+     * Why the current track is not playing when that is not the rider's own pause, for the UI:
+     * still being fetched, waiting for the client's `music.ready`, or parked by an open talk
+     * (it plays when the talk closes). Null when playing, plainly paused, or idle.
+     */
+    val phase: MusicPhase?
+        get() {
+            if (current == null) return null
+            if (startJob?.isActive == true) starting?.let { return it }
+            val a = sync.anchor
+            return if (talkPausing && pausedForTalk && a != null && !a.playing) MusicPhase.PAUSED_FOR_TALK else null
+        }
+
+    /**
+     * `state.music`, or null. Null also while the current track is still being fetched: `state`
+     * must not name a track the client cannot download yet (PROTOCOL.md "Tracks": 404 until
+     * cached), since a client prefetches the track `state` names.
+     */
     fun musicState(): MusicState? {
         val t = current ?: return null
+        if (t.id != servableId) return null
         val a = sync.anchor?.takeIf { it.id == t.id }
         return MusicState(
             id = t.id, title = t.title, artist = t.artist,
@@ -274,20 +360,35 @@ class MusicController(
     private fun startCurrent(positionMs: Long) {
         val t = current ?: return
         startJob?.cancel()
+        startedId = null
         sync.apply(null)
+        // Already cached (the prefetched next track, a restart): servable now, so no gap in state.
+        servableId = t.id.takeIf { caches.cached(it) != null }
+        starting = MusicPhase.LOADING
         onChanged()
         startJob = scope.launch {
             try {
-                val file = caches.active.ensure(t.id)
+                val file = caches.ensure(t.id)
                 player.load(t, file)
-                if (hasClient() && t.id !in clientReady) {
-                    val waiter = readyWaiters.getOrPut(t.id) { CompletableDeferred() }
-                    send(load(t))
-                    if (withTimeoutOrNull(READY_TIMEOUT_MS) { waiter.await() } == null) {
-                        Log.w(TAG, "no music.ready for ${t.id} within 8 s; playing alone")
-                    }
-                    readyWaiters.remove(t.id)
+                if (servableId != t.id) {
+                    servableId = t.id
+                    onChanged()
                 }
+                if (hasClient() && t.id !in clientReady) {
+                    // A fresh waiter, never one left over from a start that was cancelled.
+                    val waiter = CompletableDeferred<Unit>()
+                    readyWaiters[t.id] = waiter
+                    starting = MusicPhase.WAITING_CLIENT
+                    try {
+                        send(load(t))
+                        if (withTimeoutOrNull(READY_TIMEOUT_MS) { waiter.await() } == null) {
+                            Log.w(TAG, "no music.ready for ${t.id} within 8 s; playing alone")
+                        }
+                    } finally {
+                        readyWaiters.remove(t.id, waiter)
+                    }
+                }
+                starting = null
                 playFrom(t.id, positionMs, START_LEAD_MS)
                 prefetchNext()
             } catch (e: CancellationException) {
@@ -314,15 +415,37 @@ class MusicController(
         sync.apply(a, cold || late)
         send(MusicPlay(a.id, a.positionMs, a.atHostTimeMs))
         onChanged()
+        if (startedId != id) {
+            startedId = id
+            current?.takeIf { it.id == id }?.let(onStarted)
+        }
     }
 
-    /** As soon as the current track starts, cache the next one and tell the client to fetch it. */
+    /**
+     * As soon as the current track starts, cache the next [PREFETCH_AHEAD] and tell the client to
+     * fetch the first of them (it only ever needs the next one). One at a time, in queue order, so
+     * a patch of coverage is spent on the track that plays soonest and never races the current
+     * one. A newer queue restarts it; a download already running finishes on its own (the cache
+     * shares it with whoever asks next).
+     */
     private fun prefetchNext() {
-        val next = upcoming.firstOrNull() ?: return
-        scope.launch {
-            runCatching { caches.active.ensure(next.id) }
-                .onSuccess { if (hasClient()) send(load(next)) }
-                .onFailure { Log.w(TAG, "prefetch ${next.id} failed", it) }
+        val ahead = upcoming.take(PREFETCH_AHEAD)
+        prefetchJob?.cancel()
+        if (ahead.isEmpty()) return
+        prefetchJob = scope.launch {
+            for ((i, t) in ahead.withIndex()) {
+                try {
+                    caches.ensure(t.id)
+                    if (i == 0 && hasClient() && sentNextId != t.id) {
+                        sentNextId = t.id
+                        send(load(t))
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "prefetch ${t.id} failed", e)
+                }
+            }
         }
     }
 
@@ -330,21 +453,40 @@ class MusicController(
     private fun resend(t: Track) {
         if (!resent.add(t.id)) return
         scope.launch {
-            runCatching { caches.active.ensure(t.id) }
+            runCatching { caches.ensure(t.id) }
                 .onSuccess { if (hasClient()) send(load(t)) }
                 .onFailure { Log.w(TAG, "re-fetch ${t.id} failed", it) }
         }
     }
 
     companion object {
+        /** The spoken answer to `what's playing` (PROTOCOL.md "Commands"). */
+        fun nowPlayingLine(t: Track?): String = when {
+            t == null -> "Nothing playing"
+            t.artist.isBlank() -> t.title
+            else -> "${t.title} by ${t.artist}"
+        }
+
         const val START_LEAD_MS = 300L
         const val READY_TIMEOUT_MS = 8_000L
         const val RESTART_THRESHOLD_MS = 3_000L
         const val DUCK_VOLUME = 0.2f
+        /** Upcoming tracks kept cached ahead of the current one, for patchy coverage. */
+        const val PREFETCH_AHEAD = 3
         /** PROTOCOL.md: a `music.error` message starting with this = the client cannot play the file. */
         const val NOT_DECODABLE = "not decodable"
         private const val TAG = "MusicController"
     }
+}
+
+/** [MusicController.phase]: why the current track is not playing yet. */
+enum class MusicPhase {
+    /** The start job is fetching / caching the track. */
+    LOADING,
+    /** Cached and loaded here; waiting (up to 8 s) for the client's `music.ready`. */
+    WAITING_CLIENT,
+    /** Parked by an open talk: it plays when the talk closes. */
+    PAUSED_FOR_TALK,
 }
 
 /** The queue arithmetic of PROTOCOL.md "Browsing", pure so it can be tested without a player. */
@@ -360,6 +502,18 @@ internal object QueueEdits {
         val head = queue.take(current + 1)
         val upcoming = queue.drop(current + 1)
         return head + (if (mode == EnqueueMode.NEXT) tracks + upcoming else upcoming + tracks).take(MAX_UPCOMING)
+    }
+
+    /**
+     * The upcoming tracks after [current] in a random order; the current one and those before it
+     * stay. Never the same order back when a different one exists, so "Shuffled" is never a lie.
+     */
+    fun shuffled(queue: List<Track>, current: Int, random: Random): List<Track> {
+        val head = queue.take(current + 1)
+        val upcoming = queue.drop(current + 1)
+        var mixed = upcoming.shuffled(random)
+        if (mixed == upcoming && upcoming.distinct().size > 1) mixed = upcoming.drop(1) + upcoming.first()
+        return head + mixed
     }
 
     /** The queue position of `upcoming[i]`, or null when that is not [id] any more. */

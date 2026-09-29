@@ -123,3 +123,92 @@ def test_clear(host):
     enq(host, "now", "a1", "a2", "b1")
     host._edit({"t": "music.edit", "op": "clear"})
     assert host.queue == [] and host.track.id == "a1" and last_state(host)["queue"] == []
+
+
+# ------------------------------------------------------------------ play by touch ends a talk
+
+
+def open_talk(h):
+    h.talk, h.talk_by, h.resume_after_talk = True, "client", True
+
+
+def talk_closes(h):
+    return [m for m in h.sent if m["t"] == "talk.close"]
+
+
+def test_enqueue_now_during_a_talk_closes_it_before_playing(host):
+    enq(host, "now", "a1")
+    open_talk(host)
+    host.sent.clear()
+    enq(host, "now", "b1", "c1")
+    assert talk_closes(host) == [{"t": "talk.close", "by": "client", "reason": "trigger"}]
+    assert not host.talk and not host.resume_after_talk and host.media_at > 0
+    assert host.started == ["a1", "b1"] and ids(host.queue) == ["c1"]
+
+
+def test_jump_during_a_talk_closes_it(host):
+    enq(host, "now", "a1", "a2", "b1")
+    open_talk(host)
+    host.sent.clear()
+    host._edit({"t": "music.edit", "op": "jump", "index": 1, "id": "b1"})
+    assert talk_closes(host) == [{"t": "talk.close", "by": "client", "reason": "trigger"}]
+    assert not host.talk and host.started[-1] == "b1"
+
+
+@pytest.mark.parametrize("mode", ["next", "end"])
+def test_enqueue_next_or_end_keeps_the_talk_open(host, mode):
+    enq(host, "now", "a1")
+    open_talk(host)
+    enq(host, mode, "b1")
+    assert host.talk and not talk_closes(host)
+
+
+def test_remove_clear_stale_jump_and_empty_enqueue_keep_the_talk_open(host):
+    enq(host, "now", "a1", "a2", "b1")
+    open_talk(host)
+    host._edit({"t": "music.edit", "op": "remove", "index": 0, "id": "a2"})
+    host._edit({"t": "music.edit", "op": "jump", "index": 0, "id": "stale"})
+    enq(host, "now", "nope")
+    host._edit({"t": "music.edit", "op": "clear"})
+    assert host.talk and not talk_closes(host)
+
+
+# ------------------------------------------------------------------ nowplaying / shuffle
+
+
+def announces(h):
+    return [(m["text"], m["earcon"]) for m in h.sent if m["t"] == "announce"]
+
+
+def test_nowplaying(host):
+    host._command("what's playing", "client")
+    enq(host, "now", "a1")
+    host._command("what song is this", "client")
+    host._start(track("x", "Solo", artist=""))
+    host._command("what is playing", "client")
+    assert announces(host) == [("Nothing playing", "error"), ("Alpha by Band", "ok"), ("Solo", "ok")]
+
+
+def test_shuffle_keeps_the_current_track(host):
+    enq(host, "now", "a1", "a2")
+    host._command("shuffle", "client")
+    assert announces(host)[-1] == ("Nothing to shuffle", "error")
+    enq(host, "end", *[t.id for t in LIB[2:]])
+    before = ids(host.queue)
+    host.sent.clear()
+    for _ in range(20):  # with 4 upcoming tracks, 20 shuffles all equal to the start is ~1e-28
+        host._command("shuffle please", "client")
+        if ids(host.queue) != before:
+            break
+    assert sorted(ids(host.queue)) == sorted(before) and ids(host.queue) != before
+    assert host.track.id == "a1" and host.started == ["a1"]
+    assert announces(host)[-1] == ("Shuffled", "ok")
+    assert [q["id"] for q in last_state(host)["queue"]] == ids(host.queue)
+
+
+@pytest.mark.parametrize("phrase", ["what's playing", "shuffle"])
+def test_nowplaying_and_shuffle_keep_the_talk_open(host, phrase):
+    enq(host, "now", "a1", "a2", "b1")
+    open_talk(host)
+    host._command(phrase, "client")
+    assert host.talk and not talk_closes(host)

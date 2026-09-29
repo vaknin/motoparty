@@ -52,6 +52,14 @@ fun SettingsTab(s: LinkStatus, settings: Settings, cb: Callbacks, modifier: Modi
             }
         }
         Group("Voice") {
+            SwitchRow(
+                "Use USB stereo mic (Lark) for talk",
+                "When the receiver is plugged in: rider on pink TX, passenger on yellow TX. Off: earbud mics",
+                settings.larkTalk,
+            ) { v -> update { it.copy(larkTalk = v) } }
+            SwitchRow("Swap Lark left and right", "If the rider and the passenger are the wrong way round", settings.larkSwap) { v ->
+                update { it.copy(larkSwap = v) }
+            }
             var lang by remember(settings.asrLanguage) { mutableStateOf(settings.asrLanguage) }
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(lang, { lang = it }, Modifier.weight(1f), label = { Text("Speech language (e.g. en-US)") }, singleLine = true)
@@ -65,8 +73,23 @@ fun SettingsTab(s: LinkStatus, settings: Settings, cb: Callbacks, modifier: Modi
             Stepper("Resume after talk", "Head start for the headset to switch back", settings.resumeLeadMs, 250) { v ->
                 update { it.copy(resumeLeadMs = v) }
             }
-            Stepper("Latency trim", "Bluetooth delay of this phone's headset", settings.latencyTrimMs, 10) { v ->
-                update { it.copy(latencyTrimMs = v) }
+            val route = s.outputRoute
+            if (route != null) {
+                // The trim is per output: each Bluetooth device has its own, the phone's speaker
+                // and wired outputs share one. This row edits the one in use right now.
+                Stepper(
+                    "Latency trim",
+                    "Output delay of ${route.name}${if (route.bluetooth) " (Bluetooth)" else ""}",
+                    settings.trims.of(route),
+                    10,
+                ) { v -> update { it.copy(trims = it.trims.with(route, v)) } }
+            } else {
+                Text(
+                    "Latency trim: shown for the current output once the host is running",
+                    Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             SwitchRow("Duck music during talk", "Off: music pauses while you talk", settings.duckDuringTalk) { v ->
                 update { it.copy(duckDuringTalk = v) }

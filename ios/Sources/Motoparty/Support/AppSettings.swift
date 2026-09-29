@@ -11,6 +11,23 @@ final class AppSettings: ObservableObject {
     @Published var latencyTrimMs: Double { didSet { defaults.set(latencyTrimMs, forKey: "latencyTrimMs") } }
     /// BCP-47 tag for on-device ASR and TTS.
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "speechLanguage") } }
+    /// The app volume level (`AppVolume`, 0...16) the keys and spoken
+    /// commands last set; the next link starts there. Not a published
+    /// setting: `AppModel.volumeLevel` is what the UI shows.
+    var appVolumeLevel: Int {
+        get { AppVolume.clamp(defaults.object(forKey: "appVolumeLevel") as? Int ?? AppVolume.defaultLevel) }
+        set { defaults.set(AppVolume.clamp(newValue), forKey: "appVolumeLevel") }
+    }
+    /// The last host this client linked to; discovery prefers it when several answer.
+    var lastHostName: String? {
+        get { defaults.string(forKey: "lastHostName") }
+        set { defaults.set(newValue, forKey: "lastHostName") }
+    }
+    /// The Search tab's recent searches and recently played tracks.
+    var browseHistory: BrowseHistory {
+        get { BrowseHistory.decoded(defaults.data(forKey: "browseHistory")) }
+        set { defaults.set(newValue.encoded(), forKey: "browseHistory") }
+    }
 
     init() {
         deviceName = defaults.string(forKey: "deviceName") ?? "iPhone"

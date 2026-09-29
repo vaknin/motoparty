@@ -17,6 +17,12 @@ public enum AppVolume {
     public static let unityLevel = 15
     /// dB per level. 16 levels over ~45 dB, near the system curve's range.
     public static let stepDb: Float = 3
+    /// The first-ever level (-9 dB), before any level was remembered. The
+    /// level is remembered across links and launches, never derived from the
+    /// system volume: a quiet system volume at connect (0.2 → level 3,
+    /// -36 dB, device log 2026-09-29) made the talk near inaudible while the
+    /// parked system volume read 94%.
+    public static let defaultLevel = 12
 
     /// The same loudness for everything: the link is down and the system
     /// volume does the work.
@@ -60,12 +66,6 @@ public enum AppVolume {
         let capped = min(1, linear)
         return Gains(talkVolume: capped, talkBoostDb: max(0, db(level) ?? 0),
                      musicVolume: capped, cueVolume: capped)
-    }
-
-    /// Arming: the level whose loudness matches the system volume `volume`
-    /// (0...1) had, one level per hardware step, so nothing jumps.
-    public static func level(forSystemVolume volume: Float) -> Int {
-        clamp(Int((volume * Float(maxLevel)).rounded()))
     }
 
     /// Disarming: the system volume that plays like `level` did.
@@ -143,6 +143,11 @@ public struct VolumeKeyGate: Sendable {
     public static let ownChangeMs: Double = 1_000
     /// Readings are floats; anything closer than this is the same level.
     static let tolerance: Float = 0.01
+    /// How close a reading must be to `parkVolume` to be the park. Wider than
+    /// `tolerance`: in an HFP talk the park reads back as 0.95, not 0.9375
+    /// (device log 2026-09-29), and was then taken for a key. Well under
+    /// half a key step (1/32), so a key never lands inside it.
+    static let parkTolerance: Float = 0.02
 
     public private(set) var armed = false
     /// The app level (meaningful while armed).
@@ -169,22 +174,30 @@ public struct VolumeKeyGate: Sendable {
 
     public init() {}
 
-    /// The link came up (`true`) or went down; `volume` is the system volume
-    /// now. Arming starts at the level matching it and parks; disarming hands
-    /// the loudness back to the system volume.
-    public mutating func setArmed(_ armed: Bool, volume: Float, nowMs: Double) -> Action {
-        guard armed != self.armed else { return .none }
+    /// The link came up: the app level is `level` (the remembered one, see
+    /// `AppVolume.defaultLevel`); `volume` is the system volume now. Parks.
+    public mutating func arm(level: Int, volume: Float, nowMs: Double) -> Action {
+        guard !armed else { return .none }
+        begin(armed: true, volume: volume)
+        self.level = AppVolume.clamp(level)
+        return park(nowMs)
+    }
+
+    /// The link went down; `volume` is the system volume now. Hands the
+    /// loudness back to the system volume.
+    public mutating func disarm(volume: Float, nowMs: Double) -> Action {
+        guard armed else { return .none }
+        begin(armed: false, volume: volume)
+        expectedUntilMs = -.infinity
+        return .release(volume: AppVolume.systemVolume(forLevel: level))
+    }
+
+    private mutating func begin(armed: Bool, volume: Float) {
         self.armed = armed
         reading = volume
         settleUntilMs = nil
         resetBurst()
         lastKey = nil
-        if armed {
-            level = AppVolume.level(forSystemVolume: volume)
-            return park(nowMs)
-        }
-        expectedUntilMs = -.infinity
-        return .release(volume: AppVolume.systemVolume(forLevel: level))
     }
 
     /// The route or the session category is about to change, or just did:
@@ -219,12 +232,19 @@ public struct VolumeKeyGate: Sendable {
         let previous = reading
         reading = volume
         guard armed else { return .none }
-        if abs(volume - Self.parkVolume) <= Self.tolerance {
+        if abs(volume - Self.parkVolume) <= Self.parkTolerance {
             // A key always moves the volume off the park; landing on it is
             // the gate's own reset.
             guard nowMs <= expectedUntilMs else { return .none }
             expectedUntilMs = -.infinity
             return .ownReset
+        }
+        if nowMs <= expectedUntilMs, let previous, Self.strictlyBetween(volume, previous, Self.parkVolume) {
+            // On its way to the park from where it was (arming at 0.2 read a
+            // phantom "up" on the device, 2026-09-29): the park in transit,
+            // not a key. A key moves the volume away from the park, never
+            // part of the way towards it; still waiting for the park itself.
+            return .none
         }
         if let until = settleUntilMs {
             if nowMs < until {
@@ -238,6 +258,11 @@ public struct VolumeKeyGate: Sendable {
         // before the reset of the step before it.
         guard let previous, abs(volume - previous) > Self.tolerance else { return park(nowMs) }
         return volume > previous ? up(nowMs) : down(nowMs)
+    }
+
+    /// `value` lies between `a` and `b`, more than `tolerance` from both.
+    static func strictlyBetween(_ value: Float, _ a: Float, _ b: Float) -> Bool {
+        value > min(a, b) + tolerance && value < max(a, b) - tolerance
     }
 
     private mutating func up(_ nowMs: Double) -> Action {

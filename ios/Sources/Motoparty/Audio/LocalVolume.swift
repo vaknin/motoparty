@@ -21,20 +21,65 @@ final class LocalVolume {
     static let step: Float = 1.0 / 16.0
 
     private var volumeView: MPVolumeView?
+    private weak var cachedSlider: UISlider?
+    /// The latest value asked for while the slider did not exist yet; the
+    /// retry sets it (a newer `set` replaces it).
+    private var pending: Float?
+    private var retryScheduled = false
+    /// Retries before giving up on a pending value: 8 × 100 ms.
+    private static let maxRetries = 8
+    private static let retryDelay: TimeInterval = 0.1
 
     /// Both return false if the slider could not be reached, so the caller can
     /// play the error earcon instead of pretending the volume moved.
     func up() -> Bool { adjust(by: LocalVolume.step) }
     func down() -> Bool { adjust(by: -LocalVolume.step) }
 
-    /// Sets the volume to `value` (0...1); false if the slider could not be reached.
+    /// Puts the MPVolumeView in the window now, so its slider exists (UIKit
+    /// makes it only after a layout pass) before the first park. Call once
+    /// the window is up (app start); harmless to call again.
+    func prepare() {
+        _ = slider()
+    }
+
+    /// Sets the volume to `value` (0...1). If the slider is not there yet
+    /// (fresh view, no layout pass), the value is kept and set on the next
+    /// run loop turns, a few times 100 ms apart; true then too. False only if
+    /// there is no window to put the view in.
     func set(_ value: Float) -> Bool {
-        guard let slider = slider() else {
-            Log.audio.error("local volume: no MPVolumeView slider")
+        let value = min(1, max(0, value))
+        if let slider = slider() {
+            pending = nil
+            slider.value = value
+            return true
+        }
+        guard volumeView != nil else {
+            Log.audio.error("local volume: no MPVolumeView slider (no window)")
             return false
         }
-        slider.value = min(1, max(0, value))
+        pending = value
+        scheduleRetry(attempt: 1)
         return true
+    }
+
+    private func scheduleRetry(attempt: Int) {
+        guard !retryScheduled else { return }
+        retryScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempt == 1 ? 0 : Self.retryDelay)) { [weak self] in
+            guard let self else { return }
+            self.retryScheduled = false
+            guard let value = self.pending else { return }
+            if let slider = self.slider() {
+                self.pending = nil
+                slider.value = value
+                Log.audio.info("local volume: set \(value, privacy: .public) on retry \(attempt)")
+            } else if attempt < Self.maxRetries {
+                self.scheduleRetry(attempt: attempt + 1)
+            } else {
+                self.pending = nil
+                Log.audio.error("local volume: no MPVolumeView slider after \(attempt) tries")
+            }
+        }
     }
 
     private func adjust(by delta: Float) -> Bool {
@@ -48,13 +93,33 @@ final class LocalVolume {
     }
 
     private func slider() -> UISlider? {
+        if let cachedSlider, cachedSlider.window != nil { return cachedSlider }
         if volumeView == nil, let window = Self.window() {
+            // Off-screen, a real size, and nearly (not fully) transparent:
+            // a hidden or zero-sized MPVolumeView may never build its slider.
             let view = MPVolumeView(frame: CGRect(x: -1_000, y: -1_000, width: 120, height: 40))
+            view.alpha = 0.0001
+            view.isUserInteractionEnabled = false
             window.addSubview(view)
-            view.layoutIfNeeded()
             volumeView = view
         }
-        return volumeView?.subviews.compactMap { $0 as? UISlider }.first
+        guard let view = volumeView else { return nil }
+        if view.window == nil, let window = Self.window() { window.addSubview(view) }
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        // The slider sits deeper than the view's direct subviews on current iOS.
+        guard let slider = Self.findSlider(in: view) else { return nil }
+        if cachedSlider == nil { Log.audio.info("local volume: slider ready") }
+        cachedSlider = slider
+        return slider
+    }
+
+    private static func findSlider(in view: UIView) -> UISlider? {
+        for sub in view.subviews {
+            if let slider = sub as? UISlider { return slider }
+            if let slider = findSlider(in: sub) { return slider }
+        }
+        return nil
     }
 
     private static func window() -> UIWindow? {

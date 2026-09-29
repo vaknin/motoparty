@@ -62,6 +62,8 @@ class SyncController(
     private val scope: CoroutineScope,
     private val hostNow: () -> Long,
     private val trimMs: () -> Int,
+    /** The output route [trimMs] is for, as the trace names it (diagnostics only). */
+    private val routeName: () -> String = { "?" },
 ) {
     var anchor: Anchor? = null
         private set
@@ -87,6 +89,9 @@ class SyncController(
         private set
 
     private var job: Job? = null
+    /** The running [job] has not reached play() yet; [cold] as it was given to [apply]. */
+    private var startPending = false
+    private var startCold = false
 
     /**
      * Where the drift trace goes; null turns it off. Logging only: the trace reads the player and
@@ -130,6 +135,8 @@ class SyncController(
             player.seekTo(a.positionMs)
             return
         }
+        startPending = true
+        startCold = cold
         job = scope.launch {
             // Seek while paused, give the seek time to finish, then play() early by the start-up
             // latency. If the anchor is too close (or past, when joining mid-track), start at a
@@ -140,11 +147,30 @@ class SyncController(
             player.seekTo(a.expectedAt(startAt) + trimMs())
             delay(startAt - lead - hostNow())
             log("start ${if (cold) "cold" else "warm"}: lead $lead ms, ${startAt - hostNow()} ms to the anchor point")
+            startPending = false
             player.play()
             traceFor(TRACE_AFTER_MS, if (cold) "start-cold" else "start-warm")
             delay(EARLY_CHECK_MS)
             check(Learn(lead, cold))
         }
+    }
+
+    /**
+     * The trim changed from [fromMs] to [toMs] (the output route changed, or the rider edited it);
+     * [trimMs] already returns the new value. Logs it and, while playing, re-reads at once rather
+     * than at the next 10 s check, so the difference is absorbed the usual way (a rate nudge up to
+     * 1 s, a re-seek above) instead of by restarting the output. A start that has not played yet
+     * is simply redone with the new trim.
+     */
+    fun retrim(fromMs: Int, toMs: Int, route: String) {
+        log("trim $fromMs -> $toMs ms, route $route")
+        if (fromMs == toMs) return
+        val a = anchor ?: return
+        if (!a.playing || held) return
+        if (startPending) return apply(a, startCold)
+        cancelJob()
+        job = scope.launch { check(null) }
+        traceFor(TRACE_AFTER_MS, "retrim")
     }
 
     /**
@@ -167,6 +193,7 @@ class SyncController(
     private fun cancelJob() {
         job?.cancel()
         job = null
+        startPending = false
         traceJob?.cancel()
         traceJob = null
         traceUntilMs = 0L
@@ -193,7 +220,8 @@ class SyncController(
     }
 
     /**
-     * `trace: pos P ms, expected E ms, err P-E ms, speed S, phase X, t T` + [PlayerControls.traceInfo].
+     * `trace: pos P ms, expected E ms, err P-E ms, speed S, phase X, t T, trim N ms, route R` +
+     * [PlayerControls.traceInfo].
      * `pos` is the player's raw position (nothing corrects it; the trim is on `expected`), `t` is
      * the time since the trigger. Deliberately says `err`, not `drift`: the bench parser reads
      * every "drift N ms" as a controller check.
@@ -204,7 +232,7 @@ class SyncController(
         val expected = a.expectedAt(hostNow()) + trimMs()
         log(
             "trace: pos $pos ms, expected $expected ms, err ${pos - expected} ms, speed ${player.speed}, " +
-                "phase $phase, t $sinceMs${player.traceInfo}",
+                "phase $phase, t $sinceMs, trim ${trimMs()} ms, route ${routeName()}${player.traceInfo}",
         )
     }
 

@@ -125,6 +125,75 @@ class MediaCueTest {
         assertEquals("fired once and only once", 0, cue.tick(9_000).size)
     }
 
+    /**
+     * 2026-09-29 device run: `exitCall` 665 ms (setMode 659), `sco disconnected (communication device
+     * earpiece)` at +629 ms, `back to media mode` at +712 ms — the teardown reported ~80 ms before
+     * the release. That report is the end of the drain; waiting for another cost 2 s every talk.
+     */
+    @Test
+    fun `a teardown that reported before exitCall returned is already over`() {
+        cue.routeHeld(0)
+        cue.device(sco, 1_000) // the link came up
+        cue.device(earpiece, 5_629) // the teardown, while setMode still blocks
+        val plays = cue.routeReleased(wasSco = true, atMs = 5_712)
+        assertEquals(0, plays.size)
+        val play = cue.request(1, MediaCue.Kind.CLOSED, 5_713)
+        assertNotNull("nothing left to wait for", play)
+        assertEquals(0L, play!!.playedMs)
+    }
+
+    @Test
+    fun `a sound waiting in the held route plays at a release the teardown already reported`() {
+        cue.routeHeld(0)
+        cue.device(sco, 1_000)
+        assertNull(cue.request(1, MediaCue.Kind.ERROR, 5_000))
+        cue.device(earpiece, 5_629)
+        val plays = cue.routeReleased(wasSco = true, atMs = 5_712)
+        assertEquals(1, plays.size)
+        assertEquals(false, plays[0].fallback)
+        assertEquals(712L, plays[0].playedMs)
+        assertEquals("earpiece", plays[0].deviceType)
+        assertEquals(629L, plays[0].deviceMs)
+    }
+
+    @Test
+    fun `an SCO report as the last word still waits for the next one`() {
+        cue.routeHeld(0)
+        cue.device(sco, 1_000)
+        assertEquals(0, cue.routeReleased(wasSco = true, atMs = 5_000).size)
+        assertNull(cue.request(1, MediaCue.Kind.CLOSED, 5_001))
+        assertEquals(1, cue.device(earpiece, 5_300).size)
+    }
+
+    @Test
+    fun `a report from before the route was held does not count`() {
+        cue.device(earpiece, 0)
+        cue.routeHeld(100)
+        cue.routeReleased(wasSco = true, atMs = 5_000)
+        assertNull("the teardown has not reported yet", cue.request(1, MediaCue.Kind.CLOSED, 5_001))
+    }
+
+    @Test
+    fun `a fallback ends the drain, so the next sound is instant`() {
+        cue.routeHeld(0)
+        cue.routeReleased(wasSco = true, atMs = 1_000)
+        assertNull(cue.request(1, MediaCue.Kind.CLOSED, 1_006))
+        assertNull(cue.request(2, MediaCue.Kind.OK, 1_500))
+        val plays = cue.tick(3_006)
+        assertEquals("the due one and the one behind it", listOf(1, 2), plays.map { it.id })
+        assertNotNull("no longer waiting for a report that never came", cue.request(3, MediaCue.Kind.CLOSED, 40_000))
+    }
+
+    @Test
+    fun `dropClosed drops a pending closed earcon without holding the route`() {
+        cue.routeHeld(0)
+        cue.routeReleased(wasSco = true, atMs = 1_000)
+        assertNull(cue.request(1, MediaCue.Kind.CLOSED, 1_006))
+        assertNull(cue.request(2, MediaCue.Kind.ERROR, 1_010))
+        assertEquals(listOf(1), cue.dropClosed())
+        assertEquals(listOf(2), cue.device(earpiece, 1_400).map { it.id })
+    }
+
     @Test
     fun `the fallback also covers a route that is never released`() {
         cue.routeHeld(0)

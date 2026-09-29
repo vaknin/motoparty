@@ -93,10 +93,10 @@ def track(tmp_path_factory):
     return out
 
 
-def start_pair(tmp_path, track, *client_args):
+def start_pair(tmp_path, track, *client_args, host_extra=()):
     cp, vp, hp = free_port(), free_port(socket.SOCK_DGRAM), free_port()
     host_args = ["host", "--no-mdns", "--bind", "127.0.0.1", "--port", str(cp), "--voice-port", str(vp),
-                 "--http-port", str(hp), "--name", "Test Host"]
+                 "--http-port", str(hp), "--name", "Test Host", *host_extra]
     if track:
         host_args += ["--track", str(track)]
     host = Proc(*host_args)
@@ -539,4 +539,152 @@ def test_spoken_play_and_pause_in_a_talk(tmp_path, track):
         assert int(m.group(1)) >= 1000  # the resume lead, not the 300 ms play lead
     finally:
         client.stop()
+        host.stop()
+
+
+# ---------------------------------------------------------------------- host-mic talk
+
+
+def test_host_mic_talk_client_is_receive_only(tmp_path):
+    """PROTOCOL.md "Host-mic talk": the host's decision carries mic:"host"; the client opens no
+    mic, sends keepalives only and no command.text; the host recognises the passenger's channel."""
+    host, client, _ = start_pair(tmp_path, None, "--tone", host_extra=("--host-mic",))
+    try:
+        client.msg("<<", "hello")
+        client.send("talk")
+        assert client.msg(">>", "talk.open") == {"t": "talk.open", "by": "client"}  # a request never has mic
+        assert client.msg("<<", "talk.open") == {"t": "talk.open", "by": "client", "mic": "host"}
+        client.expect(r"talk mode: host-mic \(receive only\)")
+        host.expect(r"TALK OPEN \(by client, host-mic\)")
+        assert client.msg("<<", "state") == {"t": "state", "talk": True, "queue": [], "mic": "host"}
+        # --tone would send audio in a normal talk: here only keepalives go out
+        m = client.expect(r"\| tx: audio=(\d+) dtx_skipped=\d+ keepalive=(\d+)", timeout=5)
+        m = client.expect(r"\| tx: audio=(\d+) dtx_skipped=\d+ keepalive=(\d+)", timeout=5)
+        assert int(m.group(1)) == 0 and int(m.group(2)) >= 1, m.group(0)
+        hs = host.expect(r"voice: audio=(\d+) .*keepalive=(\d+) echoed=(\d+) dropped=(\d+)", timeout=5)
+        assert int(hs.group(1)) == 0 and int(hs.group(2)) >= 1 and int(hs.group(3)) == 0
+        # the client never recognises in a host-mic talk: hear sends nothing
+        client.send("hear pause")
+        client.expect(r"hear: 'pause' skipped: host-mic talk")
+        # a misbehaving client's command.text is ignored by the host
+        client.send("say pause")
+        host.expect(r"command.text ignored: host-mic talk")
+        with pytest.raises(AssertionError):
+            client.expect(r'<< \{"t":"announce"', timeout=1)
+        # the host's ASR on the passenger's channel: first phrase acts as the client's command
+        host.send("hear louder")
+        host.expect(r"hear: volumeUp on the passenger's channel ignored, no announce")
+        host.send("hear pause")  # the first phrase was spent by `louder`
+        host.expect(r"hear: 'pause' is conversation \(the first phrase is spent\)")
+        client.send("talk")
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
+        host.expect(r"host-mic talk: dropped 0 client audio packets")
+        client.expect("TALK CLOSED")
+        assert client.msg("<<", "state") == {"t": "state", "talk": False, "queue": []}  # no mic
+
+        # a passenger `over` ends the talk by the client, as its command.text would
+        client.send("talk")
+        client.msg("<<", "talk.open")
+        host.send("hear Over.")
+        host.expect(r"hear: command 'over' \(passenger's channel, as the client's command\)")
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
+        assert sum('"command.text"' in line for line in client.lines if ">>" in line) == 1  # the `say`
+    finally:
+        client.stop()
+        host.stop()
+
+
+def test_host_drops_client_audio_in_a_host_mic_talk(tmp_path):
+    """PROTOCOL.md "Voice": a host that still receives client audio in a host-mic talk drops it."""
+    from motoparty_peer.protocol import KIND_AUDIO, VoicePacket
+
+    host, client, (_, vp, _) = start_pair(tmp_path, None, host_extra=("--host-mic",))
+    try:
+        client.msg("<<", "hello")
+        host.expect("is now the client")
+        _open_talk(client)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            for i in range(5):
+                s.sendto(VoicePacket(KIND_AUDIO, i, i * 320, b"\xf8\xff\xfe").encode(), ("127.0.0.1", vp))
+        host.expect("voice: client audio in a host-mic talk; dropping it")
+        hs = host.expect(r"voice: audio=5 .*echoed=0 dropped=5", timeout=5)
+        assert hs
+        client.send("talk")
+        client.msg("<<", "talk.close")
+        host.expect(r"host-mic talk: dropped 5 client audio packets")
+    finally:
+        client.stop()
+        host.stop()
+
+
+def test_hostmic_toggle_and_a_client_without_a_mic(tmp_path):
+    """`hostmic on|off` decides per talk; a client whose mic is unavailable still joins a
+    host-mic talk (it needs none) and refuses a normal one."""
+    host, client, _ = start_pair(tmp_path, None, "--mic-unavailable")
+    try:
+        client.msg("<<", "hello")
+        host.expect("is now the client")
+        host.send("hostmic on")
+        host.expect("host-mic ON")
+        host.send("talk")
+        assert client.msg("<<", "talk.open") == {"t": "talk.open", "by": "host", "mic": "host"}
+        client.expect(r"a host-mic talk needs none: accepting")
+        client.expect(r"talk mode: host-mic \(receive only\)")
+        assert client.msg("<<", "state")["talk"] is True
+        host.send("hostmic off")
+        host.expect(r"host-mic OFF: .*\(the open talk keeps its mode\)")
+        host.send("hear pause")  # host opened it: its own first phrase, as in any talk
+        host.expect(r"hear: command 'pause'$")
+        host.send("talk")
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "host", "reason": "trigger"}
+        host.expect(r"host-mic talk: dropped 0 client audio packets")
+        # the next talk opens without mic: the client refuses it as before
+        host.send("talk")
+        assert client.msg("<<", "talk.open") == {"t": "talk.open", "by": "host"}
+        assert client.msg(">>", "talk.close") == {"t": "talk.close", "by": "client", "reason": "unavailable"}
+        host.send("hostmic maybe")
+        host.expect("usage: hostmic on|off")
+    finally:
+        client.stop()
+        host.stop()
+
+
+def test_client_joining_a_host_mic_talk_learns_it_from_state(tmp_path):
+    """PROTOCOL.md `state`: a client that joins mid-talk sees only state; its mic:"host" makes
+    it open the talk receive-only, as the talk.open would have."""
+    cp, vp, hp = free_port(), free_port(socket.SOCK_DGRAM), free_port()
+    host = Proc("host", "--no-mdns", "--bind", "127.0.0.1", "--port", str(cp), "--voice-port", str(vp),
+                "--http-port", str(hp), "--name", "Test Host", "--host-mic")
+    client = None
+    try:
+        host.expect(r"control tcp/\d+ voice udp/\d+ http tcp/\d+")
+        host.send("talk")  # solo host-mic talk, before any client
+        host.expect(r"TALK OPEN \(by host, host-mic\)")
+        client = Proc("client", "--host", "127.0.0.1", "--port", str(cp), "--no-audio", "--name", "Late",
+                      "--cache-dir", str(tmp_path / "cache"), "--tone")
+        client.msg("<<", "hello")
+        assert client.msg("<<", "state") == {"t": "state", "talk": True, "queue": [], "mic": "host"}
+        client.expect(r"talk mode: host-mic \(receive only\)")
+        m = client.expect(r"\| tx: audio=(\d+) dtx_skipped=\d+ keepalive=(\d+)", timeout=5)
+        assert int(m.group(1)) == 0, m.group(0)
+        client.send("hear pause")
+        client.expect(r"hear: 'pause' skipped: host-mic talk")
+        host.send("talk")
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "host", "reason": "trigger"}
+        client.expect("TALK CLOSED")
+
+        # without mic, a late joiner opens a normal talk from state (sends its tone), as before
+        host.send("hostmic off")
+        host.expect("host-mic OFF")
+        client.stop()
+        host.send("talk")  # solo normal talk
+        host.expect(r"TALK OPEN \(by host\)")
+        client = Proc("client", "--host", "127.0.0.1", "--port", str(cp), "--no-audio", "--name", "Late 2",
+                      "--cache-dir", str(tmp_path / "cache"), "--tone")
+        client.msg("<<", "hello")
+        assert client.msg("<<", "state") == {"t": "state", "talk": True, "queue": []}
+        client.expect("TALK OPEN - sending 440 Hz tone")
+    finally:
+        if client:
+            client.stop()
         host.stop()

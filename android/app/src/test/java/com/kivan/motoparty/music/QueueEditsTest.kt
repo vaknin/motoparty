@@ -2,6 +2,7 @@ package com.kivan.motoparty.music
 
 import com.kivan.motoparty.core.EnqueueMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -53,5 +54,18 @@ class QueueEditsTest {
         assertNull(QueueEdits.at(q, 1, 0, "n2"))
         assertNull(QueueEdits.at(q, 1, 2, "n2"))
         assertNull(QueueEdits.at(q, 1, -1, "c"))
+    }
+
+    @Test
+    fun shuffleKeepsTheCurrentTrackAndThoseBefore() {
+        val long = q + listOf(t("n3"), t("n4"), t("n5"))
+        for (seed in 0..20) {
+            val out = QueueEdits.shuffled(long, 1, kotlin.random.Random(seed))
+            assertEquals("p,c", ids(out.take(2)))
+            assertEquals(long.drop(2).map { it.id }.sorted(), out.drop(2).map { it.id }.sorted())
+            assertNotEquals("never the same order back", ids(long), ids(out))
+        }
+        // Nothing loaded yet (index -1): every track is upcoming.
+        assertEquals(4, QueueEdits.shuffled(q, -1, kotlin.random.Random(1)).size)
     }
 }

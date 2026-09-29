@@ -15,11 +15,28 @@ package com.kivan.motoparty.audio
  * `AudioRecord.setPreferredDevice()` will be pointed at in Stage C.
  */
 class DeviceRoster {
-    /** One device, flattened out of `AudioDeviceInfo`: a type, a name and which way it points. */
-    data class Dev(val id: Int, val type: Int, val name: String, val isInput: Boolean)
+    /**
+     * One device, flattened out of `AudioDeviceInfo`: a type, a name and which way it points.
+     * [channelCounts] is `AudioDeviceInfo.getChannelCounts()`; empty means "any" (the framework's
+     * own convention). It is what tells a stereo receiver from a mono USB headset ([TalkMic]).
+     */
+    data class Dev(
+        val id: Int,
+        val type: Int,
+        val name: String,
+        val isInput: Boolean,
+        val channelCounts: List<Int> = emptyList(),
+    )
 
     /** Null until the first [update]; sorted, so an unchanged roster compares equal. */
     private var known: List<Dev>? = null
+
+    /**
+     * The devices as of the last [update] (null before it). Published for other threads: the talk
+     * open on Main reads it to choose the talk microphone ([TalkMic]) without a binder call.
+     */
+    @Volatile var current: List<Dev>? = null
+        private set
 
     /**
      * The devices the framework reports now. Returns the lines to log — empty when nothing changed,
@@ -35,6 +52,7 @@ class DeviceRoster {
         val was = known
         if (was == now) return emptyList()
         known = now
+        current = now
         val full = "audio devices: ${roster(now)}"
         if (was == null) return listOf(full)
         val added = now.filterNot { it in was }

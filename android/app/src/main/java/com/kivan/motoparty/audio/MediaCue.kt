@@ -31,9 +31,18 @@ package com.kivan.motoparty.audio
  * [tick] is the safety net: ~[TIMEOUT_MS] after the request the sound is played anyway and logged
  * `fallback`, so a missing signal can cost a late sound but never a silent one.
  *
- * **A re-open drops a pending CLOSED** ([routeHeld]): the talk is back, so that beep is stale and
- * would be a lie. Any other pending sound is kept and waits for the *next* release — an error or a
- * spoken reply is still true whatever the route does.
+ * **A re-open drops a pending CLOSED** ([routeHeld], and [dropClosed] for a talk that takes no
+ * call route): the talk is back, so that beep is stale and would be a lie. Any other pending sound
+ * is kept and waits for the *next* release — an error or a spoken reply is still true whatever the
+ * route does.
+ *
+ * **The teardown can report before the release** (2026-09-29 device run): `exitCall`'s `setMode`
+ * blocks ~660 ms, and the framework's `earpiece` report lands ~80 ms *before* it returns. Waiting
+ * for a report *after* the release then waited for one that had already come: every CLOSED earcon
+ * of an earbud talk fell back to the 2 s timer, and the drain was never ended, so every later
+ * media sound (all host-mic talks' CLOSED beeps included) waited 2 s too — one played into the
+ * next talk. So a non-`bt_sco` report seen since [routeHeld] counts at the release, and a fallback
+ * ends the drain.
  */
 class MediaCue(private val timeoutMs: Long = TIMEOUT_MS) {
 
@@ -89,6 +98,9 @@ class MediaCue(private val timeoutMs: Long = TIMEOUT_MS) {
     private var releasedAt: Long? = null
     private var deviceAt: Long? = null
     private var deviceType: String? = null
+    /** The framework's last raw report since [routeHeld] (any report, draining or not), or null. */
+    private var lastReport: Int? = null
+    private var lastReportAt: Long? = null
     private val pending = ArrayList<Req>()
 
     /**
@@ -118,6 +130,16 @@ class MediaCue(private val timeoutMs: Long = TIMEOUT_MS) {
         releasedAt = null
         deviceAt = null
         deviceType = null
+        lastReport = null
+        lastReportAt = null
+        return dropClosed()
+    }
+
+    /**
+     * A talk opened again without taking a call route (a host-mic talk): a pending CLOSED earcon
+     * is stale. Returns the ids dropped; everything else stays pending.
+     */
+    fun dropClosed(): List<Int> {
         val stale = pending.filter { it.kind == Kind.CLOSED }.map { it.id }
         pending.removeAll { it.kind == Kind.CLOSED }
         return stale
@@ -134,7 +156,14 @@ class MediaCue(private val timeoutMs: Long = TIMEOUT_MS) {
         draining = wasSco
         deviceAt = null
         deviceType = null
-        return if (wasSco) emptyList() else flush(atMs)
+        val last = lastReportAt
+        if (wasSco && last != null && !ScoRule.connected(lastReport)) {
+            // The teardown already reported while exitCall was still blocking: it is over.
+            draining = false
+            deviceAt = last
+            deviceType = ScoRule.describe(lastReport)
+        }
+        return if (draining) emptyList() else flush(atMs)
     }
 
     /**
@@ -143,6 +172,10 @@ class MediaCue(private val timeoutMs: Long = TIMEOUT_MS) {
      * flipped that cached flag). Anything other than `bt_sco`, including none, ends the drain.
      */
     fun device(type: Int?, atMs: Long): List<Play> {
+        if (held) {
+            lastReport = type
+            lastReportAt = atMs
+        }
         if (!draining) return emptyList()
         if (ScoRule.connected(type)) return emptyList() // still the link we are waiting to lose
         draining = false
@@ -154,8 +187,13 @@ class MediaCue(private val timeoutMs: Long = TIMEOUT_MS) {
     /** The safety net: anything asked for more than [timeoutMs] ago is played now. */
     fun tick(atMs: Long): List<Play> {
         val due = pending.filter { atMs - it.atMs >= timeoutMs }
+        if (due.isEmpty()) return emptyList()
         pending.removeAll(due.toSet())
-        return due.map { play(it, atMs, fallback = true) }
+        val plays = due.map { play(it, atMs, fallback = true) }
+        // The report never came: stop waiting for it, or every later sound waits 2 s as well.
+        if (!draining) return plays
+        draining = false
+        return plays + flush(atMs)
     }
 
     private fun flush(atMs: Long): List<Play> {

@@ -26,6 +26,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -33,6 +34,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * at once; the connection that answers with a client `hello` becomes *the* client, replacing
  * any previous one. Pings are answered on the reader thread for accurate t1/t2; everything
  * else is handed to the host through [events] in arrival order.
+ *
+ * A connection that never sends a client `hello` is a discovery probe (PROTOCOL.md "Discovery"
+ * 2-4: it reads our `hello` and closes). It raises no event and touches no client state; it is
+ * closed after [PRE_HELLO_MS] if it lingers, and costs exactly one [log] line when it goes.
+ * [log] also carries the few lines that matter to the rider's log (the accept loop dying).
  */
 class ControlServer(
     private val scope: CoroutineScope,
@@ -40,6 +46,7 @@ class ControlServer(
     private val hostHello: () -> Hello,
     private val stateNow: () -> Message,
     private val port: Int = PORT,
+    private val log: (String) -> Unit = { Log.i(TAG, it) },
 ) {
     sealed interface Event {
         data class ClientConnected(val name: String, val address: InetAddress) : Event
@@ -54,6 +61,8 @@ class ControlServer(
     private var server: ServerSocket? = null
     private var acceptJob: Job? = null
     private val ids = AtomicInteger()
+    /** Every open connection, the client and probes alike, so [stop] can close them all. */
+    private val conns = ConcurrentHashMap.newKeySet<Connection>()
 
     val clientAddress: InetAddress? get() = active?.socket?.inetAddress
 
@@ -77,18 +86,26 @@ class ControlServer(
                 val socket = try {
                     ss.accept()
                 } catch (e: IOException) {
-                    if (isActive) Log.w(TAG, "accept failed", e)
+                    // After this nothing answers on the port until the host restarts: say so.
+                    if (isActive) log("control: accept failed, port ${port} closed: ${e.message}")
                     break
                 }
-                Connection(socket, ids.incrementAndGet()).start()
+                // A probe may already have reset the socket: one bad connection must never end
+                // the accept loop.
+                try {
+                    Connection(socket, ids.incrementAndGet()).start()
+                } catch (e: Exception) {
+                    Log.w(TAG, "connection from ${socket.inetAddress?.hostAddress} failed to start: $e")
+                    runCatching { socket.close() }
+                }
             }
         }
     }
 
     fun stop() {
-        active?.close("host stopping", sendBye = true)
         acceptJob?.cancel()
         runCatching { server?.close() }
+        for (c in conns.toList()) c.close("host stopping", sendBye = c === active)
     }
 
     fun hasClient(): Boolean = active != null
@@ -103,14 +120,17 @@ class ControlServer(
         // All writes go through one writer coroutine: callers may be on the main thread, where
         // Android forbids socket I/O, and frames must never interleave.
         private val outbox = Channel<ByteArray>(Channel.UNLIMITED)
-        @Volatile private var lastRx = clock()
+        private val openedAt = clock()
+        @Volatile private var lastRx = openedAt
         @Volatile private var closed = false
+        /** Set on its first client `hello`; until then this is a probe. */
+        @Volatile private var hello = false
         private val jobs = mutableListOf<Job>()
         private lateinit var writer: Job
 
         fun start() {
+            conns += this
             socket.tcpNoDelay = true
-            Log.i(TAG, "#$id connected from ${socket.remoteSocketAddress}")
             writer = scope.launch(Dispatchers.IO) { writeLoop() }
             jobs += scope.launch(Dispatchers.IO) { readLoop() }
             jobs += scope.launch(Dispatchers.IO) { watchdog() }
@@ -152,7 +172,7 @@ class ControlServer(
                     handle(message, now)
                     if (message is Bye) break
                 }
-                close("closed by peer", sendBye = false)
+                close(PEER_CLOSED, sendBye = false)
             } catch (e: ProtocolException) {
                 close("protocol error: ${e.message}", sendBye = false)
             } catch (e: IOException) {
@@ -168,13 +188,14 @@ class ControlServer(
                 }
                 is Hello -> {
                     if (message.role != Role.CLIENT) return
+                    hello = true
                     val previous = active
                     active = this
                     lastRxAtMs = now
                     if (previous != null && previous !== this) {
                         previous.close("replaced by #$id", sendBye = true)
                     }
-                    Log.i(TAG, "#$id is the client: ${message.name}")
+                    Log.i(TAG, "#$id is the client: ${message.name} (${socket.remoteSocketAddress})")
                     events.trySend(Event.ClientConnected(message.name, socket.inetAddress))
                 }
                 is UnknownMessage -> Unit // PROTOCOL.md: unknown types are ignored
@@ -184,25 +205,35 @@ class ControlServer(
 
         private suspend fun watchdog() {
             while (!closed) {
-                delay(1000)
-                if (clock() - lastRx > LIVENESS_MS) {
+                delay(500)
+                if (!hello && clock() - openedAt > PRE_HELLO_MS) {
+                    close("no hello in ${PRE_HELLO_MS / 1000} s", sendBye = false)
+                } else if (clock() - lastRx > LIVENESS_MS) {
                     close("no frame for ${LIVENESS_MS / 1000} s", sendBye = false)
                 }
             }
         }
 
+        @Synchronized
         fun close(reason: String, sendBye: Boolean) {
             if (closed) return
             closed = true
+            conns -= this
             if (sendBye) outbox.trySend(Codec.frame(Bye(reason.take(60))))
             outbox.close()
             jobs.forEach { it.cancel() }
-            // Let the writer drain (the bye) before the socket goes away.
+            // Let the writer drain (the bye) before the socket goes away. invokeOnCompletion
+            // also runs when the scope is already cancelled and the body never starts, so the
+            // socket is closed either way (that also unblocks the reader).
             scope.launch(Dispatchers.IO) {
                 withTimeoutOrNull(1000) { writer.join() }
-                runCatching { socket.close() }
+            }.invokeOnCompletion { runCatching { socket.close() } }
+            if (hello) {
+                Log.i(TAG, "#$id closed: $reason")
+            } else {
+                val from = socket.inetAddress?.hostAddress
+                log(if (reason == PEER_CLOSED) "probe from $from closed" else "probe from $from closed: $reason")
             }
-            Log.i(TAG, "#$id closed: $reason")
             if (active === this) {
                 active = null
                 lastPingSkewMs = null
@@ -214,6 +245,9 @@ class ControlServer(
     companion object {
         const val PORT = 47800
         const val LIVENESS_MS = 6_000L
+        /** A connection with no client `hello` by then is a probe that lingered (PROTOCOL.md "Discovery" 4). */
+        const val PRE_HELLO_MS = 3_000L
+        private const val PEER_CLOSED = "closed by peer"
         private const val TAG = "ControlServer"
     }
 }

@@ -158,7 +158,53 @@ framework what devices the phone has.
    takes its steps back; re-park after route changes and talk open/close. Details and the device
    checklist: `ios/README.md`. A $1–3 BLE "iTag" button read over CoreBluetooth is the fallback if
    the device run disappoints. The passenger wears Redmi Buds 6 Pro, not AirPods.
-4. **Only if the ride says buy:** the staged plan in `~/.claude/plans/dynamic-bubbling-lemon.md`
+   **First two-phone device run (2026-09-29 evening, uncommitted fixes, all coordinator-tested:
+   android 266 / 0 fail / 5 skipped, iOS 101 + release build; installed on both phones):**
+   iPhone voice-engine restart loop fixed (restart in place, capped); MPVolumeView slider created
+   at start + retried; no-headset talk → loudspeaker on both phones; Pixel latency trim now per
+   output route (`music/LatencyTrims.kt`; the gap was the 260 ms AirPods trim applied on the
+   speaker); host no longer names an uncached track in `state` (iPhone 404 race); Pixel AirPods
+   mic silence after a builtin→SCO route migration fixed (F9c: wait for SCO, else re-open the
+   recorder); iOS now logs `talk stats:` / `mic trace:`. The last three are **not yet re-tested on
+   the phones**. Link, buds routing (iPhone in/out = Redmi Buds), passenger→rider voice and music
+   sync worked.
+4. **Host-mic talk (Lark) built offline (2026-09-29, late), device-unverified.** User decisions
+   in "Decisions in force"; spec `PROTOCOL.md` "Host-mic talk" (`mic:"host"` on `talk.open` and
+   `state`). Coordinator-run: android 285 / 0 fail / 5 skipped (`--rerun-tasks`; fixtures are now
+   a Gradle test input, so edited vectors re-run the tests), iOS `swift test` 110 + release build
+   clean, peer 230. Pixel: `audio/TalkMic.kt` (chooser), `audio/LarkDsp.kt` (150 Hz high-pass,
+   48→16 kHz decimator), `audio/LarkEngine.kt`, settings `larkTalk` (on) / `larkSwap` (off); the
+   home checklist is `android/HANDOFF.md` "Host-mic talk (Lark)". iPhone: `.listen` = the media
+   session, receive-only engine; `ios/README.md` "Host-mic talk". Device questions: does the USB
+   route hold with AirPods on A2DP; passenger→rider delay over A2DP; clock drift (dropped count
+   in `lark stats:`); `getRoutedDevice()` confirming USB within 2 s (else every Lark talk fails
+   `unavailable`). `resumeLeadMs` / cold-start hold could shrink for Lark talks (not done).
+   **Discovery bug found and fixed 2026-09-29 (~22:30):** the iPhone locked onto stale Bonjour
+   services `peer-test-<hex>` that the peer test suite had advertised on the real LAN *and* on
+   the laptop's USB tether to the iPhone (172.20.10.5), with zeroconf's 75-min TTL. By 22:25
+   nothing answered for them any more (an mDNS PTR query got no reply; avahi only showed its own
+   cache, resolves timed out), so it was caches, not a live responder; toggling Wi-Fi didn't clear
+   the iPhone's cache for the USB interface. The real bug: the client took `results.first`, treated
+   it as the host and stopped browsing and sweeping. Fix (PROTOCOL.md "Discovery" rewritten): a
+   Bonjour result is only a candidate; the client probes all of them in parallel (plus the /24
+   sweep after 3 s), sends nothing, and the host is the first valid `hello role:host`; failures are
+   backed off 10 s; the last linked host name wins ties. Tests no longer advertise on the LAN
+   (opt-in, short TTL). Android: host tolerates probes, NSD registration retries.
+   **Verified on devices 2026-09-29/30 (~23:35–00:05):** the iPhone linked via Bonjour in about 0.1 s.
+   Lark talks work both ways once the receiver enumerates. Fixed and installed that night (uncommitted):
+   - Both apps show a music status line ("Loading…", "Waiting for iPhone…", "Paused for talk").
+   - Pixel: a "Lark receiver not detected" banner on the Ride tab. It showed up because the receiver
+     once stayed plugged in without enumerating.
+   - Earcons that don't go to the call route now play on the media stream with a 150 ms pre-roll.
+     They used system sonification, which is muted on the Pixel, so the AirPods got no beep.
+   - MediaCue: the close cue no longer hangs on its 2 s fallback.
+   - Pixel: a `lark: … silent all talk` log line.
+   - iOS: the app volume is remembered (first run: 12/16) and shown on the Ride screen. Before, it was
+     derived from the system volume at connect, which gave -33 dB, so the rider sounded "weak".
+   - iOS: fixed a phantom volume-key step and set the HFP park tolerance to 0.02.
+   The user reported "good now". A ~50 ms offset between the AirPods and the Redmi Buds is handled with
+   Pixel Settings → Latency trim.
+5. **Only if the ride says buy:** the staged plan in `~/.claude/plans/dynamic-bubbling-lemon.md`
    (Stage B the bench hour, C the routing code, D the music setting, E the A/B ride) still stands
    as written, with `research/MIC.md` overriding its Hardware table on what to buy.
 
@@ -211,6 +257,19 @@ on Android has still never produced a positive log line either.
 
 ## Decisions in force (don't reopen without the user)
 
+- **Music UX round (2026-09-30, coordinator recommendation after the user's questions; built offline,
+  device-unverified).** Touch play (`enqueue now`, `jump`, a history tap) during a talk **ends the
+  talk** and plays, like a spoken `play …`; play next/add/remove/clear leave it open (PROTOCOL.md
+  Browsing 3). New commands `what's playing` (`nowplaying`) and `shuffle`, both stay in the talk.
+  The Pixel pre-downloads the next 3 tracks and gets a per-album/playlist **Download** button (the
+  iPhone pulls from the Pixel, so nothing there). Recent searches + recently played on the Search
+  tab of both phones, local to each. The wake word is gone from both Ride screens, replaced by a
+  command list. **Suggested, not built, awaiting the user:** a `battery` command (both phones'
+  battery; needs a small wire addition).
+  Coordinator-run 2026-09-30 00:30: android 326 tests / 0 fail / 5 skipped, iOS `swift test` 140,
+  peer 260 + 1 skipped; installed on both phones (Pixel debug, iPhone release). Device checklists:
+  `android/HANDOFF.md` and `ios/README.md` "2026-09-30 additions".
+
 - **Music quality (idea #3, 2026-09-24):** the best YouTube stream without Premium: Opus itag 251,
   remuxed to MP4 on the Pixel, with AAC itag 140 as the fallback. FLAC and 320 kbps are not possible:
   YouTube has no lossless audio, 256 kbps needs Premium (ReVanced does not change that), and A2DP
@@ -221,11 +280,15 @@ on Android has still never produced a positive log line either.
   that, never both"*). This is the load-bearing one: the A2DP↔HFP switch costs music quality only
   during a talk, which is time the user wants no music in. Do not re-derive an architecture from
   "but the music degrades".
-- **The microphone direction is open, and the ride recording decides it.** The ninth session's
-  "the wired helmet mic is the direction" is **suspended, not reversed**: its physics stands, its
-  purchase plan is intact in `research/`, and none of it may be acted on until the AirPods mic has
-  been heard at 110 km/h. Equally, the sixth session's "AirPods mic is a hard requirement, no
-  cable, no other hardware" stays history — it is a candidate now, not a constraint.
+- **The microphone is the Lark A1 in Stereo mode, and the earbud mics are the fallback** (the
+  2026-09-27 ride recording was "mush"; Lark bought and gated 2026-09-28). **Host-mic talk**
+  (user, 2026-09-29; `PROTOCOL.md` "Host-mic talk"): with the receiver in the Pixel, the Pixel
+  captures both riders (L = pink = rider, R = yellow = passenger), sends L to the iPhone as today's
+  voice, plays R locally into the rider's earbuds, and says `talk.open{mic:"host"}`; the iPhone
+  opens no mic and only listens. **Both phones keep the earbuds in media mode (A2DP)** during such
+  a talk, so there is no call switch. The passenger's first-phrase command is recognised by the
+  Pixel on R. **No sidetone.** Music still pauses during talk. Without the receiver (or with the
+  Pixel setting off) talk is exactly the earbud-mic path as before.
 - **Volume is local.** `volumeUp`/`volumeDown` are not in `music.control`; a phone's spoken or
   pressed volume change never goes on the wire. A value outside an enum = malformed (drop, keep).
 - **Talk is not negotiable** (the user was explicit: no decline button or setting, ever).

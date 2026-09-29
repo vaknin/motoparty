@@ -23,7 +23,7 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `link/Discovery.kt` | done (NSD `_motoparty._tcp`, TXT proto/voice/http) |
 | `audio/opus_jni.c` + `cpp/CMakeLists.txt` + `audio/Opus.kt` | done. libopus 1.5.2 static, VOIP/24 kbps/FEC 10 %/DTX/complexity 8 |
 | `core/TalkStats.kt` | done. Pure: the `talk stats` loss arithmetic and the exact line format (layer 2) |
-| `audio/VoiceEngine.kt` | done. Since F9a the capture loop also measures each raw frame's peak, drives `MicLive` (routing listener on its own `voice-route` thread + a `routedDevice` re-read every 25 frames while the input is not SCO yet), reports `onMicLive` once per `start` and keeps `micLiveAtMs` (carried across a collapsed re-open like `captureUpAtMs`), and prints the `mic trace:` / `capture routed to …` diagnostics — section 2, "F9a". Logs one `talk stats:` line per talk at `stop` (built by `TalkStats`). Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity. `start`/`stop` belong on the audio thread. Each `start(onFailed)` is a session (an `AtomicReference`, not a `running` flag): a loop that outlives `stop`'s 500 ms join cannot carry on under the next `start`, and only the first failure of a still-current session reports, to that session's `onFailed` |
+| `audio/VoiceEngine.kt` | done. Since F9a the capture loop also measures each raw frame's peak, drives `MicLive` (routing listener on its own `voice-route` thread + a `routedDevice` re-read every 25 frames while the input is not SCO yet), reports `onMicLive` once per `start` and keeps `micLiveAtMs` (carried across a collapsed re-open like `captureUpAtMs`), and prints the `mic trace:` / `capture routed to …` diagnostics — section 2, "F9a". Since F9c it waits (bounded) for SCO before opening the recorder on an SCO route, and re-opens a recorder that migrated onto SCO from another input (`CaptureReopen`) — section 2, "F9c". Logs one `talk stats:` line per talk at `stop` (built by `TalkStats`). Frames with `OPUS_GET_IN_DTX == 1` are not sent; every sent/received kind-1 packet = activity. `start`/`stop` belong on the audio thread. Each `start(onFailed)` is a session (an `AtomicReference`, not a `running` flag): a loop that outlives `stop`'s 500 ms join cannot carry on under the next `start`, and only the first failure of a still-current session reports, to that session's `onFailed` |
 | `audio/AudioRouter.kt` | done (ref-counted MODE_IN_COMMUNICATION + setCommunicationDevice, prefers BLE headset > SCO > wired > USB). Audio-thread only; `selectedDevice` is published from there instead of queried from Main. `enterCall` counts itself before it can throw, so every caller pairs it with `exitCall` regardless; `exitCall` sets `MODE_NORMAL` in a `finally`; `exitAll` is the shutdown backstop. Two callbacks on the audio thread: `onRouteHeld` (depth 0 → 1, before the blocking work) and `onRouteReleased(wasSco)` — F8's invalidation and F9b's two edges. **Stage C will have to change `preference()`**: it ranks wired (2) and USB headset (3) *below* both Bluetooth types, and has no entry at all for `TYPE_USB_DEVICE` / `TYPE_USB_ACCESSORY` |
 | `audio/LiveCue.kt` | done, unit-tested (`LiveCueTest`, 12). Pure: when the "live" earcon may play — first captured frame **and** the route really up (Bluetooth call audio really flowing, for an SCO headset) **and**, since F9a, the headset's own mic signal arriving (`MicLive`); the last two only for an SCO route. One fire per open, 3.5 s fallback timer (2.5 s until F8). See section 2, "F7", "F8" and "F9a" |
 | `audio/MicLive.kt` | done, unit-tested (`MicLiveTest`, 8). Pure: the F9a condition (c) — the recorder is routed to a Bluetooth SCO *input* and, after that moment, `FRAMES_NEEDED` = 10 consecutive 20 ms frames have a peak above `PEAK_THRESHOLD` = 16. Fed by `VoiceEngine`'s capture loop; the only live-earcon signal that has travelled back from the earpieces. Constants to be tuned from the `mic trace:` line — section 2, "F9a" |
@@ -818,6 +818,235 @@ first-phrase change; 243 with the wake-word tests); `lintDebug` 0 errors.
    command works, a second one in the same talk logs `(client) ignored: not the talk's first`.
 6. Solo talk (no iPhone): a press opens it, every phrase is a command ("next", then "pause" long
    after 8 s), and our own replies are not recognised as commands (`own speech, ignored`).
+
+### No headset → speaker (2026-09-29)
+
+With no earbuds and no wired set, `enterCall` used to set no communication device, so the phone
+played talk and the call-route earcons through the **earpiece** — inaudible at a desk (device run:
+`AudioRouter: enterCall 1 ms (setMode 1, devices 0)`, `Earcons: live routed to earpiece`).
+`AudioRouter.choose()` (pure, `AudioRouterChoiceTest`, 4) now picks a headset in the old order
+(BLE > SCO > wired > USB headset) and, with none, `TYPE_BUILTIN_SPEAKER` from
+`availableCommunicationDevices`. The timing line names the choice:
+`AudioRouter: enterCall 3 ms (setMode 1, devices 0, setCommunicationDevice 2) → speaker (no headset)`
+(a headset: `→ bt_sco`, `→ ble_headset`…). The speaker is not SCO, so F8/F9b gates don't apply to it.
+**Verify on the device:** `Earcons: live routed to speaker`, talk audible from the speaker; with the
+AirPods connected, `→ bt_sco` exactly as before.
+
+### First two-phone run fixes (2026-09-29)
+
+1. **Latency trim per output route.** The one `latencyTrimMs` (set ~260 for the AirPods) was
+   applied on the speaker too: Pixel ~240 ms ahead. Now `Settings.trims: LatencyTrims`
+   (`music/LatencyTrims.kt`, pure, `LatencyTrimsTest` 8): one value per Bluetooth address, a
+   Bluetooth default for devices without one (the old value migrates there; prefs
+   `trimLocalMs` / `trimBluetoothDefaultMs` / `trimDevices`, `latencyTrimMs` removed on first
+   save), one value for the phone's own outputs (speaker/wired/USB, starts at 0).
+   `DeviceWatch` picks the media route (`MediaRoute.pick`: `getAudioDevicesForAttributes(USAGE_MEDIA)`
+   on API 33+, else BT > wired > speaker; SCO = its BT device, the earpiece is ignored so a talk
+   doesn't flip it) and LinkHost re-applies via `SyncController.retrim()`: while playing it
+   re-reads at once and absorbs the difference by the usual nudge (no restart); a start not yet
+   played is redone. Settings shows/edits the current route's trim, labelled with its name.
+2. **Logs:** `music control <action> from <client|ui|mediakey|remote>` (replaces `remote …`),
+   `pause at N ms`, `resume from N ms`, `media route: <name> (Bluetooth)`,
+   `trim A -> B ms, route <name>`; every `trace:` line now ends `…, t T, trim N ms, route <name>`
+   before the player info.
+3. **HTTP 404 race.** `state.music` is omitted until the current track is cached (servable), so
+   the iPhone no longer prefetches a 404; `onClientError` only ends the ready-wait for a track
+   whose `music.load` is outstanding, others log `music.error for X ignored (no music.load
+   awaiting it)`; each start uses a fresh waiter. `MusicController` now takes `TrackStore` /
+   `LocalPlayer` interfaces so `MusicControllerTest` (5) runs it on the JVM.
+   **Verify on the device:** both phones on speakers → trim 0 on the Pixel and in sync; AirPods
+   back → `trim 0 -> 260 ms, route AirPods Pro`; new track → no `HTTP 404` on the iPhone.
+
+### F9c (2026-09-29) — the recorder must open on SCO, not migrate onto it
+
+**Why.** Device run 2026-09-29 (AirPods Pro on the Pixel): the rider's voice did not reach the
+passenger. Every talk whose `AudioRecord` was first routed to the built-in mic and only later to SCO
+(`capture routed to builtin_mic +1928 ms`, `… bt_sco +3455 ms`) was near-silent after the switch
+(`peaks … 4 0 0 0 0 …`) and almost all DTX (`tx 91 sent of 2626 captured (2535 DTX)`); the one talk
+routed **straight** to `bt_sco` sent everything (`tx 471 sent of 471 captured (0 DTX)`). A
+VOICE_COMMUNICATION recorder with AEC + NS set up on the built-in mic does not recover on the SCO
+input. Not a regression of today's `choose()` change: `setCommunicationDevice` never blocked until
+SCO was up, before or after (the diff only changed *which* device is picked); `enterCall` returning
+in 6–10 ms is normal. The built-in-mic start was already in the F9a HAL log; its cost was not seen.
+
+**The fix, both halves.**
+- **Wait** (`VoiceEngine(awaitCaptureRoute)`, `ScoWatch.awaitConnected`): on a route that
+  `router.needsSco`, the capture thread opens the recorder only once ScoWatch reports SCO as the
+  communication device, at most `LinkHost.CAPTURE_SCO_WAIT_MS` = 2.5 s, then opens anyway. Woken by
+  the report (monitor `notifyAll` in `update`), not polling; re-checks the session every 50 ms so a
+  close inside the wait releases the thread well within `stop`'s 500 ms join. The speaker / wired /
+  BLE routes return null at once: no wait.
+- **Re-open** (`audio/CaptureReopen.kt`, pure, `CaptureReopenTest` 7): if the *current* recorder
+  reported a non-SCO input and then SCO, the capture thread releases it (listener, effects) and opens
+  a fresh one with fresh AEC/NS; playback, session, encoder, dump and tee carry on. At most 2 per
+  session. SCO → built-in (headset left) is not re-opened. Routing reports carry the recorder's
+  generation so a late report of the released one is ignored. The migrated recorder's SCO report is
+  **not** given to `MicLive`, so the live cue's (c) comes from the re-opened recorder only. The
+  sender's ts skips the frames the re-open took.
+
+**Log lines** (`VoiceEngine:`):
+
+    capture waited for sco <N> ms[ (not up, opening anyway)]     ← only on an SCO route
+    capture reopened on bt_sco +<N> ms (was builtin_mic, took <M> ms)
+    mic trace: session-start +0 ms routed=<first>@+A ms, sco@+B ms, reopened@<+C ms|none>, live@…, peaks/100ms: …
+
+`routed=` stays the *first* input; `sco@` is the SCO moment MicLive accepted (the re-opened
+recorder's); `reopened@` is new. A second `capture routed to bt_sco` line follows a re-open
+(bench.py keeps the last). Tests: 266, 0 fail, 5 skipped (was 259).
+
+**Verify on the device (F9c):** with AirPods, every talk shows `capture waited for sco …` and then
+`capture routed to bt_sco` first (no `builtin_mic`), `talk stats` with ~0 DTX while speaking, the
+passenger hears the rider. Any talk with `capture reopened on …` must also be ~0 DTX after it. If
+`reopened on builtin_mic` or a second re-open appears, the SCO input was not ready yet at re-open
+time — note the timings. No-headset talks show no `waited` line.
+
+### Host-mic talk (Lark) (2026-09-29)
+
+**Why.** Mic placement beats everything under a full-face helmet at speed, and one Lark A1 Duo in
+Stereo mode already delivers both riders to the Pixel as two clean channels (S4). The user decided
+(2026-09-29): with the receiver plugged in, the Pixel captures both; the rider (left, TX1 pink) is
+sent to the iPhone as today's voice; the passenger (right, TX2 yellow) is played locally into the
+rider's AirPods and never sent; nobody hears themselves; **both phones stay in media mode** (no
+`enterCall`, no `setCommunicationDevice`, no SCO, MODE_NORMAL). Spec: `PROTOCOL.md` "Host-mic talk",
+`talk.open{…, mic:"host"}`, `state.mic`, "Commands" first paragraph. The earbud path (call route,
+SCO, VOICE_COMMUNICATION, F8/F9 cues, ScoWatch/ScoRule/MicLive/TalkAudio's collapse) is untouched
+and is the fallback whenever there is no USB stereo input or the setting is off.
+
+**Built.**
+- `audio/TalkMic.kt` (pure, `TalkMicTest` 6): `TalkMic.choose(roster, larkTalk)` → `Lark(id, type,
+  name)` for a USB input (`usb_device` > `usb_headset` > `usb_accessory`, then lowest id) whose
+  channel counts include 2 or are empty (= any), else `Earbuds(reason)` (`setting off`, `no device
+  list yet`, `no USB input`, `USB input … is mono`). `LarkRouteCheck`: the recorder must report the
+  receiver's id; another device → fail at once; nothing for 2 s without ever confirming → fail; a
+  null after confirming is ignored.
+- `audio/LarkDsp.kt` (pure, `LarkDspTest` 8): `HighPass` (RBJ Butterworth biquad, 150 Hz, −3 dB at
+  the corner, 50 Hz < −18 dB, DC gone), `Decimator` (48 → 16 kHz, 127-tap Kaiser-windowed sinc,
+  −6 dB at 6 kHz, 1 kHz ±0.1 dB, 7–15 kHz < −60 dB, 1.3 ms group delay, streaming = one-shot),
+  `Pcm.deinterleave` (+swap) / `toPcm16`, `LarkPipeline` (per 20 ms: 1920 interleaved samples →
+  split+swap → HPF both → `rider16` 320 / `passenger48` 960 / `passenger16` 320, the last only when
+  the recognizer wants the passenger), `LarkLevels` (raw L/R RMS dBFS + peak for the stats line).
+  No allocation after construction.
+- `audio/LarkEngine.kt`: the sibling of `VoiceEngine` for this mode, one `lark-capture` thread
+  (URGENT_AUDIO). `AudioSource.MIC`, 48 kHz `CHANNEL_IN_STEREO` 16-bit, `setPreferredDevice(usb)`,
+  no AEC/NS, never touches the mode. Per frame: raw → dump (when `captureDump`) + levels →
+  pipeline → Opus (16 kHz mono, wire unchanged, DTX not sent, same `ts` clock) and the `PcmTee`
+  (rider, or passenger when `asrPassenger`) → passenger `AudioTrack` (USAGE_MEDIA,
+  CONTENT_TYPE_SPEECH, 48 kHz mono, LOW_LATENCY, 60 ms buffer) written **non-blocking** — a frame
+  it cannot take is dropped and counted. No receive playback: client audio in a host-mic talk is
+  dropped and counted (`onPacket`), logged once. Route check on every routing report and every 25
+  frames; a wrong route, a read error, or the receiver missing at start fails the session →
+  `onMicFailed` → `talk.close{by:"host", reason:"unavailable"}`.
+- `TalkAudio.open(session, lark)`: a lark talk takes no call route (only `larkStart`/`larkStop`);
+  a collapsed re-open that changes mode stops the other engine and exits an earbud route
+  (`TalkAudioTest` +4).
+- `LinkHost`: at each open `TalkMic.choose(devices.devices, larkTalk)` (the roster `DeviceWatch`
+  now publishes, with channel counts; no binder call on Main), fixed for the talk;
+  `talk.open{by, mic:"host"}` and `state.mic:"host"` while it is open. Live earcon: `needsSco`
+  false → fires at capture-up, played with `call = false` (media route); in-talk replies and the
+  volume tone go on the media route, and volume changes `STREAM_MUSIC`. Commands: host-opened or
+  solo → recognizer on the rider; client-opened → gate role OPENER on the host, recognizer on the
+  passenger, the first phrase acted on as the client's `command.text` (`executeCommand(…,
+  fromClient = true)`), spending the client's one command; a passenger volume phrase is ignored
+  (logged, no announce); any `command.text` during a host-mic talk is ignored
+  (`(client) ignored: host-mic talk`). Unplug: `DeviceWatch.onDevices` without the talk's device id
+  → close `unavailable`; the next talk chooses again (→ earbuds). Capture dump in this mode:
+  `capture-lark-<stamp>.wav`, raw 48 kHz stereo (unswapped, unfiltered), capped at 400 MB (~35 min).
+  Solo host-mic talk works (both captured, rider recognised, every phrase a command).
+- Codec: optional `mic` on `talk.open` and `state`, `("talk.open","mic")` and `("state","mic")` in
+  `ENUM_FIELDS` → `"both"` etc. drop, keep (`CodecTest` +1; fixtures). `app/build.gradle.kts`: the
+  fixtures dir is now a declared test input — before, an edited fixture left the tests UP-TO-DATE.
+- Settings: `larkTalk` (default on, "Use USB stereo mic (Lark) for talk") and `larkSwap` (default
+  off), switches at the top of the Voice group.
+- Untouched: `UsbStereoProbe` + long recording (still refused during a talk, TALK refused during
+  them), `resumeLeadMs`, the `sync.hold()`/`release(cold = true)` around the close. **Could be
+  shortened later:** with no profile switch the close's route is back at once, so `resumeLeadMs`
+  and the cold start could be skipped for a host-mic talk (PROTOCOL.md allows it); left as is.
+
+Tests: 285, 0 fail, 5 skipped (was 266). `assembleDebug` ok, `lintDebug` 0 errors.
+
+**Log lines** (`Motoparty` tag / in-app log):
+
+    talk mic: lark usb_device#<id> "<name>", swap off        ← or: talk mic: earbuds (<reason>)
+    lark: routed usb_device#<id> "<name>" (preferred accepted=true) format 48000 Hz 2 ch, mode 0, media out [bt_a2dp], passenger out bt_a2dp
+    live cue: session N, capture up +X ms, sco n/a, mic n/a, fired +X ms (both)
+    talk asr: listening on left (rider)                        ← right (passenger) when the iPhone opened
+    heard: "<text>" (passenger, command|conversation)
+    lark: client audio in a host-mic talk, dropping it         ← only an old client
+    lark stats: <s> s, L rms <dBFS> peak <x>, R rms <dBFS> peak <x>, sent <n> frames, played <n>, dropped <n>, client audio dropped <n>
+    microphone unavailable: lark: recorder routed to builtin_mic#15 …, not the receiver   ← or: lark receiver unplugged
+
+**Device checklist (home test).** Lark RX in the Pixel's USB-C, Stereo mode; TX1 (pink) on the
+rider, TX2 (yellow) on the passenger; AirPods Pro on the Pixel (rider), iPhone with its own
+earbuds (passenger).
+1. Plug in → `audio devices +: in usb_device#… "…"`. Tap TALK → `talk mic: lark …, swap off`,
+   **no** `AudioRouter: enterCall`, `lark: routed usb_device… mode 0, media out [bt_a2dp],
+   passenger out bt_a2dp`, the live beep in the AirPods at capture-up (`sco n/a`). Music pauses and
+   resumes as before.
+2. Rider speaks → the iPhone hears them (`lark stats` L rms well above R, `sent` > 0); passenger
+   speaks → the rider hears them in the AirPods (`played` ≈ seconds × 50, `dropped` ≈ 0). Nobody
+   hears themselves. **Listen for the passenger's delay into A2DP** (AirPods ~150–250 ms is expected)
+   and for clicks (dropped frames = the output clock slower than the Lark's).
+3. TX2 off → `R rms -inf dBFS peak 0`. `larkSwap` on → the channels trade (`talk asr` side flips).
+4. iPhone opens the talk → `talk asr: listening on right (passenger)`; passenger says "next" → the
+   track skips, "Next: …" on both phones; "volume up" from the passenger → `ignored: volume is the
+   passenger's own`, no announce. Rider-opened → `listening on left (rider)`, as before.
+5. Unplug mid-talk → `microphone unavailable: …`, `talk closed (by host, unavailable)`, error beep;
+   the next TALK logs `talk mic: earbuds (no USB input)` and runs the SCO path exactly as before.
+6. `captureDump` on → `capture-lark-<stamp>.wav`, 48 kHz 2 ch, `0 dropped`.
+7. Solo (no iPhone): TALK works, every phrase a command.
+Open questions only the device answers: whether the USB input route holds while the AirPods are on
+A2DP and music was just paused; the passenger playback latency and drift into A2DP; whether the
+screen-off Pixel keeps the MIC-source recorder delivering (the long recording suggests yes).
+
+### Commands card, nowplaying/shuffle, play by touch ends a talk, caching, history (2026-09-30)
+
+- **Ride tab**: the "Moto party" hints are gone. Under TALK there is now a "Voice commands" card
+  listing every command in big chips (`play <song>`, `play album / artist / playlist <name>`,
+  pause/resume, next/previous, louder/quieter, what's playing/shuffle, over). Its line says "say one
+  of these first, after that it's just talk", or "Alone, every phrase is a command" with no client.
+- **`nowplaying` / `shuffle`** (`CommandParser`, `CommandEffect`, `LinkHost.executeCommand`): both
+  leave the talk open and reply in it. "<title> by <artist>" (title alone if no artist) / "Shuffled"
+  with earcon `ok`; "Nothing playing" / "Nothing to shuffle" (<2 upcoming) with `error`.
+  `QueueEdits.shuffled` keeps the current track and never hands back the same order.
+- **Play by touch ends a talk** (PROTOCOL.md "Browsing" step 3): `LinkHost.playByTouch`. A `now`
+  enqueue (`TouchPlay.enqueueEndsTalk`) or a valid jump, from the client or our own screens (Search
+  "play now", Queue jump, a Recently played tap), with a talk open: `music.beforePlayEndsTalk`
+  (drops the talk's resume + `startNotBefore(now + resumeLeadMs)`, shared with the spoken `play`),
+  `talk.close{by:<toucher>, "trigger"}`, then the queue changes at once and our player is
+  `sync.hold()`-ed until the route-back job finishes. A stale jump closes nothing. next/end/remove/
+  clear leave the talk open. "Paused for talk" still shows for music that was playing at the open.
+- **Caching**: `MusicController.prefetchNext` caches the next **3** upcoming, one at a time (a new
+  queue restarts it); only the next one gets a `music.load`. Album/playlist **Download** button
+  (`CollectionDownloads`): one track at a time across all collections, "Downloading 5/14 · Stop"
+  → "Downloaded" (or "Retry · 13/14 saved"); Stop cancels after the track in flight, which is kept.
+  Song rows show a small check when cached (`LinkStatus.cached`, from `TrackCache.ids()`, refreshed
+  after every download). Same 1 GB LRU, so a big playlist can evict older tracks.
+- **Search history** (`music/History.kt` pure, `HistoryStore.kt` in SharedPreferences "history"
+  as JSON): with the box empty, Recent searches (10, newest first, de-duplicated by text ignoring
+  case, the newest chip wins, Clear button) and Recently played (20, by id; fed by
+  `MusicController.onStarted`, i.e. a track that really started, whoever queued it; a resume is not
+  a start). Tap re-runs the search / plays now (and so ends a talk).
+- Tests: `HistoryTest`, `CollectionDownloadsTest`, `TouchPlayTest`, shuffle in `QueueEditsTest`,
+  six new `MusicControllerTest` cases (3-ahead prefetch, nowplaying text, shuffle, history hook,
+  parked start, touch play in a talk), two new screenshots (`4b-search-history`,
+  `5b-album-downloading`). LinkHost itself is still not JVM-testable.
+
+Device checklist:
+1. Ride tab: the commands card fits and reads at a glance; with and without the iPhone connected
+   the line under "Voice commands" changes.
+2. Talk, say "what's playing" → "<title> by <artist>" in the talk, talk stays open. Nothing loaded
+   → "Nothing playing" + error tone. "shuffle" with 3+ upcoming → "Shuffled", Queue tab reorders,
+   iPhone queue too; with 1 upcoming → "Nothing to shuffle".
+3. Music playing, open a talk, tap a song on Search (and separately jump in Queue, and on the
+   iPhone play-now) → talk closes (`play by touch (by host|client) ends the talk` in the log), the
+   old song does not come back, the new one starts after the A2DP switch on both phones. "Play
+   next"/"Add to queue"/remove during a talk leave it open.
+4. Play a queue, watch `cacheMb` climb by ~3 tracks ahead; turn Wi-Fi/data off for a few minutes
+   and the next 3 tracks still play.
+5. Open an album, tap Download: progress climbs, Stop works, check marks appear on the rows,
+   "Downloaded" at the end. Airplane mode → those songs play.
+6. Search a few things, play a few songs, force-stop and reopen: both history lists survive; tap a
+   recent search re-runs it on the right chip; Clear empties searches only.
 
 ## 3. Not done, in priority order
 

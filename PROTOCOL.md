@@ -24,11 +24,26 @@ in the Bonjour TXT record and in its `hello`; clients must use the advertised va
 
 1. Host registers Bonjour service `_motoparty._tcp` on port 47800, instance name = device
    name, TXT: `proto=1`, `voice=47801`, `http=47802`.
-2. Client browses `_motoparty._tcp` and connects to the first result.
-3. Fallback (Bonjour over Android SoftAP is not guaranteed): after 3 s without a result,
-   the client TCP-connects to port 47800 on every address of its own IPv4 /24 (excluding
-   itself), 64 in parallel, 400 ms connect timeout, then 1 s to receive the host's `hello`,
-   and uses the first one that answers with a valid `hello`. Android randomises the hotspot subnet, so never hard-code it.
+2. Client browses `_motoparty._tcp`. **A Bonjour result is only a candidate, never the host.**
+   mDNS caches keep dead services for up to 75 min (a crashed test, another phone, a
+   host that went away), so the client probes *every* result, in parallel, as it appears:
+   TCP connect (3 s, name resolution included), then 1 s to receive the host's `hello`.
+   The host is the first candidate whose first frame is a `hello` with `role:"host"` and
+   the client's `proto`. Only then does the client stop browsing and sweeping and open its
+   control connection. A candidate that fails is not probed again for 10 s; the browse
+   keeps running meanwhile, so a host that appears later is still found. When several
+   answer at once, the one named like the last host this client linked to wins; otherwise
+   the first to answer.
+3. Fallback (Bonjour over Android SoftAP is not guaranteed): 3 s after discovery starts
+   without a host, the client also TCP-connects to port 47800 on every address of its own
+   IPv4 /24 (excluding itself), 64 in parallel, 400 ms connect timeout, then 1 s to receive
+   the host's `hello`, with the same acceptance rule. It runs alongside the Bonjour probes,
+   whatever the browse shows. Android randomises the hotspot subnet, so never hard-code it.
+4. A probe sends nothing: it only reads the host's `hello` and closes (a client `hello`
+   would replace the host's current client). The host treats such a connection as no
+   session: no state change beyond a log line.
+5. Test tools never advertise `_motoparty._tcp` on a real network by default (opt-in only,
+   with a short TTL), so a test run can't leave stale hosts on the riders' Wi-Fi.
 
 ## Control channel (TCP 47800)
 
@@ -54,7 +69,7 @@ catches up.
 | `hello`         | both  | `proto`:1, `role`:`"host"`\|`"client"`, `name`: string, `voicePort`: int (host only), `httpPort`: int (host only) |
 | `ping`          | C→H   | `id`: int, `t0`: client clock ms at send |
 | `pong`          | H→C   | `id`, `t0` (echoed), `t1`: host clock at receive, `t2`: host clock at send |
-| `talk.open`     | both  | `by`: `"host"`\|`"client"`. C→H is a request; H→C is the decision |
+| `talk.open`     | both  | `by`: `"host"`\|`"client"`, `mic` (optional, H→C only): `"host"`. C→H is a request; H→C is the decision. See "Host-mic talk" |
 | `talk.close`    | both  | `by`, `reason`: `"trigger"`\|`"link"`\|`"unavailable"` |
 | `music.load`    | H→C   | `id`: string, `path`: string (e.g. `/track/<id>.m4a`), `title`, `artist`, `album` (optional), `durationMs`: int |
 | `music.ready`   | C→H   | `id` — the file is fully cached and decodable |
@@ -82,7 +97,9 @@ catches up.
  "queue":[{"id":"…","title":"…","artist":"…"}]}
 ```
 
-`music` is omitted when nothing is loaded; its `art` (optional) is a cover image URL. `queue` (required, possibly empty) is the upcoming
+`mic` (optional, `"host"`) is present only while `talk` is true and the open talk is a host-mic
+talk (see "Host-mic talk"), so a client that learns of the talk only from `state` (it joined
+mid-talk) opens it the same way. A receiver ignores `mic` on `state{talk:false}` (the message is kept). `music` is omitted when nothing is loaded; its `art` (optional) is a cover image URL. `queue` (required, possibly empty) is the upcoming
 tracks after the current one. `positionMs`/`atHostTimeMs` form the same anchor as in
 `music.play`; while paused (including during talk) `playing` is false and `positionMs` is the
 pause position.
@@ -141,7 +158,8 @@ application VOIP, 24 kbps, in-band FEC on with expected loss 10 %, DTX on.
   `seq` is silence (play nothing / comfort silence); a `seq` gap is loss. Keepalives are never
   counted as loss or as activity.
 
-Audio flows only while talk is open. Receivers run an adaptive jitter buffer. *Target depth*
+Audio flows only while talk is open. In a host-mic talk (see Talk flow) only the host sends
+audio; the client sends keepalives only, and a host that still receives client audio drops it. Receivers run an adaptive jitter buffer. *Target depth*
 is the delay between a frame's arrival and its playout slot for the first frame of a talk
 spurt. *Underrun* = a packet arrives after its playout slot has passed (an empty buffer during
 silence is not an underrun). Start at 40 ms, raise by 20 ms (max 200 ms, at most once per
@@ -173,9 +191,10 @@ link re-encodes to AAC or SBC anyway.
    side, which the host treats as a close request. The phone that asked plays the error earcon.
 2. Host broadcasts `talk.open{by}` and `state{talk:true}`. Both sides pause music locally,
    switch the headset to call mode, play the "live" earcon when their mic is open, and start
-   sending audio.
+   sending audio (a host-mic talk differs, see "Host-mic talk" below).
 3. Ends when either side triggers again (`talk.close{reason:"trigger"}`, client→host as a
-   request), when a spoken command ends it (see Commands), or on link loss. Never on silence: the 20 s silence close was removed on
+   request), when a spoken command ends it (see Commands), when a track is played by touch (see
+   Browsing), or on link loss. Never on silence: the 20 s silence close was removed on
    2026-09-29, because a headset mic that never goes DTX (the AirPods) could never trigger it.
 4. Host broadcasts `talk.close` and `state{talk:false}` (except after the host's own
    `"unavailable"` answer in step 1: talk never opened and `state.talk` stayed false; a
@@ -185,6 +204,31 @@ link re-encodes to AAC or SBC anyway.
    a close request. Both switch back to media mode. If music was playing before
    talk, the host sends `music.play` with `atHostTimeMs = now + resumeLeadMs` (setting,
    default 1500 ms, covering the headset profile switch).
+
+### Host-mic talk
+
+Since 2026-09-29 the host may capture **both riders' voices itself**: one two-channel receiver
+(Hollyland Lark A1 in Stereo mode) on the host phone, the rider's microphone on the left channel
+and the passenger's on the right. The host says so in its decision: `talk.open{by, mic:"host"}`.
+Without `mic` (the host has no such receiver, or its setting is off) every phone uses its own
+headset microphone as above. The host decides per talk, at the open; the mode is fixed until that
+talk closes. `mic` exists only on the host's `talk.open` and in `state` (while that talk is
+open): a client never sends it, and a host ignores it on a request. Its only value is `"host"`; another value drops the message like any
+value outside its set.
+
+In a host-mic talk:
+- **Host.** Captures both channels. The rider's channel is encoded and sent as the usual voice
+  (16 kHz mono Opus, unchanged). The passenger's channel is played locally into the host's own
+  headset and is never sent. No one hears their own voice.
+- **Client.** Opens **no microphone** and does not need microphone permission. It pauses music
+  and plays the voice it receives, but keeps the headset in **media mode** (no call mode, no
+  headset profile switch). It plays the live earcon when its voice playback is ready. It sends
+  keepalives, never audio. It answers `talk.close{reason:"unavailable"}` only if it cannot play
+  (its audio route failed), not over microphone permission or a cellular call's microphone.
+- **Host headset.** Also stays in media mode. With no profile switch on either side, the
+  host may shorten `resumeLeadMs` after such a talk.
+- If the receiver is unplugged or fails during the talk, the host ends it with
+  `talk.close{by:"host", reason:"unavailable"}`; the next talk opens without `mic`.
 
 ## Music flow
 
@@ -229,6 +273,11 @@ the Music flow: an enqueued track is loaded, readied and played exactly as befor
    The host skips tracks with an invalid `id` and ignores an enqueue left with none. It never
    holds more than 200 upcoming tracks (so `state` stays well under 64 KiB): tracks past that
    are dropped, from the end of the queue. The top-level `art` covers tracks without their own (an album's cover).
+   **Play by touch ends a talk** (2026-09-30): a `mode:"now"` enqueue, a `"jump"` edit, or the
+   host's own touch equivalents, while a talk is open, end the talk exactly like a spoken
+   `play …`: the host closes it (`talk.close{by: <the side that touched>, reason:"trigger"}`)
+   and the music starts after the headset is back in media mode. `"next"`, `"end"`, `"remove"`
+   and `"clear"` leave the talk open.
 4. The client sends `music.edit{op, index, id}` to change the upcoming queue: `"jump"` plays
    `state.queue[index]` now (the tracks before it stay behind the current one, so `previous`
    still reaches them), `"remove"` drops it, `"clear"` drops every upcoming track and needs
@@ -243,7 +292,14 @@ the Music flow: an enqueued track is loaded, readied and played exactly as befor
 Commands are spoken **inside a talk** (since 2026-09-29; there is no separate command mode,
 command trigger or wake word). While a talk is open, the phone that opened it runs on-device ASR
 on its own talk microphone — the same capture that feeds the encoder, taken before the encoder so
-DTX does not cut it — one result per phrase.
+DTX does not cut it — one result per phrase. **In a host-mic talk** the host does it for both:
+it runs ASR on the opener's channel (left when the host opened the talk, right when the client
+did), keeps the window from its own live earcon, and acts on the passenger's first phrase as if
+it had arrived as `command.text` (the client's role for "Effect on the talk"); the client never
+recognises. A volume phrase on the passenger's channel is ignored with no `announce` (the
+passenger's volume keys already do it). The client's one command for the talk is then spent,
+and a `command.text` that still arrives during a host-mic talk is ignored and logged, with no
+`announce`.
 
 **The first phrase decides** (2026-09-29; replaced the "Moto party" wake word). The *opener* is
 the side named in the host's `talk.open{by}`. Only the opener's phone produces commands, and only
@@ -275,7 +331,7 @@ the music starts after the headset is back in media mode, like any resume after 
 search result, nothing to resume): the error is announced after the switch and music that was
 playing before the talk resumes. `end` ends the talk exactly like a press (music that was
 playing resumes) and has no `announce`: the closing earcon is its acknowledgement.
-`pause`, `next`, `previous` and the volume commands leave the talk open: music is paused during
+`pause`, `next`, `previous`, `nowplaying`, `shuffle` and the volume commands leave the talk open: music is paused during
 a talk anyway, so `next`/`previous` choose what resumes after it and `pause` cancels that
 resume (and stays cancelled through a later `next`/`previous`). Their `announce` is spoken in the talk.
 
@@ -291,7 +347,15 @@ pause | stop | resume | continue
 next | skip | previous | back
 volume up | louder | volume down | quieter
 over | end talk | hang up                       (action "end": close the talk)
+what's playing | whats playing | what is playing | what song is this   (action "nowplaying")
+shuffle                                         (action "shuffle")
 ```
+
+`nowplaying` (2026-09-30) announces the current track, `"<title> by <artist>"` (just the title when
+the artist is empty), or "Nothing playing"; `shuffle` shuffles the upcoming queue (the current
+track stays) and announces "Shuffled", or "Nothing to shuffle" with fewer than two upcoming
+tracks. "Nothing playing" and "Nothing to shuffle" carry earcon `error`, the others `ok`. Both
+leave the talk open and are spoken in it, like `next`.
 
 Normalisation before matching, per Unicode code point (not grapheme cluster): lowercase;
 map `’` (U+2019) to `'`; replace every code point that is not in a Unicode letter (L*),

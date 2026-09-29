@@ -39,14 +39,16 @@ final class ControlClient {
         queue.async { [self] in
             let tcp = NWProtocolTCP.Options()
             tcp.noDelay = true
-            tcp.connectionTimeout = 5
+            tcp.connectionTimeout = 3
             let params = NetworkInterfaces.lanParameters(NWParameters(tls: nil, tcp: tcp))
             let conn = NWConnection(to: endpoint, using: params)
             connection = conn
             conn.stateUpdateHandler = { [weak self] state in self?.handle(state) }
             conn.start(queue: queue)
-            // Give up on an endpoint that never becomes ready (stale Bonjour result).
-            queue.asyncAfter(deadline: .now() + 8) { [weak self] in
+            // Discovery only hands over a host that just sent a valid hello
+            // (usually its resolved address), so this is a safety net for a
+            // host that left in between: give up fast and rediscover.
+            queue.asyncAfter(deadline: .now() + 4) { [weak self] in
                 guard let self, !self.closed, self.timer == nil else { return }
                 self.close("connect timeout")
             }

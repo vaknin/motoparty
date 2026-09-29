@@ -22,6 +22,15 @@ final class VolumeKey {
     var onHold: (() -> Void)?
     /// The app level changed (or arming/disarming): apply these gains.
     var onGains: ((AppVolume.Gains) -> Void)?
+    /// The app level changed (a key, a spoken command, a hold's revert):
+    /// remember it and show it. Not called for arming, which starts from the
+    /// remembered level.
+    var onLevel: ((Int) -> Void)?
+    /// The level the next arming starts at: set it to the remembered one
+    /// before the link comes up; every change follows it.
+    var armLevel = AppVolume.defaultLevel
+    /// The app level: the armed one, or the one the next arming starts at.
+    var level: Int { gate.armed ? gate.level : armLevel }
 
     private let localVolume: LocalVolume
     private let session = AVAudioSession.sharedInstance()
@@ -50,12 +59,14 @@ final class VolumeKey {
         set {
             guard newValue != gate.armed else { return }
             let volume = session.outputVolume
-            let action = gate.setArmed(newValue, volume: volume, nowMs: MonotonicClock.nowMs())
+            let now = MonotonicClock.nowMs()
+            let action = newValue ? gate.arm(level: armLevel, volume: volume, nowMs: now)
+                : gate.disarm(volume: volume, nowMs: now)
             // Quieter first, then louder, so nothing blares in between: the
             // gain drops before the system volume is raised to the park, and
             // the system volume drops before the gain goes back to unity.
             if newValue {
-                Log.audio.info("volume key: armed at system \(volume, privacy: .public) → level \(self.gate.level)")
+                Log.audio.info("volume key: armed at level \(self.gate.level) (remembered; system was \(volume, privacy: .public))")
                 onGains?(gains)
                 perform(action)
             } else {
@@ -94,6 +105,7 @@ final class VolumeKey {
         }
         Log.audio.info("volume key: command \(up ? "up" : "down", privacy: .public) → level \(level)")
         onGains?(gains)
+        levelChanged(level)
         return true
     }
 
@@ -111,9 +123,9 @@ final class VolumeKey {
                 case .toggle: what = "hold"
                 default: what = "absorbed"
                 }
-                Log.audio.info("volume key: up \(gap, privacy: .public) (\(self.gate.burstCount)/\(VolumeKeyGate.holdSteps)) \(what, privacy: .public)")
+                Log.audio.info("volume key: up \(gap, privacy: .public) (\(self.gate.burstCount)/\(VolumeKeyGate.holdSteps)) \(what, privacy: .public), read \(volume, privacy: .public)")
             } else {
-                Log.audio.info("volume key: down → level \(self.gate.level)")
+                Log.audio.info("volume key: down → level \(self.gate.level), read \(volume, privacy: .public)")
             }
         case .park:
             Log.audio.info("volume key: settling, \(volume, privacy: .public) is no key")
@@ -129,18 +141,25 @@ final class VolumeKey {
             break
         case .park, .absorb:
             park()
-        case .step:
+        case .step(let level):
             park()
             onGains?(gains)
+            levelChanged(level)
         case .toggle(let level):
             Log.audio.info("volume key: talk toggle, level back to \(level)")
             park()
             onGains?(gains)
+            levelChanged(level)
             onHold?()
         case .release(let volume):
             Log.audio.info("volume key: system volume back to \(volume, privacy: .public)")
             if !localVolume.set(volume) { Log.audio.error("volume key: release failed") }
         }
+    }
+
+    private func levelChanged(_ level: Int) {
+        armLevel = level
+        onLevel?(level)
     }
 
     private func park() {

@@ -23,6 +23,7 @@ import com.kivan.motoparty.LinkStatus
 import com.kivan.motoparty.MotopartyApp
 import com.kivan.motoparty.Settings
 import com.kivan.motoparty.UiAction
+import com.kivan.motoparty.music.History
 import com.kivan.motoparty.trigger.TriggerKind
 import com.kivan.motoparty.trigger.TriggerSource
 import com.kivan.motoparty.trigger.Triggers
@@ -44,6 +45,7 @@ class Callbacks(
     val onTrigger: (TriggerKind) -> Unit = {},
     val onAction: (UiAction) -> Unit = {},
     val onSettings: ((Settings) -> Settings) -> Unit = {},
+    val onHistory: ((History) -> History) -> Unit = {},
 )
 
 @Composable
@@ -56,6 +58,8 @@ fun MainScreen(
     val status by Hub.status.collectAsStateWithLifecycle()
     val store = MotopartyApp.instance.settings
     val settings by store.flow.collectAsStateWithLifecycle()
+    val historyStore = MotopartyApp.instance.history
+    val history by historyStore.flow.collectAsStateWithLifecycle()
     Motoparty(
         status, settings, permissions,
         Callbacks(
@@ -65,7 +69,9 @@ fun MainScreen(
             onTrigger = { Triggers.fire(it, TriggerSource.UI) },
             onAction = { Hub.actions.tryEmit(it) },
             onSettings = store::update,
+            onHistory = historyStore::update,
         ),
+        history = history,
     )
 }
 
@@ -77,6 +83,7 @@ fun Motoparty(
     permissions: List<Permission>,
     callbacks: Callbacks,
     initialTab: Tab = Tab.RIDE,
+    history: History = History(),
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     Scaffold(
@@ -107,7 +114,7 @@ fun Motoparty(
         val m = Modifier.padding(padding)
         when (tab) {
             Tab.RIDE -> RideTab(status, permissions, callbacks, onOpenQueue = { tab = Tab.QUEUE }, modifier = m)
-            Tab.SEARCH -> SearchTab(status, callbacks, m)
+            Tab.SEARCH -> SearchTab(status, callbacks, m, history)
             Tab.QUEUE -> QueueTab(status, callbacks, onSearch = { tab = Tab.SEARCH }, modifier = m)
             Tab.SETTINGS -> SettingsTab(status, settings, callbacks, m)
         }

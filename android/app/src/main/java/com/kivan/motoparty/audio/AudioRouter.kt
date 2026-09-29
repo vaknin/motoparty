@@ -8,7 +8,8 @@ import android.util.Log
 
 /**
  * Call mode for talk and dictation: MODE_IN_COMMUNICATION plus the headset as communication
- * device, which moves AirPods from A2DP to HFP (their mic only works there). [exitCall]
+ * device, which moves AirPods from A2DP to HFP (their mic only works there); with no headset, the
+ * built-in speaker rather than the earpiece ([choose]). [exitCall]
  * undoes both so music goes back to A2DP.
  *
  * [enterCall]/[exitCall] block for 0.5–1.3 s and must be called from the single [AudioThread],
@@ -50,8 +51,8 @@ class AudioRouter(
         private set
 
     /**
-     * The [AudioDeviceInfo] type the call route ended up on, or null when we left it to the phone
-     * (earpiece / speaker). Published from the audio thread like [selectedDevice].
+     * The [AudioDeviceInfo] type the call route ended up on (a headset, else the built-in speaker —
+     * [choose]), or null when we left it to the phone. Published from the audio thread like [selectedDevice].
      */
     @Volatile
     var selectedType: Int? = null
@@ -72,13 +73,18 @@ class AudioRouter(
         // device selection below succeeds, and a media-route sound has to wait for the release.
         runCatching { onRouteHeld() }
         val t = StepTimer()
+        // What the route went to, appended to the timing line:
+        // `enterCall 3 ms (setMode 1, devices 0, setCommunicationDevice 2) → speaker (no headset)`.
+        var chosen = ""
         try {
             am.mode = AudioManager.MODE_IN_COMMUNICATION
             t.step("setMode")
             if (Build.VERSION.SDK_INT >= 31) {
-                val device = am.availableCommunicationDevices.minByOrNull { preference(it.type) }
+                val available = am.availableCommunicationDevices
+                val type = choose(available.map { it.type })
+                val device = available.firstOrNull { it.type == type }
                 t.step("devices")
-                if (device != null && preference(device.type) < Int.MAX_VALUE) {
+                if (device != null) {
                     val ok = am.setCommunicationDevice(device)
                     t.step("setCommunicationDevice")
                     Log.i(TAG, "communication device ${describe(device)}: $ok")
@@ -86,6 +92,11 @@ class AudioRouter(
                         selectedDevice = describe(device)
                         selectedType = device.type
                     }
+                    chosen = " → ${ScoRule.describe(device.type)}" +
+                        (if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) " (no headset)" else "") +
+                        (if (ok) "" else " refused")
+                } else {
+                    chosen = " → phone default (no headset, no speaker)"
                 }
             } else {
                 @Suppress("DEPRECATION")
@@ -97,9 +108,10 @@ class AudioRouter(
                 // The legacy path asks for SCO whatever is connected; treat it as an SCO route,
                 // so the live earcon waits for the link there too (minSdk 29, untested since).
                 selectedType = AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                chosen = " → bt_sco (legacy)"
             }
         } finally {
-            Log.i(TAG, t.line("enterCall"))
+            Log.i(TAG, t.line("enterCall") + chosen)
         }
     }
 
@@ -146,17 +158,32 @@ class AudioRouter(
         exitCall()
     }
 
-    private fun preference(type: Int): Int = when (type) {
-        AudioDeviceInfo.TYPE_BLE_HEADSET -> 0
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> 1
-        AudioDeviceInfo.TYPE_WIRED_HEADSET -> 2
-        AudioDeviceInfo.TYPE_USB_HEADSET -> 3
-        else -> Int.MAX_VALUE
-    }
-
     private fun describe(d: AudioDeviceInfo) = "${d.productName} (type ${d.type})"
 
     companion object {
         private const val TAG = "AudioRouter"
+
+        /**
+         * Which of the phone's available communication device types the call route goes to. Pure,
+         * unit-tested by `AudioRouterChoiceTest`.
+         *
+         * A headset wins, in [preference] order, exactly as before. With none — no earbuds, no
+         * wired set — the **built-in speaker**, not the phone's own default: left alone,
+         * MODE_IN_COMMUNICATION plays talk and the talk earcons through the earpiece, which cannot
+         * be heard with the phone on a desk or on the handlebar (2026-09-29 device run:
+         * `Earcons: live routed to earpiece`). Null only when the phone offers neither; the
+         * framework then keeps its default.
+         */
+        fun choose(types: List<Int>): Int? =
+            types.filter { preference(it) < Int.MAX_VALUE }.minByOrNull { preference(it) }
+                ?: types.firstOrNull { it == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+
+        private fun preference(type: Int): Int = when (type) {
+            AudioDeviceInfo.TYPE_BLE_HEADSET -> 0
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> 1
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> 2
+            AudioDeviceInfo.TYPE_USB_HEADSET -> 3
+            else -> Int.MAX_VALUE
+        }
     }
 }

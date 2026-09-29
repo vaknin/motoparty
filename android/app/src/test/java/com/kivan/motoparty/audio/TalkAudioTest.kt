@@ -28,6 +28,7 @@ class TalkAudioTest {
 
     @Volatile private var depth = 0
     @Volatile private var voiceOn = false
+    @Volatile private var larkOn = false
     @Volatile private var voiceFail: ((String, Throwable) -> Unit)? = null
     @Volatile private var enterGate: CountDownLatch? = null
     @Volatile private var stopGate: CountDownLatch? = null
@@ -67,6 +68,16 @@ class TalkAudioTest {
         closedEarcon = { ops += "earcon" },
         onFailed = { session, what, _ -> failures += session to what },
         log = { logs += it },
+        larkStart = { onFailed ->
+            ops += "lark start"
+            larkOn = true
+            voiceFail = onFailed
+        },
+        larkStop = {
+            ops += "lark stop"
+            larkOn = false
+        },
+        larkRunning = { larkOn },
     )
 
     @After
@@ -198,5 +209,57 @@ class TalkAudioTest {
         talk.open(2).await()
         assertTrue(voiceOn)
         assertEquals(1, depth)
+    }
+
+    // ---- host-mic talk (PROTOCOL.md "Host-mic talk"): no call route at all ----
+
+    @Test
+    fun larkTalkTakesNoCallRoute() {
+        talk.open(1, lark = true).await()
+        assertEquals(listOf("lark start"), ops.toList())
+        assertEquals(0, depth)
+        talk.close().await()
+        assertEquals(listOf("lark start", "lark stop", "earcon"), ops.toList())
+        assertEquals(0, depth)
+    }
+
+    @Test
+    fun earbudTalkCollapsedIntoALarkTalkGivesTheRouteBack() {
+        enterGate = CountDownLatch(1)
+        talk.open(1)
+        while ("enter" !in ops) Thread.sleep(1)
+        talk.close()
+        val last = talk.open(2, lark = true)
+        enterGate!!.countDown()
+        last.await()
+        assertEquals(listOf("enter", "start", "stop", "exit", "lark start"), ops.toList())
+        assertEquals(0, depth)
+        assertTrue(larkOn)
+        assertFalse(voiceOn)
+        talk.close().await()
+        assertEquals("earcon", ops.last())
+        assertEquals(1, ops.count { it == "earcon" })
+    }
+
+    @Test
+    fun larkTalkReopenedWhileStoppingKeepsLarkAndAFailureReportsTheNewSession() {
+        talk.open(1, lark = true).await()
+        talk.close()
+        talk.open(2, lark = true).await()
+        assertTrue(larkOn)
+        assertEquals(0, ops.count { it == "enter" })
+        voiceFail!!("lark", IllegalStateException("unplugged"))
+        assertEquals(listOf(2 to "lark"), failures.toList())
+    }
+
+    @Test
+    fun larkThenEarbudsReentersTheCallRoute() {
+        talk.open(1, lark = true).await()
+        talk.close().await()
+        talk.open(2).await()
+        assertEquals(listOf("lark start", "lark stop", "earcon", "enter", "start"), ops.toList())
+        assertEquals(1, depth)
+        talk.close().await()
+        assertEquals(0, depth)
     }
 }

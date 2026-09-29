@@ -49,15 +49,23 @@ final class AppModel: ObservableObject {
     @Published private(set) var talkOpen = false
     @Published private(set) var talkRequested = false
     @Published private(set) var hostState: HostState?
-    @Published private(set) var nowPlaying: MusicLoad?
+    @Published private(set) var nowPlaying: MusicLoad? {
+        didSet { if nowPlaying?.id != oldValue?.id { musicStatusTracker.setCurrent(nowPlaying?.id) } }
+    }
     @Published private(set) var musicPlaying = false
     @Published private(set) var downloading: String?
+    /// "Loading…" / "Paused for talk" under now playing (`MusicStatus`).
+    @Published private(set) var musicStatus: MusicStatus = .none
     @Published private(set) var lastHeard: String?
     @Published private(set) var lastAnnouncement: String?
     @Published private(set) var problem: String?
     @Published private(set) var rttMs: Double?
     @Published private(set) var driftMs: Double?
     @Published private(set) var audioRoute = ""
+    /// The app volume level (`AppVolume`, 0...`maxLevel`): what talk, music
+    /// and cues play at while linked, and where the next link starts. The
+    /// system volume reads 15/16 while linked, so this is the only true one.
+    @Published private(set) var volumeLevel = AppVolume.defaultLevel
     /// Search tab results (PROTOCOL.md "Browsing").
     @Published private(set) var searchResults = ResultList()
     /// What the newest search looked for: songs are played, the rest browsed.
@@ -65,6 +73,10 @@ final class AppModel: ObservableObject {
     /// Songs of the album or playlist being browsed, and which one it is.
     @Published private(set) var collectionResults = ResultList()
     @Published private(set) var browsedCollection: ResultItem?
+    /// Recent searches and recently played tracks, local to this phone.
+    @Published private(set) var history = BrowseHistory() {
+        didSet { if history != oldValue { settings.browseHistory = history } }
+    }
 
     let settings = AppSettings()
 
@@ -105,6 +117,12 @@ final class AppModel: ObservableObject {
     private var voicePort = LinkDefaults.voicePort
     private var httpPort = LinkDefaults.httpPort
     private var loads: [String: MusicLoad] = [:]
+    private var musicStatusTracker = MusicStatusTracker() {
+        didSet {
+            let status = musicStatusTracker.status
+            if status != musicStatus { musicStatus = status }
+        }
+    }
     /// Tracks this connection has already answered with `music.ready`. A join
     /// re-sends music.load and state names the track too, and every answer
     /// makes the host re-send the anchor (a fresh A2DP seek), so answer once.
@@ -129,6 +147,9 @@ final class AppModel: ObservableObject {
     /// Who opened the current talk, from the host's `talk.open{by}`. Nil for
     /// a talk learnt only from `state` (a join mid-talk): not ours, then.
     private var talkOpener: Role?
+    /// How this phone takes part in the open talk (PROTOCOL.md "Host-mic
+    /// talk"), fixed at its open; `.ownMic` while no talk is open.
+    private var talkMode: TalkMode = .ownMic
     /// Last `music.search` / `music.browse` id; every request takes the next.
     private var lastRequestId = 0
 
@@ -144,11 +165,17 @@ final class AppModel: ObservableObject {
             problem = "Audio session: \(error.localizedDescription)"
         }
         keepAlive.start()
+        volumeLevel = settings.appVolumeLevel
+        history = settings.browseHistory
+        volumeKey.armLevel = volumeLevel
         volumeKey.start()
+        // The volume slider needs the window and a layout pass: make it now,
+        // long before the first park (the window is up by the next turn).
+        DispatchQueue.main.async { [weak self] in self?.localVolume.prepare() }
         audioRoute = session.outputName
         // Ask for permissions at home, not on the road.
         session.requestRecordPermission { [weak self] granted in
-            if !granted { self?.problem = "Microphone permission denied: talk will not work" }
+            if !granted { self?.problem = "Microphone permission denied: talk works only with the host's mic" }
         }
         Transcriber.requestAuthorization { [weak self] granted in
             if !granted { self?.problem = "Speech recognition not authorised: voice commands disabled" }
@@ -166,6 +193,9 @@ final class AppModel: ObservableObject {
 
     private func wireCallbacks() {
         discovery.onFound = { [weak self] candidate in self?.connect(to: candidate) }
+        discovery.onWrongProto = { [weak self] name, proto in
+            self?.problem = "\(name) speaks protocol \(proto), this app speaks \(Hello.currentProto): update one of them"
+        }
 
         nowPlayingCenter.onButton = { [weak self] button in self?.remoteButton(button) }
 
@@ -175,6 +205,11 @@ final class AppModel: ObservableObject {
         session.onMediaServicesReset = { [weak self] in self?.mediaServicesReset() }
         volumeKey.onHold = { [weak self] in self?.talkButton() }
         volumeKey.onGains = { [weak self] gains in self?.applyGains(gains) }
+        volumeKey.onLevel = { [weak self] level in
+            guard let self else { return }
+            self.volumeLevel = level
+            self.settings.appVolumeLevel = level
+        }
         session.onMuteGesture = { [weak self] in
             guard let self else { return }
             // The earbuds sit inside the helmet: no gesture starts or ends a talk (2026-09-29).
@@ -182,13 +217,15 @@ final class AppModel: ObservableObject {
         }
 
         voiceEngine.onFailure = { [weak self] error in
-            // The mic is gone mid-talk: same answer as failing to open it.
+            // The mic (or, host-mic, the playback) is gone mid-talk: same
+            // answer as failing to open it.
             self?.talkUnavailable(error.localizedDescription, weAsked: false)
         }
 
-        // The capture sink delivered its first buffer: the mic is live, so the
-        // earcon may mean it (Android F7 — never a fixed delay).
-        voiceEngine.onCaptureUp = { [weak self] in self?.playLiveCue(fallback: false) }
+        // The capture sink delivered its first buffer (the mic is live) or,
+        // in a host-mic talk, the playback is running: the earcon may mean it
+        // (Android F7 — never a fixed delay).
+        voiceEngine.onLive = { [weak self] in self?.playLiveCue(fallback: false) }
 
         player.onDrift = { [weak self] drift in self?.driftMs = drift }
 
@@ -213,7 +250,7 @@ final class AppModel: ObservableObject {
 
     private func startDiscovery() {
         link = .searching
-        discovery.start()
+        discovery.start(preferredName: settings.lastHostName)
     }
 
     private func connect(to candidate: HostCandidate) {
@@ -254,6 +291,8 @@ final class AppModel: ObservableObject {
         talkOpener = nil
         talkOpenPending = false
         micUnavailable = false
+        musicStatusTracker.talkClosed()
+        musicStatusTracker.linkLost()
         // An answer can no longer arrive for a request in flight.
         failPending(&searchResults, "Link lost")
         failPending(&collectionResults, "Link lost")
@@ -284,6 +323,7 @@ final class AppModel: ObservableObject {
                 return
             }
             hostName = hello.name
+            settings.lastHostName = hello.name
             link = .connected(hello.name)
             let newVoice = hello.voicePort ?? LinkDefaults.voicePort
             httpPort = hello.httpPort ?? LinkDefaults.httpPort
@@ -294,9 +334,11 @@ final class AppModel: ObservableObject {
         case .state(let state):
             apply(state)
         case .talkOpen(let open):
+            musicStatusTracker.talkOpened()
             talkOpener = open.by
-            openTalkLocally()
+            openTalkLocally(TalkMode(open: open))
         case .talkClose(let close):
+            musicStatusTracker.talkClosed()
             talkOpener = nil
             micUnavailable = false
             talkOpenPending = false
@@ -312,21 +354,25 @@ final class AppModel: ObservableObject {
         case .musicLoad(let load):
             // Also re-sent (current + next) right after a client joins.
             loads[load.id] = load
+            musicStatusTracker.load(load.id)
             if nowPlaying?.id == load.id { nowPlaying = load }
             prefetch(load)
         case .musicPlay(let play):
             currentPlay = play
             musicPlaying = true
+            musicStatusTracker.play(play.id)
             if nowPlaying?.id != play.id { nowPlaying = loads[play.id] ?? nowPlaying }
             startMusicIfPossible()
         case .musicPause(let pause):
             currentPlay = nil
             musicPlaying = false
+            musicStatusTracker.pause(pause.id)
             player.pause(atMs: pause.positionMs)
             updateNowPlaying()
         case .musicStop:
             currentPlay = nil
             musicPlaying = false
+            musicStatusTracker.stop()
             nowPlaying = nil
             player.stop()
             updateNowPlaying()
@@ -346,7 +392,14 @@ final class AppModel: ObservableObject {
         hostState = state
         // Talk state is authoritative on the host; heal missed messages.
         if !state.talk { talkOpenPending = false }
-        if state.talk != talkOpen { state.talk ? openTalkLocally() : closeTalkLocally() }
+        // The host holds its music from its talk decision on, before this
+        // state's music (already paused for the talk) is applied.
+        if state.talk != musicStatusTracker.talkOpen {
+            state.talk ? musicStatusTracker.talkOpened() : musicStatusTracker.talkClosed()
+        }
+        // A talk learnt from state (a join mid-talk) opens in the mode its
+        // `mic` says, exactly as from talk.open.
+        if state.talk != talkOpen { state.talk ? openTalkLocally(TalkMode(state: state)) : closeTalkLocally() }
 
         guard let music = state.music else {
             if currentPlay != nil || player.currentId != nil {
@@ -354,6 +407,7 @@ final class AppModel: ObservableObject {
                 player.stop()
             }
             musicPlaying = false
+            musicStatusTracker.stop()
             nowPlaying = nil
             updateNowPlaying()
             return
@@ -364,10 +418,13 @@ final class AppModel: ObservableObject {
             let load = MusicLoad(id: music.id, path: "/track/\(music.id).m4a", title: music.title,
                                  artist: music.artist, durationMs: music.durationMs)
             loads[music.id] = load
+            musicStatusTracker.load(music.id)
             prefetch(load)
         }
         nowPlaying = loads[music.id]
+        history.sawCurrent(BrowseHistory.Track(music))
         musicPlaying = music.playing
+        musicStatusTracker.hostState(id: music.id, playing: music.playing)
         if music.playing {
             let play = MusicPlay(id: music.id, positionMs: music.positionMs, atHostTimeMs: music.atHostTimeMs)
             currentPlay = play
@@ -383,10 +440,18 @@ final class AppModel: ObservableObject {
 
     private func prefetch(_ load: MusicLoad) {
         guard let hostAddress else { return }
-        if !cache.isCached(load.id) { downloading = load.title }
+        if !cache.isCached(load.id) {
+            downloading = load.title
+            musicStatusTracker.downloadStarted(load.id)
+        }
         cache.fetch(id: load.id, host: hostAddress, port: httpPort, path: load.path) { [weak self] outcome in
             guard let self else { return }
             if self.downloading == load.title { self.downloading = nil }
+            if case .ready = outcome {
+                self.musicStatusTracker.downloadFinished(load.id, ok: true)
+            } else {
+                self.musicStatusTracker.downloadFinished(load.id, ok: false)
+            }
             switch outcome {
             case .ready:
                 if self.readySent.insert(load.id).inserted {
@@ -449,14 +514,16 @@ final class AppModel: ObservableObject {
     }
 
     /// Host decided talk is open: pause music, switch the headset to call mode,
-    /// open the mic, earcon when live.
-    private func openTalkLocally() {
+    /// open the mic, earcon when live. A host-mic talk instead keeps the media
+    /// session, opens no mic and only plays (`openHostMicTalk`).
+    private func openTalkLocally(_ mode: TalkMode) {
         let weAsked = talkRequested
         talkRequested = false
         guard !talkOpen else { return }
         // The host's state{talk:true} follows its talk.open, and may cross our
         // talk.close: don't fail (and earcon) twice for the same open.
         guard !micUnavailable else { return }
+        if mode == .hostMic { return openHostMicTalk(weAsked: weAsked) }
         switch session.recordPermission {
         case .granted:
             break
@@ -474,7 +541,7 @@ final class AppModel: ObservableObject {
                 self.talkOpenPending = false
                 guard granted else { return self.talkUnavailable("microphone permission denied", weAsked: weAsked) }
                 self.talkRequested = weAsked
-                self.openTalkLocally()
+                self.openTalkLocally(mode)
             }
             return
         default:
@@ -482,6 +549,8 @@ final class AppModel: ObservableObject {
             return
         }
         talkOpen = true
+        talkMode = .ownMic
+        Log.audio.info("talk mode: \(TalkMode.ownMic.logLabel, privacy: .public)")
         announcer.stop()
         player.suspend()
         keepAlive.stop()
@@ -500,6 +569,35 @@ final class AppModel: ObservableObject {
         } catch {
             // A call in progress, a route that failed, an engine that would
             // not start: this phone cannot talk.
+            talkUnavailable(error.localizedDescription, weAsked: weAsked)
+            return
+        }
+        audioRoute = session.outputName
+        updateNowPlaying()
+    }
+
+    /// A host-mic talk (PROTOCOL.md "Host-mic talk"): the host captures both
+    /// riders. No microphone here (no permission check, no input node, no
+    /// recogniser, no audio sent: the voice socket's keepalives go on), and
+    /// the session stays the media one (`.listen` = `.playback`), so the
+    /// earbuds stay on A2DP. Music pauses and the rider's voice plays through
+    /// the usual jitter buffer, decoder and app volume. "Cannot" here only
+    /// means the playback would not start.
+    private func openHostMicTalk(weAsked: Bool) {
+        talkOpen = true
+        talkMode = .hostMic
+        Log.audio.info("talk mode: \(TalkMode.hostMic.logLabel, privacy: .public)")
+        announcer.stop()
+        player.suspend()
+        keepAlive.stop()
+        // Same session as music, so no volume jump is expected; settle anyway
+        // (cheap), in case iOS still reports a change around the activation.
+        volumeKey.settle()
+        do {
+            try session.activate(.listen)
+            try voiceEngine.startReceiveOnly()
+            armLiveCue()
+        } catch {
             talkUnavailable(error.localizedDescription, weAsked: weAsked)
             return
         }
@@ -528,7 +626,7 @@ final class AppModel: ObservableObject {
         guard talkOpen, let openedAtMs = liveCueOpenedAtMs else { return }
         cancelLiveCue()
         let ms = Int((MonotonicClock.nowMs() - openedAtMs).rounded())
-        let why = fallback ? "fallback" : "capture up"
+        let why = fallback ? "fallback" : talkMode.liveSignal
         Log.audio.info("live cue: fired +\(ms) ms (\(why, privacy: .public))")
         earcons.play("live")
         startRecognition()
@@ -545,7 +643,7 @@ final class AppModel: ObservableObject {
     /// Tell the host — which then closes talk — and go straight back to the
     /// music session. Talk is not negotiable: this is only ever "cannot".
     private func talkUnavailable(_ why: String, weAsked: Bool) {
-        problem = "Could not open the mic: \(why)"
+        problem = talkMode == .hostMic ? "Could not play the talk: \(why)" : "Could not open the mic: \(why)"
         Log.audio.error("talk unavailable: \(why, privacy: .public)")
         micUnavailable = true
         cancelLiveCue()
@@ -553,6 +651,7 @@ final class AppModel: ObservableObject {
         if weAsked { earcons.play("error") }
         talkRequested = false
         talkOpen = false
+        talkMode = .ownMic
         session.disarmMuteGesture()
         stopRecognition()
         voiceEngine.stop()
@@ -571,6 +670,7 @@ final class AppModel: ObservableObject {
         talkOpener = nil
         guard talkOpen else { return }
         talkOpen = false
+        talkMode = .ownMic
         cancelLiveCue()
         session.disarmMuteGesture()
         stopRecognition()
@@ -596,7 +696,9 @@ final class AppModel: ObservableObject {
     /// live earcon, which is now. The client is never solo, and in a talk the
     /// host opened it does not recognise at all.
     private func startRecognition() {
-        guard talkOpener == .client else { return }
+        // Host-mic: the host recognises the passenger's first phrase, and this
+        // phone never sends command.text (it has no mic to recognise anyway).
+        guard talkMode.recognisesCommands(opener: talkOpener) else { return }
         let now = MonotonicClock.nowMs()
         firstPhrase = FirstPhraseGate(role: .opener, liveAtMs: now)
         firstPhraseTimer?.invalidate()
@@ -685,6 +787,7 @@ final class AppModel: ObservableObject {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         searchedKind = kind
+        if link.isConnected { history.searched(kind, query: query) }
         request(&searchResults, .musicSearch(MusicSearch(id: nextRequestId(), kind: kind, query: query)))
     }
 
@@ -704,10 +807,22 @@ final class AppModel: ObservableObject {
         enqueue(mode, tracks: tracks, art: collection?.art)
     }
 
+    /// Sent during a talk too: play by touch (`now`, or a `jump` edit) ends
+    /// the talk on the host, which sends the usual `talk.close` (PROTOCOL.md
+    /// "Browsing" step 3), so nothing here waits for the talk or closes it.
     func enqueue(_ mode: EnqueueMode, tracks: [EnqueueTrack], art: String? = nil) {
         let message = MusicEnqueue(mode: mode, tracks: tracks, art: art).fitted()
         guard !message.tracks.isEmpty else { return }
         send(.musicEnqueue(message))
+    }
+
+    /// Plays a track from the Search tab's history now.
+    func playAgain(_ track: BrowseHistory.Track) {
+        enqueue(.now, tracks: [track.enqueueTrack])
+    }
+
+    func clearRecentSearches() {
+        history.clearSearches()
     }
 
     /// Changes the upcoming queue. `index`/`id` name `state.queue[index]` for

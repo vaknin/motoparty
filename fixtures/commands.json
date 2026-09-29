@@ -232,6 +232,66 @@
    "expect": {
     "action": "unknown"
    }
+  },
+  {
+   "text": "What's playing?",
+   "expect": {
+    "action": "nowplaying"
+   }
+  },
+  {
+   "text": "what’s playing",
+   "expect": {
+    "action": "nowplaying"
+   }
+  },
+  {
+   "text": "whats playing",
+   "expect": {
+    "action": "nowplaying"
+   }
+  },
+  {
+   "text": "What is playing",
+   "expect": {
+    "action": "nowplaying"
+   }
+  },
+  {
+   "text": "what song is this",
+   "expect": {
+    "action": "nowplaying"
+   }
+  },
+  {
+   "text": "hey what's playing please",
+   "expect": {
+    "action": "nowplaying"
+   }
+  },
+  {
+   "text": "what's playing next",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "Shuffle",
+   "expect": {
+    "action": "shuffle"
+   }
+  },
+  {
+   "text": "shuffle please",
+   "expect": {
+    "action": "shuffle"
+   }
+  },
+  {
+   "text": "shuffle the queue",
+   "expect": {
+    "action": "unknown"
+   }
   }
  ]
 }

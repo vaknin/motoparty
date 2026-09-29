@@ -12,7 +12,7 @@ class CommandEffectTest {
     private val play = Command.Play(Command.Kind.ALBUM, "abbey road")
     private val all = listOf(
         play, Command.Pause, Command.Resume, Command.Next, Command.Previous,
-        Command.VolumeUp, Command.VolumeDown, Command.End, Command.Unknown,
+        Command.VolumeUp, Command.VolumeDown, Command.End, Command.NowPlaying, Command.Shuffle, Command.Unknown,
     )
 
     @Test
@@ -33,7 +33,7 @@ class CommandEffectTest {
 
     @Test
     fun theRestLeaveTheTalkOpenAndReplyInIt() {
-        for (cmd in listOf(Command.Pause, Command.Next, Command.Previous, Command.Unknown)) {
+        for (cmd in listOf(Command.Pause, Command.Next, Command.Previous, Command.NowPlaying, Command.Shuffle, Command.Unknown)) {
             for (fromClient in listOf(false, true)) {
                 assertEquals("$cmd", CommandEffect(null, Reply.CALL), CommandEffect.of(cmd, talkOpen = true, fromClient = fromClient))
             }

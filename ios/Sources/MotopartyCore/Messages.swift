@@ -120,9 +120,15 @@ public struct Pong: Codable, Equatable, Sendable {
     }
 }
 
+/// Who captures the voices of a talk (PROTOCOL.md "Host-mic talk"). Only
+/// value: `host`; anything else is a malformed `talk.open` and is dropped.
+public enum TalkMic: String, Codable, Sendable { case host }
+
 public struct TalkOpen: Codable, Equatable, Sendable {
     public var by: Role
-    public init(by: Role) { self.by = by }
+    /// Only on the host's decision; a client never sends it.
+    public var mic: TalkMic?
+    public init(by: Role, mic: TalkMic? = nil) { self.by = by; self.mic = mic }
 }
 
 public struct TalkClose: Codable, Equatable, Sendable {
@@ -294,9 +300,12 @@ public struct HostState: Codable, Equatable, Sendable {
     public var talk: Bool
     public var music: Music?
     public var queue: [QueueItem]
+    /// Only while `talk` is true and the open talk is host-mic (PROTOCOL.md
+    /// "state", "Host-mic talk"), so a join mid-talk opens it the same way.
+    public var mic: TalkMic?
 
-    public init(talk: Bool, music: Music? = nil, queue: [QueueItem] = []) {
-        self.talk = talk; self.music = music; self.queue = queue
+    public init(talk: Bool, music: Music? = nil, queue: [QueueItem] = [], mic: TalkMic? = nil) {
+        self.talk = talk; self.music = music; self.queue = queue; self.mic = mic
     }
 
     // `queue` is required (possibly empty); `music` is omitted when nothing is loaded.

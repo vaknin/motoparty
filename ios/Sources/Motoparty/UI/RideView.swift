@@ -1,4 +1,5 @@
 #if os(iOS)
+import MotopartyCore
 import SwiftUI
 
 /// The riding screen: link pill, now playing with transport controls, and the
@@ -20,13 +21,17 @@ struct RideView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Spacer(minLength: 0)
+                VoiceCommands()
                 BigButton(title: talkTitle, systemImage: "mic.fill", color: talkColor) {
                     model.talkButton()
                 }
-                if model.link.isConnected {
-                    Text("Hold volume up: talk")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    VolumeIndicator()
+                    if model.link.isConnected {
+                        Text("Hold volume up: talk")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 StatusLines()
             }
@@ -58,6 +63,75 @@ struct RideView: View {
         if model.talkOpen { return .red }
         if model.talkRequested { return .yellow }
         return .orange
+    }
+}
+
+/// What the first phrase of a talk this phone opened may be (PROTOCOL.md
+/// "Commands"), the same list as the Pixel's.
+private struct VoiceCommands: View {
+    private static let lines = [
+        "play <song> · play album / artist / playlist <name>",
+        "pause · resume",
+        "next · previous",
+        "louder · quieter",
+        "what's playing",
+        "shuffle",
+        "over (ends the talk)",
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Voice commands").font(.subheadline.weight(.semibold))
+            Text("Press TALK and say one of these first; after that it's just talk.")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Self.lines, id: \.self) { Text($0).lineLimit(1).minimumScaleFactor(0.8) }
+            }
+        }
+        .font(.footnote)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The app volume level (`AppVolume`): a speaker, a 16-step bar and
+/// "12/16". While linked it is what everything plays at (the system volume
+/// sits parked at 15/16); unlinked it is dimmed, the level the next link
+/// starts at.
+private struct VolumeIndicator: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let level = model.volumeLevel
+        let linked = model.link.isConnected
+        HStack(spacing: 5) {
+            Image(systemName: icon(level))
+                .font(.caption)
+                .frame(width: 18)
+            HStack(spacing: 1.5) {
+                ForEach(1...AppVolume.maxLevel, id: \.self) { step in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(step <= level ? (step > AppVolume.unityLevel ? Color.orange : Color.primary)
+                                            : Color.secondary.opacity(0.25))
+                        .frame(width: 3, height: 10)
+                }
+            }
+            Text("\(level)/\(AppVolume.maxLevel)")
+                .font(.caption.monospacedDigit())
+        }
+        .foregroundStyle(linked ? .primary : .secondary)
+        .opacity(linked ? 1 : 0.6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("App volume \(level) of \(AppVolume.maxLevel)\(linked ? "" : ", applies when linked")")
+    }
+
+    private func icon(_ level: Int) -> String {
+        switch level {
+        case 0: "speaker.slash.fill"
+        case 1...5: "speaker.wave.1.fill"
+        case 6...11: "speaker.wave.2.fill"
+        default: "speaker.wave.3.fill"
+        }
     }
 }
 
@@ -120,11 +194,35 @@ private struct NowPlayingCard: View {
                         .foregroundStyle(.secondary)
                     }
                 }
+                MusicStatusLine(status: model.musicStatus)
             }
             TransportControls()
         }
         .padding()
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
+
+/// Why the clock is not moving: the track is still on its way, or a talk
+/// holds the music. Nothing while playing or plainly paused.
+private struct MusicStatusLine: View {
+    let status: MusicStatus
+
+    var body: some View {
+        if let text = status.text {
+            HStack(spacing: 6) {
+                switch status {
+                case .loading: ProgressView().controlSize(.small)
+                case .pausedForTalk: Image(systemName: "mic.fill")
+                case .none: EmptyView()
+                }
+                Text(text)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
     }
 }
 

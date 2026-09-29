@@ -2,6 +2,9 @@ package com.kivan.motoparty
 
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.music.CollectionItem
+import com.kivan.motoparty.music.DownloadProgress
+import com.kivan.motoparty.music.MusicPhase
+import com.kivan.motoparty.music.OutputRoute
 import com.kivan.motoparty.music.Track
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,14 +31,30 @@ data class LinkStatus(
     val nowPlaying: Track? = null,
     val playing: Boolean = false,
     val positionMs: Long = 0,
+    /** Why [nowPlaying] is not playing yet (loading, waiting for the client, parked by talk), or null. */
+    val musicPhase: MusicPhase? = null,
     val queue: List<Track> = emptyList(),
     val busy: String? = null,
     val lastAnnounce: String? = null,
     val lastDriftMs: Long? = null,
+    /** Where the music plays; the latency trim shown in Settings is this route's. Null until known. */
+    val outputRoute: OutputRoute? = null,
     val cacheMb: Long = 0,
+    /** Ids of the tracks in the active cache: the "downloaded" mark on song rows. */
+    val cached: Set<String> = emptySet(),
+    /** Album and playlist downloads (Search tab), by collection id. */
+    val downloads: Map<String, DownloadProgress> = emptyMap(),
     val search: SearchState = SearchState(),
     /** The album or playlist open on the Search tab, or null. */
     val browse: BrowseState? = null,
+    /**
+     * The "Use USB stereo mic (Lark) for talk" setting is on but no usable receiver is there, and
+     * why (`no USB input`, `USB input … is mono`); null = nothing to warn about. The Ride tab shows
+     * a warning while it is set.
+     */
+    val larkMissing: String? = null,
+    /** The open talk fell back to the earbud mics because the Lark was missing at its open. */
+    val talkOnEarbudsFallback: Boolean = false,
     /** A long Lark recording ([com.kivan.motoparty.audio.UsbStereoProbe.startLong]) is running. */
     val longRecording: Boolean = false,
     val log: List<String> = emptyList(),
@@ -70,6 +89,9 @@ sealed interface UiAction {
     data class Jump(val index: Int, val id: String) : UiAction
     data class Remove(val index: Int, val id: String) : UiAction
     data object ClearQueue : UiAction
+    /** Download every track of the album or playlist [collection] into the cache. */
+    data class Download(val collection: CollectionItem, val tracks: List<Track>) : UiAction
+    data class CancelDownload(val collectionId: String) : UiAction
     /** Typed text, handled exactly like a recognised utterance. */
     data class Command(val text: String) : UiAction
     data class Control(val action: String) : UiAction

@@ -66,6 +66,14 @@
   {
    "_doc": "music.enqueue track missing durationMs: drop, keep",
    "json": "{\"t\":\"music.enqueue\",\"mode\":\"now\",\"tracks\":[{\"id\":\"x\",\"title\":\"a\",\"artist\":\"b\"}]}"
+  },
+  {
+   "_doc": "talk.open mic outside its set: drop, keep",
+   "json": "{\"t\":\"talk.open\",\"by\":\"host\",\"mic\":\"both\"}"
+  },
+  {
+   "_doc": "state mic outside its set: drop, keep",
+   "json": "{\"t\":\"state\",\"talk\":true,\"mic\":\"both\",\"queue\":[]}"
   }
  ],
  "fatal": [

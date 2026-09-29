@@ -18,6 +18,13 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import java.io.File
 
+/** What [MusicController] drives: [PlayerControls] plus loading, stopping and ducking. */
+interface LocalPlayer : PlayerControls {
+    fun load(track: Track, file: File)
+    fun stop()
+    var volume: Float
+}
+
 /** A transport command from an outside controller, in [com.kivan.motoparty.core.ControlAction] terms. */
 enum class RemoteAction { PAUSE, RESUME, NEXT, PREVIOUS }
 
@@ -34,7 +41,7 @@ class Player(
     /** A transport command from an outside controller: must go through the music authority. */
     private val onRemote: (RemoteAction) -> Unit,
     private val onEnded: () -> Unit,
-) : PlayerControls {
+) : LocalPlayer {
     private val exo: ExoPlayer = ExoPlayer.Builder(context)
         .setAudioAttributes(
             AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
@@ -88,7 +95,7 @@ class Player(
         })
     }
 
-    fun load(track: Track, file: File) {
+    override fun load(track: Track, file: File) {
         if (loadedId == track.id) return
         val item = MediaItem.Builder()
             .setMediaId(track.id)
@@ -112,7 +119,7 @@ class Player(
         exo.playWhenReady = false
     }
 
-    fun stop() {
+    override fun stop() {
         exo.stop()
         exo.clearMediaItems()
         loadedId = null
@@ -133,7 +140,7 @@ class Player(
             exo.setPlaybackSpeed(v)
         }
 
-    var volume: Float
+    override var volume: Float
         get() = exo.volume
         set(v) {
             exo.volume = v

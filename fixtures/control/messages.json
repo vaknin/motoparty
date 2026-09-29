@@ -32,6 +32,11 @@
    "by": "client"
   },
   {
+   "t": "talk.open",
+   "by": "client",
+   "mic": "host"
+  },
+  {
    "t": "talk.close",
    "by": "host",
    "reason": "link"
@@ -220,6 +225,28 @@
      "artist": "B"
     }
    ]
+  },
+  {
+   "t": "state",
+   "talk": true,
+   "music": {
+    "id": "dQw4w9WgXcQ",
+    "title": "Never Gonna Give You Up",
+    "artist": "Rick Astley",
+    "playing": false,
+    "positionMs": 1234,
+    "atHostTimeMs": 987654,
+    "durationMs": 213000,
+    "art": "https://lh3.googleusercontent.com/abc=w544-h544"
+   },
+   "queue": [
+    {
+     "id": "x1",
+     "title": "A",
+     "artist": "B"
+    }
+   ],
+   "mic": "host"
   },
   {
    "t": "bye",

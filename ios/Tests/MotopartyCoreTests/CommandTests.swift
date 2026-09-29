@@ -15,7 +15,7 @@ final class CommandFixtureTests: XCTestCase {
     func testEveryFixtureCase() throws {
         let fixture = try Fixtures.json("commands.json")
         let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 35)
+        XCTAssertEqual(cases.count, 45)
         for c in cases {
             let text = try XCTUnwrap(c["text"] as? String)
             let expect = try XCTUnwrap(c["expect"] as? [String: String])
@@ -66,6 +66,17 @@ final class CommandFixtureTests: XCTestCase {
         XCTAssertEqual(CommandParser.parse("over and out"), .unknown)
         XCTAssertEqual(CommandParser.parse("end"), .unknown)
         XCTAssertFalse(Command.end.isVolume)
+    }
+
+    func testNowPlayingAndShuffle() {
+        XCTAssertEqual(CommandParser.parse("What\u{2019}s playing?"), .nowPlaying)
+        XCTAssertEqual(CommandParser.parse("what song is this"), .nowPlaying)
+        XCTAssertEqual(CommandParser.parse("Shuffle!"), .shuffle)
+        XCTAssertEqual(CommandParser.parse("shuffle the queue"), .unknown)
+        XCTAssertEqual(Command.nowPlaying.action, "nowplaying")
+        // Sent as command.text like every non-volume command.
+        XCTAssertFalse(Command.nowPlaying.isVolume)
+        XCTAssertFalse(Command.shuffle.isVolume)
     }
 }
 

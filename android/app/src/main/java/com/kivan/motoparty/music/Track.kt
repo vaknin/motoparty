@@ -1,8 +1,10 @@
 package com.kivan.motoparty.music
 
 import com.kivan.motoparty.core.QueueItem
+import kotlinx.serialization.Serializable
 
-/** A YouTube video id plus the metadata the protocol carries. */
+/** A YouTube video id plus the metadata the protocol carries. Serializable for [History]. */
+@Serializable
 data class Track(
     val id: String,
     val title: String,

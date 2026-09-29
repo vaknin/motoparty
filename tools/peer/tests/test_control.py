@@ -181,3 +181,37 @@ def test_fatal_vectors_close(case):
     assert len(bodies) == 1
     with pytest.raises(FatalFrame):
         decode_message(bodies[0])
+
+
+def test_talk_open_mic_host_round_trips():
+    """PROTOCOL.md "Host-mic talk": the host's decision may carry mic:"host"."""
+    msg = {"t": "talk.open", "by": "client", "mic": "host"}
+    assert decode_message(encode_message(msg)) == msg
+    assert decode_message(b'{"t":"talk.open","by":"host"}') == {"t": "talk.open", "by": "host"}
+
+
+@pytest.mark.parametrize("mic", ['"both"', '"client"', '""', "true", "null", '["host"]'])
+def test_talk_open_mic_outside_its_set_is_dropped(mic):
+    raw = f'{{"t":"talk.open","by":"host","mic":{mic}}}'.encode()
+    with pytest.raises(ProtocolError) as e:
+        decode_message(raw)
+    assert not isinstance(e.value, FatalFrame)  # drop, keep the link
+    with pytest.raises(ProtocolError):
+        encode_message(json.loads(raw))
+
+
+def test_state_mic_host_round_trips_and_is_dropped_on_a_closed_talk():
+    """PROTOCOL.md `state`: mic:"host" only while talk is true and the talk is host-mic."""
+    msg = {"t": "state", "talk": True, "queue": [], "mic": "host"}
+    assert decode_message(encode_message(msg)) == msg
+    # a stray mic on a closed talk describes no talk: dropped, the message is kept
+    assert decode_message(b'{"t":"state","talk":false,"queue":[],"mic":"host"}') == \
+        {"t": "state", "talk": False, "queue": []}
+
+
+@pytest.mark.parametrize("mic", ['"both"', '"client"', "null", "1"])
+def test_state_mic_outside_its_set_is_dropped(mic):
+    raw = f'{{"t":"state","talk":true,"queue":[],"mic":{mic}}}'.encode()
+    with pytest.raises(ProtocolError) as e:
+        decode_message(raw)
+    assert not isinstance(e.value, FatalFrame)

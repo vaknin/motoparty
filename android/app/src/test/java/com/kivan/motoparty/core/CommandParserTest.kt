@@ -25,6 +25,8 @@ class CommandParserTest {
                 "volumeUp" -> Command.VolumeUp
                 "volumeDown" -> Command.VolumeDown
                 "end" -> Command.End
+                "nowplaying" -> Command.NowPlaying
+                "shuffle" -> Command.Shuffle
                 "unknown" -> Command.Unknown
                 else -> error("unexpected action $action")
             }

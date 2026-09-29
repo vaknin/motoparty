@@ -74,6 +74,7 @@ class ScoWatch(
     private val usesDevice = ScoRule.usesCommunicationDevice(Build.VERSION.SDK_INT)
 
     private var thread: HandlerThread? = null
+    private val waitLock = Object()
     private var receiver: BroadcastReceiver? = null
     private var deviceListener: AudioManager.OnCommunicationDeviceChangedListener? = null
 
@@ -117,6 +118,24 @@ class ScoWatch(
      * Nothing sets `connected` on `enterCall`: selecting the device is exactly the intent-not-link
      * signal F8 removed.
      */
+    /**
+     * Blocks the calling (capture) thread until [connected], at most [timeoutMs], or until
+     * [stillWanted] turns false; returns [connected]. Woken by the report itself, not by polling
+     * the state: [stillWanted] is re-checked every [WAIT_SLICE_MS] only so a talk closed meanwhile
+     * lets its capture thread go well inside `VoiceEngine.stop`'s 500 ms join (F9c).
+     */
+    fun awaitConnected(timeoutMs: Long, stillWanted: () -> Boolean): Boolean {
+        val deadline = clock() + timeoutMs
+        synchronized(waitLock) {
+            while (!connected && stillWanted()) {
+                val left = deadline - clock()
+                if (left <= 0) break
+                waitLock.wait(minOf(left, WAIT_SLICE_MS))
+            }
+        }
+        return connected
+    }
+
     fun onRouteReleased() {
         update(false, clock(), "call route released")
     }
@@ -214,11 +233,13 @@ class ScoWatch(
     private fun update(state: Boolean, atMs: Long, source: String) {
         if (state == connected) return
         connected = state
+        synchronized(waitLock) { waitLock.notifyAll() }
         Log.i(TAG, "sco ${if (state) "connected" else "disconnected"} ($source)")
         onChange(state, atMs)
     }
 
     private companion object {
         const val TAG = "ScoWatch"
+        const val WAIT_SLICE_MS = 50L
     }
 }

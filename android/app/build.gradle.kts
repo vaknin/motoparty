@@ -77,6 +77,8 @@ android {
 val fixturesDir = rootProject.file("../fixtures").absolutePath
 tasks.withType<Test>().configureEach {
     systemProperty("motoparty.fixtures", fixturesDir)
+    // The vectors are test inputs: an edited fixture must re-run the tests, not hit the up-to-date check.
+    inputs.dir(fixturesDir).withPropertyName("fixtures").withPathSensitivity(PathSensitivity.RELATIVE)
     // Network tests (YouTube extraction) run only when asked: ./gradlew test -Pnetwork
     systemProperty("motoparty.network", providers.gradleProperty("network").isPresent.toString())
     // Screenshot tests write PNGs to app/build/outputs/roborazzi only when asked: -Pscreenshots

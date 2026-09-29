@@ -46,6 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--voice-port", type=int, help="voice UDP port (default 47801; 0 = any)")
     h.add_argument("--http-port", type=int, help="track HTTP port (default 47802; 0 = any)")
     h.add_argument("--no-mdns", action="store_true", help="do not advertise over Bonjour")
+    h.add_argument("--host-mic", action="store_true",
+                   help="decide talks as host-mic talks: talk.open carries mic:'host' and client "
+                        "audio is dropped (stdin `hostmic on|off` toggles)")
     h.add_argument("-v", "--verbose", action="store_true", help="also print ping/pong frames")
     return p
 

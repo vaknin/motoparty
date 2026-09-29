@@ -37,8 +37,10 @@ data class CommandEffect(
                 is Command.Play, Command.Resume -> CommandEffect(by, Reply.AFTER_CLOSE)
                 Command.End -> CommandEffect(by, Reply.NONE)
                 // The talk stays open; pause cancels the resume after it, next/previous pick what
-                // resumes. Volume is local: only the rider's own changes the call stream.
-                Command.Pause, Command.Next, Command.Previous, Command.Unknown -> CommandEffect(null, Reply.CALL)
+                // resumes; nowplaying and shuffle only speak or reorder. Volume is local: only the
+                // rider's own changes the call stream.
+                Command.Pause, Command.Next, Command.Previous, Command.NowPlaying, Command.Shuffle, Command.Unknown ->
+                    CommandEffect(null, Reply.CALL)
                 Command.VolumeUp, Command.VolumeDown -> CommandEffect(null, Reply.CALL, callVolume = !fromClient)
             }
         }

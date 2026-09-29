@@ -23,12 +23,14 @@ import java.net.Socket
 class ControlServerTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val port = ServerSocket(0).use { it.localPort }
-    private var now = 1_000L
+    @Volatile private var now = 1_000L
+    private val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
     private val server = ControlServer(
         scope, { now },
         hostHello = { Hello(proto = 1, role = Role.HOST, name = "test", voicePort = 47801, httpPort = 47802) },
         stateNow = { State(talk = false, queue = emptyList()) },
         port = port,
+        log = { logs += it },
     ).also { it.start() }
 
     @After fun tearDown() {
@@ -137,5 +139,68 @@ class ControlServerTest {
         c.sendRaw(Codec.frameText("""{"t":"future.thing","x":1}"""))
         c.send(MusicReady("x"))
         assertEquals(MusicReady("x"), (nextEvent() as ControlServer.Event.Received).message)
+    }
+
+    private fun noEvent(ms: Long = 300) =
+        assertNull(runBlocking { kotlinx.coroutines.withTimeoutOrNull(ms) { server.events.receive() } })
+
+    private fun waitFor(what: String, cond: () -> Boolean) {
+        val until = System.currentTimeMillis() + 3000
+        while (!cond()) {
+            if (System.currentTimeMillis() > until) throw AssertionError("timed out waiting for $what; log: $logs")
+            Thread.sleep(10)
+        }
+    }
+
+    /** PROTOCOL.md "Discovery" 4: a probe reads hello (+ state) and closes; the client is untouched. */
+    @Test
+    fun probesDoNotDisturbTheClient() {
+        val a = Client(port)
+        a.read(); a.read()
+        a.send(Hello(proto = 1, role = "client", name = "A"))
+        nextEvent()
+        // Several probes at once, as a client's parallel candidates and /24 sweep produce.
+        val probes = List(16) { Client(port) }
+        for (p in probes) {
+            assertTrue(p.read() is Hello)
+            assertTrue(p.read() is State)
+            p.socket.close()
+        }
+        waitFor("16 probe lines") { logs.count { it.startsWith("probe from 127.0.0.1 closed") } == 16 }
+        noEvent()
+        assertTrue(server.hasClient())
+        server.send(Announce("still here"))
+        assertEquals(Announce("still here"), a.read())
+        a.send(MusicReady("x"))
+        assertEquals(MusicReady("x"), (nextEvent() as ControlServer.Event.Received).message)
+    }
+
+    @Test
+    fun probeClosingWithoutReadingIsHarmless() {
+        // Closing with unread data makes the kernel send a reset instead of a FIN.
+        repeat(8) { Socket("127.0.0.1", port).close() }
+        waitFor("8 probe lines") { logs.count { it.startsWith("probe from") } == 8 }
+        noEvent()
+        // The accept loop survived.
+        val c = Client(port)
+        assertTrue(c.read() is Hello)
+    }
+
+    @Test
+    fun silentConnectionIsClosedBeforeHello() {
+        val c = Client(port)
+        c.read(); c.read()
+        now += ControlServer.PRE_HELLO_MS + 1
+        assertNull(c.read()) // EOF: the host closed it
+        waitFor("probe line") { logs.any { it.startsWith("probe from 127.0.0.1 closed: no hello") } }
+        noEvent()
+    }
+
+    @Test
+    fun stopClosesProbesToo() {
+        val c = Client(port)
+        c.read(); c.read()
+        server.stop()
+        assertNull(runCatching { c.read() }.getOrNull())
     }
 }

@@ -19,6 +19,16 @@ uv sync            # Python 3.14 venv with sounddevice + zeroconf (+ pytest for 
 uv run pytest      # unit tests + host/client integration tests on localhost
 ```
 
+The tests never announce anything on a real network. The Bonjour tests register on
+127.0.0.1 only (zeroconf `interfaces=["127.0.0.1"]`) with a 10 s TTL, and the integration
+tests run the host with `--no-mdns`. A test service on the riders' Wi-Fi (or the USB tether)
+would sit in the phones' mDNS caches and the apps would chase it. The one test that uses the
+real LAN is opt-in, and uses the same 10 s TTL:
+
+```sh
+MOTOPARTY_LAN_TESTS=1 .venv/bin/python -m pytest -q tests/test_discovery.py
+```
+
 System libraries (libopus is loaded with ctypes, PortAudio through `sounddevice`):
 
 | Needed for | Arch package | Notes |
@@ -30,15 +40,22 @@ System libraries (libopus is loaded with ctypes, PortAudio through `sounddevice`
 
 ## Client: `uv run motoparty-peer client [options]`
 
-With no `--host`, the client browses `_motoparty._tcp` for 3 s. If nothing answers, it sweeps
-port 47800 on every address of its own /24 (64 in parallel, 400 ms connect timeout) and takes
-the first address that answers with a valid host `hello`. `--host IP` skips discovery. It
-reconnects on its own after link loss (6 s with nothing received) or a `bye`.
+With no `--host`, the client discovers the host as PROTOCOL.md "Discovery" says. It browses
+`_motoparty._tcp` and treats every result as a candidate. Each one is probed in parallel as it
+appears: a TCP connect (3 s), then 1 s to receive the host's `hello`. A probe sends nothing,
+so it never replaces the host's current client. 3 s in, it also sweeps port 47800 on every
+address of its own /24 alongside (64 in parallel, 400 ms connect, 1 s for the hello). The
+first valid host `hello` wins. If the host it linked to last also answers within 250 ms, that
+one wins instead. Only then does it close the probe and do the real handshake (client `hello`)
+with the winner. A candidate that fails (including a failed handshake) is not probed again for
+10 s. Stale Bonjour candidates are retried after that, and the sweep repeats, until a host
+answers. `--host IP` skips discovery. It reconnects on its own after link loss (6 s with
+nothing received) or a `bye`, and the backoff table and the last host's name carry over.
 
 | Option | |
 |---|---|
 | `--host IP`, `--port N` | connect directly (default port 47800) |
-| `--no-mdns` | skip the Bonjour browse and go straight to the /24 sweep (e.g. to test the sweep on the Pixel's hotspot); not allowed with `--host` |
+| `--no-mdns` | skip the Bonjour browse and start the /24 sweep at once (e.g. to test the sweep on the Pixel's hotspot); not allowed with `--host` |
 | `--tone` | send 440 Hz beeps instead of the mic (400 ms on / 100 ms off; see notes) |
 | `--no-audio` | no sound devices at all. Received voice still runs through the jitter buffer and decoder on a 20 ms clock, and the stats get logged |
 | `--play` | play music with mpv/ffplay at the scheduled moment (otherwise the schedule is only logged) |
@@ -69,6 +86,16 @@ Stdin commands:
 A host `talk.close{by:"host",reason:"unavailable"}` in answer to our `talk.open` is logged as
 `TALK REFUSED by host: microphone unavailable`; talk never opened, so `state.talk` stays false.
 
+A host `talk.open{by, mic:"host"}` opens a **host-mic talk** (PROTOCOL.md "Talk flow", Host-mic
+talk), logged as `talk mode: host-mic (receive only)`. The client opens no microphone and sends
+no audio, even with `--tone`: keepalives only (`tx: audio=0`). It still plays the voice it
+receives. A client that joins mid-talk sees only `state`; a `state{talk:true, mic:"host"}`
+opens the talk the same receive-only way. `hear <phrase>` sends no `command.text` in such a talk (`skipped: host-mic talk`),
+because the host recognises commands itself. A mic marked unavailable (`--mic-unavailable` /
+`unavailable`) is no reason to refuse it, so the client accepts. A `talk.open` without `mic`
+behaves as before. (`say` stays ungated, so it can test how a host treats a stray
+`command.text`.)
+
 Output: `<<` lines are received messages and `>>` lines are sent ones, as compact JSON.
 Pongs print as `pong id=… rtt=…ms offset=…ms | estimate offset=…ms (rtt …ms)`. While talk
 is open, a `voice rx:` line every 2 s shows received / played / FEC / PLC / late / underruns,
@@ -86,7 +113,10 @@ the tone. Received audio is played through the adaptive jitter buffer.
 
 Advertises `<name>._motoparty._tcp` with TXT `proto=1 voice=47801 http=47802` and listens on
 47800/tcp, 47801/udp and 47802/tcp (`--port/--voice-port/--http-port`, where 0 means any free
-port; `--bind`; `--no-mdns`). The hello carries the real ports.
+port; `--bind`; `--no-mdns`). The hello carries the real ports. With `--bind` set to one
+address, the Bonjour announcement goes out on that interface only, so `--bind 127.0.0.1`
+stays off the Wi-Fi. A probe (a connection that never sends `hello`) gets the host's `hello`
+and `state`, then the host logs the close; nothing else changes.
 
 - One client at a time. A new `hello` replaces the old connection, which gets `bye{reason:"replaced"}`.
 - Answers `pong` with `t1` taken at frame receipt and `t2` at send. The clock is `CLOCK_MONOTONIC` in ms.
@@ -95,6 +125,16 @@ port; `--bind`; `--no-mdns`). The hello carries the real ports.
   `talk.close{by:"host",reason:"unavailable"}` instead — talk never opens, `state.talk` stays
   false and nothing else is broadcast. Talk ends on a trigger (either side), or with `"link"`
   on link loss; never on silence.
+  With `--host-mic` (or stdin `hostmic on`) it decides talks as **host-mic talks**:
+  `talk.open{by, mic:"host"}`, logged `TALK OPEN (by <side>, host-mic)`, and every `state`
+  sent while that talk is open carries `mic:"host"` (so a client that joins mid-talk knows). The mode is fixed at the
+  open, so toggling `hostmic` changes only the next talk. In such a talk it drops client audio
+  packets without echoing them, counts them (`dropped=` in the voice stats line, and
+  `host-mic talk: dropped N client audio packets` at the close), and ignores any `command.text`.
+  Its `hear` then stands for the ASR on the opener's channel. In a client-opened talk that is
+  the passenger's first phrase, acted on as the client's command (e.g. `over` closes with
+  `by:"client"`); a volume phrase there is ignored with no announce. A `mic` on a client's
+  request is logged and ignored.
   Music that was playing is frozen during talk and resumed with `music.play` at
   `now + 1500 ms`.
 - Voice: replies to the source of the most recent valid packet from the client's IP. While
@@ -132,6 +172,11 @@ port; `--bind`; `--no-mdns`). The hello carries the real ports.
     playing" when nothing would have resumed). It also covers a `next`/`previous` still loading.
   - `next`/`previous` keep it open: the track loads (`music.load`) but stays paused until the
     talk closes, then starts in place of the old one.
+  - `nowplaying` and `shuffle` keep it open. `nowplaying` announces "<title> by <artist>" (the
+    title alone with an empty artist) for the current track, loading or paused included, else
+    "Nothing playing" (error earcon). `shuffle` shuffles the upcoming queue (the current track
+    stays), sends `state`, then "Shuffled"; with fewer than 2 upcoming, "Nothing to shuffle"
+    (error earcon).
   - Unmatched text gets `{"text":"Didn't catch that","earcon":"error"}` (a client's first
     `command.text`, or a solo phrase), and so does a volume utterance in `command.text`:
     volume is local and should never arrive here.
@@ -141,6 +186,7 @@ port; `--bind`; `--no-mdns`). The hello carries the real ports.
 Stdin commands: `load` (sends `music.load`, then `music.play` 300 ms ahead once
 `music.ready` arrives, or after 8 s / on `music.error`), `play`, `pause`, `stop`, `talk`,
 `mic on|off` (bare `mic` toggles; `off` refuses the client's `talk.open` as `unavailable`),
+`hostmic on|off` (bare `hostmic` toggles; `on` makes the next talks host-mic talks),
 `hear <phrase>` (the host's own ASR, see Commands above), `announce <text>`, `state`, `stats`, `raw <json>`, `quit`.
 
 ## Bench recipes
@@ -236,6 +282,11 @@ Then, from the iPhone app, check each of these:
 - With talk open (host `talk`), make the iPhone lose its mic (start a call, revoke the
   permission): it should send `talk.close{by:"client",reason:"unavailable"}`, which the fake
   host treats like any close request — it closes talk and broadcasts `talk.close` + `state`.
+- Type `hostmic on`, then trigger talk (either side): the iPhone gets `talk.open{…,mic:"host"}`.
+  It must open no mic, stay in media mode, pause music and send keepalives only. The host's
+  stats show `audio=0` and `dropped=0`, and a nonzero `dropped` means the iPhone is still
+  sending audio. It must also send no `command.text`. The fake host sends no voice of its own
+  (it only echoes), so the iPhone hears silence.
 
 ### Two peers on one laptop
 
@@ -244,8 +295,9 @@ uv run motoparty-peer host --track song.m4a --no-mdns          # terminal 1
 uv run motoparty-peer client --host 127.0.0.1 --tone --play    # terminal 2 (you hear your own beeps echoed)
 ```
 
-The /24 sweep skips the laptop's own addresses (per spec), so use `--host 127.0.0.1`, or let
-Bonjour find the local host by leaving out `--no-mdns`.
+The /24 sweep skips the laptop's own addresses (per spec), so use `--host 127.0.0.1`. To test
+Bonjour locally, run the host with `--bind 127.0.0.1` and no `--no-mdns`, which announces on
+loopback only. The client browses every interface, so it finds it there.
 
 ## Protocol notes
 
@@ -260,7 +312,8 @@ Android/iOS implementations should match them, or PROTOCOL.md should say otherwi
 - an explicit `null`.
 
 Unknown fields are dropped on decode. A client hello's `voicePort`/`httpPort` are dropped,
-and a host hello without them is invalid. `title` and `artist` are required in `music.load`,
+and a host hello without them is invalid. A `state.mic` on `talk:false` is dropped too (the
+message is kept): the spec only says the host sends it while talk is true. `title` and `artist` are required in `music.load`,
 `queue` is required in `state`, and all seven `state.music` fields are required. Only an
 oversize length (> 65536; exactly 65536 is allowed) closes the connection.
 
@@ -329,10 +382,25 @@ CELT-only and other packets count as activity. Why:
 - "Nothing playing" means no current track (no `state.music` and no load in flight); a paused
   track counts as current.
 - `"now"` and `"jump"` push the old current track onto the `previous` history.
+- Play by touch ends a talk: a `mode:"now"` enqueue (as sent; not a `next`/`end` that acts like
+  `now` because nothing is playing) or a valid `jump` edit during a talk sends
+  `talk.close{by:"client",reason:"trigger"}` + `state` first, like a spoken `play …`; the new
+  track's `music.play` is never sooner than 1500 ms after the close, and an earlier spoken
+  `pause` no longer holds it back. An enqueue left with no tracks or a stale `jump` leaves the
+  talk open.
 - The 200 cap applies to the tracks of one enqueue and to the resulting upcoming queue
   (the tail is dropped).
 - A `jump`/`remove` without `index` and `id` is decoded fine and then ignored, like a stale one.
 
-**Discovery.** During the sweep, a candidate that accepts the TCP connection gets 1 s to
-send its hello; the spec's 400 ms covers only the connect. The connection that wins the
-sweep is kept as the control connection.
+**Discovery.**
+
+- "Several answer at once" means within 250 ms of the first valid `hello`. Without a
+  preferred name (nothing linked yet), the first answer wins with no wait.
+- Bonjour candidates whose 10 s backoff has run out are probed again (checked every 0.5 s)
+  while discovery runs. The sweep repeats once a round ends (1 s pause), skipping addresses
+  still backed off.
+- The probe connection is closed, and the control connection is a new one: the client never
+  sends `hello` on a probe. A handshake that fails on the winner backs it off like a failed
+  probe.
+- A Bonjour result's TXT is only checked against the winner's `hello`, and a mismatch is only
+  logged.

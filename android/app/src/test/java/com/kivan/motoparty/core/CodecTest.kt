@@ -116,6 +116,31 @@ class CodecTest {
         assertEquals(Announce("hi", null), Codec.decode("""{"t":"announce","text":"hi"}"""))
     }
 
+    /** PROTOCOL.md "Host-mic talk": `mic` is optional on `talk.open` and `state`, and only ever "host". */
+    @Test
+    fun hostMicIsOptionalAndOnlyHost() {
+        assertEquals("""{"t":"talk.open","by":"host"}""", Codec.encode(TalkOpen(Role.HOST)))
+        assertEquals("""{"t":"talk.open","by":"client","mic":"host"}""", Codec.encode(TalkOpen(Role.CLIENT, Mic.HOST)))
+        assertEquals(TalkOpen(Role.HOST, Mic.HOST), Codec.decode("""{"t":"talk.open","by":"host","mic":"host"}"""))
+        assertEquals(TalkOpen(Role.CLIENT), Codec.decode("""{"t":"talk.open","by":"client"}"""))
+        assertEquals("""{"t":"state","talk":false,"queue":[]}""", Codec.encode(State(talk = false, queue = emptyList())))
+        assertEquals(
+            """{"t":"state","talk":true,"queue":[],"mic":"host"}""",
+            Codec.encode(State(talk = true, queue = emptyList(), mic = Mic.HOST)),
+        )
+        for (json in listOf(
+            """{"t":"talk.open","by":"host","mic":"client"}""",
+            """{"t":"talk.open","by":"host","mic":1}""",
+            """{"t":"state","talk":true,"queue":[],"mic":"earbuds"}""",
+        )) {
+            try {
+                Codec.decode(json)
+                fail("accepted $json")
+            } catch (_: MalformedMessageException) {
+            }
+        }
+    }
+
     @Test
     fun fatalVectorsCloseTheConnection() {
         val fatal = Fixtures.load("control/framing.json").jsonObject["fatal"]!!.jsonArray

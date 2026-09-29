@@ -33,14 +33,9 @@ final class AppVolumeTests: XCTestCase {
         XCTAssertEqual(silent, AppVolume.Gains(talkVolume: 0, talkBoostDb: 0, musicVolume: 0, cueVolume: 0))
     }
 
-    func testSystemVolumeMapsBothWays() {
-        XCTAssertEqual(AppVolume.level(forSystemVolume: 1), 16)
-        XCTAssertEqual(AppVolume.level(forSystemVolume: 15.0 / 16), 15)
-        XCTAssertEqual(AppVolume.level(forSystemVolume: 0.5), 8)
-        XCTAssertEqual(AppVolume.level(forSystemVolume: 0.5 + 0.02), 8)  // float noise
-        XCTAssertEqual(AppVolume.level(forSystemVolume: 0), 0)
-        XCTAssertEqual(AppVolume.level(forSystemVolume: 1.2), 16)
-        XCTAssertEqual(AppVolume.level(forSystemVolume: -0.1), 0)
+    func testDefaultLevelAndReleaseVolume() {
+        XCTAssertEqual(AppVolume.defaultLevel, 12)
+        XCTAssertEqual(AppVolume.db(AppVolume.defaultLevel), -9)
         XCTAssertEqual(AppVolume.systemVolume(forLevel: 8), 0.5)
         XCTAssertEqual(AppVolume.systemVolume(forLevel: 16), 1)
         XCTAssertEqual(AppVolume.systemVolume(forLevel: 40), 1)
@@ -54,10 +49,11 @@ final class VolumeKeyGateTests: XCTestCase {
     private var above: Float { park + step }
     private var below: Float { park - step }
 
-    /// Armed at `volume` and parked: the park's own reading has arrived.
-    private func armed(at volume: Float = 0.5, nowMs: Double = 0) -> VolumeKeyGate {
+    /// Armed at app `level` (system volume 0.5) and parked: the park's own
+    /// reading has arrived.
+    private func armed(level: Int = 8, nowMs: Double = 0) -> VolumeKeyGate {
         var gate = VolumeKeyGate()
-        XCTAssertEqual(gate.setArmed(true, volume: volume, nowMs: nowMs), .park)
+        XCTAssertEqual(gate.arm(level: level, volume: 0.5, nowMs: nowMs), .park)
         XCTAssertEqual(gate.observe(park, nowMs: nowMs + 20), .ownReset)
         return gate
     }
@@ -87,41 +83,82 @@ final class VolumeKeyGateTests: XCTestCase {
         XCTAssertNil(gate.nudge(by: 1))
     }
 
-    func testArmStartsAtTheMatchingLevelAndParks() {
+    func testArmStartsAtTheGivenLevelNotTheSystemVolume() {
         var gate = VolumeKeyGate()
-        XCTAssertEqual(gate.setArmed(true, volume: 0.5, nowMs: 0), .park)
+        // Device log 2026-09-29: system 0.2 at connect used to mean level 3
+        // (-36 dB) behind a system volume reading 94%.
+        XCTAssertEqual(gate.arm(level: AppVolume.defaultLevel, volume: 0.2, nowMs: 0), .park)
         XCTAssertTrue(gate.armed)
-        XCTAssertEqual(gate.level, 8)
+        XCTAssertEqual(gate.level, 12)
         XCTAssertEqual(gate.observe(park, nowMs: 30), .ownReset)
         // Arming again (already armed) changes nothing.
-        XCTAssertEqual(gate.setArmed(true, volume: 0.2, nowMs: 50), .none)
-        XCTAssertEqual(gate.level, 8)
+        XCTAssertEqual(gate.arm(level: 3, volume: 0.2, nowMs: 50), .none)
+        XCTAssertEqual(gate.level, 12)
 
         var loud = VolumeKeyGate()
-        XCTAssertEqual(loud.setArmed(true, volume: 1, nowMs: 0), .park)
+        XCTAssertEqual(loud.arm(level: 40, volume: 0.1, nowMs: 0), .park)
         XCTAssertEqual(loud.level, 16)
+        var silent = VolumeKeyGate()
+        XCTAssertEqual(silent.arm(level: -2, volume: 1, nowMs: 0), .park)
+        XCTAssertEqual(silent.level, 0)
+    }
+
+    func testParkInTransitIsNotAKey() {
+        // Device log 2026-09-29: armed at 0.2 (level 3), and a reading on the
+        // way to the park 18 ms later stepped the level to 4.
+        var gate = VolumeKeyGate()
+        XCTAssertEqual(gate.arm(level: 3, volume: 0.2, nowMs: 0), .park)
+        XCTAssertEqual(gate.level, 3)
+        XCTAssertEqual(gate.observe(0.25, nowMs: 18), .none)
+        XCTAssertEqual(gate.observe(0.6, nowMs: 30), .none)
+        XCTAssertEqual(gate.observe(park, nowMs: 40), .ownReset)
+        XCTAssertEqual(gate.level, 3)
+        // Parked, keys count again.
+        XCTAssertEqual(up(&gate, at: 1_000), .step(level: 4))
+        XCTAssertEqual(down(&gate, at: 2_000), .step(level: 3))
+
+        // Once the park is no longer expected, a reading there is a key.
+        var late = VolumeKeyGate()
+        XCTAssertEqual(late.arm(level: 3, volume: 0.2, nowMs: 0), .park)
+        XCTAssertEqual(late.observe(0.25, nowMs: VolumeKeyGate.ownChangeMs + 1), .step(level: 4))
+    }
+
+    func testHfpParkReadingIsTheParkNotAKey() {
+        // Device log 2026-09-29: in an HFP talk the park reads back as 0.95.
+        var gate = armed(level: 8)
+        XCTAssertEqual(gate.settle(nowMs: 1_000), .park)
+        XCTAssertEqual(gate.observe(0.95, nowMs: 1_100), .ownReset)
+        XCTAssertEqual(gate.endSettle(nowMs: 2_600), .park)
+        XCTAssertEqual(gate.observe(0.95, nowMs: 2_620), .ownReset)
+        // A key moves it off (up to 1, down a 1/20 step), and the 0.95 reset
+        // that follows is the park, not the opposite key.
+        XCTAssertEqual(gate.observe(1, nowMs: 4_000), .step(level: 9))
+        XCTAssertEqual(gate.observe(0.95, nowMs: 4_010), .ownReset)
+        XCTAssertEqual(gate.observe(0.9, nowMs: 6_000), .step(level: 8))
+        XCTAssertEqual(gate.observe(0.95, nowMs: 6_010), .ownReset)
+        XCTAssertEqual(gate.level, 8)
     }
 
     func testDisarmHandsTheLevelBackToTheSystemVolume() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
-        XCTAssertEqual(gate.setArmed(false, volume: park, nowMs: 2_000), .release(volume: 9.0 / 16))
+        XCTAssertEqual(gate.disarm(volume: park, nowMs: 2_000), .release(volume: 9.0 / 16))
         XCTAssertFalse(gate.armed)
         // Disarmed: readings are the system's again.
         XCTAssertEqual(gate.observe(park, nowMs: 2_050), .none)
         XCTAssertEqual(gate.observe(9.0 / 16, nowMs: 2_100), .none)
-        XCTAssertEqual(gate.setArmed(false, volume: 9.0 / 16, nowMs: 2_200), .none)
+        XCTAssertEqual(gate.disarm(volume: 9.0 / 16, nowMs: 2_200), .none)
 
-        var top = armed(at: 1)
+        var top = armed(level: 16)
         XCTAssertEqual(up(&top, at: 1_000), .step(level: 16))
-        XCTAssertEqual(top.setArmed(false, volume: park, nowMs: 2_000), .release(volume: 1))
+        XCTAssertEqual(top.disarm(volume: park, nowMs: 2_000), .release(volume: 1))
     }
 
     // MARK: Park and own resets
 
     func testParkReadingOnlyCountsWhileExpected() {
         var gate = VolumeKeyGate()
-        XCTAssertEqual(gate.setArmed(true, volume: park, nowMs: 0), .park)
+        XCTAssertEqual(gate.arm(level: 15, volume: park, nowMs: 0), .park)
         // Already at the park: the reset makes no reading, and the expectation
         // just expires; a later park-level reading is nothing.
         XCTAssertEqual(gate.observe(park, nowMs: 2_000), .none)
@@ -152,7 +189,7 @@ final class VolumeKeyGateTests: XCTestCase {
     // MARK: Single presses
 
     func testSinglePressesStepTheAppLevel() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
         XCTAssertEqual(gate.lastKey, .up)
         XCTAssertNil(gate.lastGapMs)
@@ -166,11 +203,11 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testAppLevelIsClamped() {
-        var gate = armed(at: 1)
+        var gate = armed(level: 16)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 16))
         XCTAssertEqual(up(&gate, at: 3_000), .step(level: 16))
 
-        var quiet = armed(at: 1.0 / 16)
+        var quiet = armed(level: 1)
         XCTAssertEqual(quiet.level, 1)
         XCTAssertEqual(down(&quiet, at: 1_000), .step(level: 0))
         XCTAssertEqual(down(&quiet, at: 3_000), .step(level: 0))
@@ -179,16 +216,16 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testSpokenCommandsNudgeTheLevel() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(gate.nudge(by: 1), 9)
         XCTAssertEqual(gate.nudge(by: -1), 8)
         XCTAssertEqual(gate.nudge(by: -1), 7)
         // The disarm hands the nudged level back.
-        XCTAssertEqual(gate.setArmed(false, volume: park, nowMs: 1_000), .release(volume: 7.0 / 16))
+        XCTAssertEqual(gate.disarm(volume: park, nowMs: 1_000), .release(volume: 7.0 / 16))
     }
 
     func testThreeQuickTapsAreThreeSteps() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
         XCTAssertEqual(up(&gate, at: 1_180), .step(level: 10))
         XCTAssertEqual(up(&gate, at: 1_360), .step(level: 11))
@@ -199,7 +236,7 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testIrregularTapsNeverToggle() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         // Gaps a finger makes: the later ones too slow for key repeat.
         var t = 1_000.0
         var level = 8
@@ -211,7 +248,7 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testDownBreaksABurst() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
         XCTAssertEqual(up(&gate, at: 1_500), .step(level: 10))
         XCTAssertEqual(down(&gate, at: 1_600), .step(level: 9))
@@ -233,7 +270,7 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testHoldTogglesOnceRevertsAndAbsorbs() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         hold(&gate, from: 1_000, startLevel: 8)
         XCTAssertEqual(gate.level, 8)
         for i in 1...20 {
@@ -247,25 +284,25 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testHoldAtTheTopStillToggles() {
-        var gate = armed(at: 1)
+        var gate = armed(level: 16)
         hold(&gate, from: 1_000, startLevel: 16)
         XCTAssertEqual(gate.level, 16)
     }
 
     func testFirstGapBound() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
         // Inclusive.
         XCTAssertEqual(up(&gate, at: 1_000 + VolumeKeyGate.firstRepeatGapMs), .step(level: 10))
         XCTAssertEqual(gate.burstCount, 2)
-        var late = armed(at: 0.5)
+        var late = armed(level: 8)
         XCTAssertEqual(up(&late, at: 1_000), .step(level: 9))
         XCTAssertEqual(up(&late, at: 1_001 + VolumeKeyGate.firstRepeatGapMs), .step(level: 10))
         XCTAssertEqual(late.burstCount, 1)
     }
 
     func testRepeatGapBoundAfterTheFirst() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
         XCTAssertEqual(up(&gate, at: 1_500), .step(level: 10))
         // Inclusive; one slower gap and the burst starts over at this press.
@@ -280,7 +317,7 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testHoldAfterSteppingRevertsToTheNewLevel() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
         XCTAssertEqual(down(&gate, at: 3_000), .step(level: 8))
         XCTAssertEqual(down(&gate, at: 5_000), .step(level: 7))
@@ -290,7 +327,7 @@ final class VolumeKeyGateTests: XCTestCase {
     func testSlowResetsDoNotBreakAHold() {
         // Each reset's reading arrives late, just before the next repeat:
         // every up is still one step from the latest reading.
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(gate.observe(above, nowMs: 1_000), .step(level: 9))
         XCTAssertEqual(gate.observe(park, nowMs: 1_400), .ownReset)
         XCTAssertEqual(gate.observe(above, nowMs: 1_500), .step(level: 10))
@@ -303,7 +340,7 @@ final class VolumeKeyGateTests: XCTestCase {
     // MARK: Settling
 
     func testRouteJumpIsNotAKeyAndIsParked() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 9_800), .step(level: 9))
         // Talk opens: HFP has its own level; the burst is forgotten.
         XCTAssertEqual(gate.settle(nowMs: 10_000), .park)
@@ -331,14 +368,14 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testReadingAfterTheWindowWithoutItsTimerIsAKey() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(gate.settle(nowMs: 1_000), .park)
         XCTAssertEqual(gate.observe(park, nowMs: 1_010), .ownReset)
         XCTAssertEqual(gate.observe(above, nowMs: 1_000 + VolumeKeyGate.settleMs + 1), .step(level: 9))
     }
 
     func testHoldThatOpensTalkStaysAbsorbedAcrossTheSettle() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         hold(&gate, from: 1_000, startLevel: 8)
         // The toggle opens talk: the session switches while the key is still held.
         XCTAssertEqual(gate.settle(nowMs: 1_750), .park)
@@ -360,18 +397,19 @@ final class VolumeKeyGateTests: XCTestCase {
     }
 
     func testDisarmForgetsEverything() {
-        var gate = armed(at: 0.5)
+        var gate = armed(level: 8)
         XCTAssertEqual(up(&gate, at: 1_000), .step(level: 9))
         XCTAssertEqual(up(&gate, at: 1_500), .step(level: 10))
         XCTAssertEqual(gate.settle(nowMs: 1_600), .park)
-        XCTAssertEqual(gate.setArmed(false, volume: park, nowMs: 1_650), .release(volume: 10.0 / 16))
+        XCTAssertEqual(gate.disarm(volume: park, nowMs: 1_650), .release(volume: 10.0 / 16))
         XCTAssertEqual(gate.observe(0.3, nowMs: 1_700), .none)
-        // Re-armed at what the system volume is now.
-        XCTAssertEqual(gate.setArmed(true, volume: 0.25, nowMs: 1_750), .park)
-        XCTAssertEqual(gate.level, 4)
+        // Re-armed at the level it is given (the app remembers 10), whatever
+        // the system volume is now.
+        XCTAssertEqual(gate.arm(level: 10, volume: 0.25, nowMs: 1_750), .park)
+        XCTAssertEqual(gate.level, 10)
         XCTAssertEqual(gate.observe(park, nowMs: 1_760), .ownReset)
         // Not settling any more, and a new burst.
-        XCTAssertEqual(up(&gate, at: 1_800), .step(level: 5))
+        XCTAssertEqual(up(&gate, at: 1_800), .step(level: 11))
         XCTAssertEqual(gate.burstCount, 1)
     }
 }

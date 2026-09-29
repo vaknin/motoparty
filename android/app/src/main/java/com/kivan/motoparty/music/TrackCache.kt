@@ -28,6 +28,8 @@ class TrackCache(
     private val scope: CoroutineScope,
     private val maxBytes: Long = 1L shl 30,
     private val remux: (webm: File, mp4: File) -> Unit = { _, _ -> throw IOException("no remuxer") },
+    /** A download finished (and may have evicted others). Called on the download's thread. */
+    private val onChange: () -> Unit = {},
 ) {
     /** Where a track's audio is downloaded from; [webm] needs remuxing to MP4. */
     data class Source(val url: String, val webm: Boolean)
@@ -113,6 +115,7 @@ class TrackCache(
             throw IOException("rename failed for $id")
         }
         evict(keep = target)
+        onChange()
         target
     }
 
@@ -131,6 +134,10 @@ class TrackCache(
             f.delete()
         }
     }
+
+    /** The ids of every complete file in the cache. */
+    fun ids(): Set<String> =
+        dir.list()?.filter { it.endsWith(".m4a") }?.map { it.removeSuffix(".m4a") }?.toSet() ?: emptySet()
 
     fun sizeBytes(): Long = dir.listFiles { f -> f.name.endsWith(".m4a") }?.sumOf { it.length() } ?: 0
 
@@ -155,7 +162,18 @@ class TrackCache(
  * open. [opus] until a client reports an Opus-in-MP4 file as not decodable
  * ([MusicController.onClientError]); from then on, for this session, every track is AAC.
  */
-class TrackCaches(private val opusCache: TrackCache, private val aacCache: TrackCache) {
-    var opus = true
+class TrackCaches(private val opusCache: TrackCache, private val aacCache: TrackCache) : TrackStore {
+    override var opus = true
     val active: TrackCache get() = if (opus) opusCache else aacCache
+    override suspend fun ensure(id: String): File = active.ensure(id)
+    override fun cached(id: String): File? = active.cached(id)
+}
+
+/** What [MusicController] needs of the caches: the active one, and the Opus/AAC switch. */
+interface TrackStore {
+    var opus: Boolean
+    /** The active cache's file for [id], downloading it first if need be. */
+    suspend fun ensure(id: String): File
+    /** The active cache's complete file for [id], or null. */
+    fun cached(id: String): File?
 }

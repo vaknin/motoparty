@@ -5,6 +5,10 @@ trigger or a talk-ending command, never on silence), echoes voice back to the cl
 --track files, parses command.text (only the first of a talk the client opened, with its effect
 on the talk) and stdin `hear` phrases (the host's own first phrase, or solo talk), and answers the
 Browsing messages (search, browse, enqueue, edit) from those files.
+
+With --host-mic (or stdin `hostmic on`) it decides talks as host-mic talks (PROTOCOL.md "Talk flow",
+Host-mic talk): its talk.open carries mic:"host", it drops and counts any client audio in such a
+talk, and its `hear` stands for the ASR on the opener's channel of the two-channel receiver.
 """
 
 from __future__ import annotations
@@ -47,6 +51,7 @@ from .util import js, log, stdin_lines
 from .voice import VoiceProtocol
 
 HELP = """commands: load | play | pause | stop | talk | mic on|off (refuse talk as unavailable) |
+          hostmic on|off (next talks are host-mic talks: talk.open mic:"host") |
           hear <phrase> (recognised in the talk: first phrase rule, or every phrase solo) |
           announce <text> | state | stats | raw <json> (send unvalidated) | quit"""
 
@@ -75,6 +80,7 @@ class VoiceStats:
     active: int = 0
     echoed: int = 0
     foreign: int = 0
+    dropped: int = 0  # client audio in a host-mic talk (PROTOCOL.md "Voice"): dropped, never echoed
 
 
 class Host:
@@ -85,6 +91,11 @@ class Host:
         self.current: Conn | None = None
         self.talk = False
         self.mic_available = True  # `mic off`: refuse talk.open with reason "unavailable"
+        # --host-mic / `hostmic on`: the next talks open with mic:"host" (PROTOCOL.md "Host-mic
+        # talk"). talk_mic is this talk's mode, fixed at the open until it closes.
+        self.host_mic = bool(getattr(args, "host_mic", False))
+        self.talk_mic: str | None = None
+        self.talk_dropped = 0  # client audio packets dropped in this host-mic talk
         self.talk_opened = 0
         # PROTOCOL.md "Commands", The first phrase decides: who opened this talk, whether the
         # client's one command.text of it has arrived, and the host's own first-phrase gate.
@@ -136,9 +147,13 @@ class Host:
             log(f"track: {t.path} {t.title!r} by {t.artist!r} ({t.duration_ms} ms) <- {t.file}")
         adv = None
         if not a.no_mdns:
-            addrs = discovery.local_ipv4s() if a.bind in ("0.0.0.0", "") else [a.bind]
+            everywhere = a.bind in ("0.0.0.0", "")
+            addrs = discovery.local_ipv4s() if everywhere else [a.bind]
             try:
-                adv = discovery.Advertiser(self.name, self.port, self.voice_port, self.http_port, addrs)
+                # Bound to one address: announce only on that interface (e.g. 127.0.0.1 stays
+                # off the Wi-Fi).
+                adv = discovery.Advertiser(self.name, self.port, self.voice_port, self.http_port, addrs,
+                                           interfaces=None if everywhere else [a.bind])
                 await adv.start()
                 log(f"bonjour: advertising {adv.info.name!r} on {addrs}")
             except Exception as e:
@@ -181,6 +196,8 @@ class Host:
 
     def state(self) -> dict:
         s: dict = {"t": "state", "talk": self.talk}
+        if self.talk and self.talk_mic:
+            s["mic"] = self.talk_mic  # PROTOCOL.md `state`: a mid-talk joiner opens it the same way
         if self.music:
             s["music"] = dict(self.music)
         s["queue"] = [{"id": t.id, "title": t.title, "artist": t.artist} for t in self.queue]
@@ -222,7 +239,10 @@ class Host:
                     continue
                 if await self._on_message(c, msg, t1) == "close":
                     return
-        except (OSError, asyncio.CancelledError):
+        except OSError as e:  # e.g. a discovery probe: reads our hello, then closes (RST)
+            log(f"{ip}: connection closed ({type(e).__name__})")
+            return
+        except asyncio.CancelledError:
             return
         finally:
             watchdog.cancel()
@@ -280,6 +300,8 @@ class Host:
         if t == "bye":
             return "close"
         if t == "talk.open":
+            if "mic" in msg:
+                log("   (mic on a client request ignored: only the host's decision carries it)")
             if self.talk:
                 log("   talk already open")
                 self.send_state()
@@ -324,15 +346,21 @@ class Host:
         self.talk_opened = now
         self.talk_by = by
         self.client_command_seen = False
-        # The host's live earcon plays now; a talk with no client is solo.
-        role = "solo" if self.current is None else "opener" if by == "host" else "other"
+        self.talk_mic = "host" if self.host_mic else None
+        self.talk_dropped = 0
+        # The host's live earcon plays now; a talk with no client is solo. In a host-mic talk
+        # the host runs ASR on the opener's channel whoever opened it (PROTOCOL.md "Commands").
+        role = "solo" if self.current is None else "opener" if by == "host" or self.talk_mic else "other"
         self.gate = FirstPhraseGate(role, now)
         self.no_resume = False
         if self.music and self.music["playing"]:
             self._freeze_music(now)
             self.resume_after_talk = True
-        log(f"TALK OPEN (by {by})")
-        self.send({"t": "talk.open", "by": by})
+        msg = {"t": "talk.open", "by": by}
+        if self.talk_mic:
+            msg["mic"] = self.talk_mic
+        log(f"TALK OPEN (by {by}{', host-mic' if self.talk_mic else ''})")
+        self.send(msg)
         self.send_state()
 
     def _close_talk(self, by: str, reason: str) -> None:
@@ -340,6 +368,9 @@ class Host:
         self.talk_by = None
         self.gate = None
         log(f"TALK CLOSED (by {by}, {reason})")
+        if self.talk_mic:
+            log(f"host-mic talk: dropped {self.talk_dropped} client audio packets")
+        self.talk_mic = None
         self.send({"t": "talk.close", "by": by, "reason": reason}, quiet=self.current is None)
         # A track still loading (a `next` in the talk) starts by itself once ready, so the old
         # one does not resume in between; it keeps `no_resume` until then.
@@ -366,6 +397,13 @@ class Host:
             self.vstats.keepalive += 1
             return
         self.vstats.audio += 1
+        if self.talk and self.talk_mic == "host":
+            # PROTOCOL.md "Voice": in a host-mic talk only the host sends audio; drop the client's.
+            self.vstats.dropped += 1
+            self.talk_dropped += 1
+            if self.talk_dropped == 1:
+                log("voice: client audio in a host-mic talk; dropping it")
+            return
         if is_voice_activity(pkt.payload):
             self.vstats.active += 1
             self.last_activity = now_ms()
@@ -381,7 +419,7 @@ class Host:
             if self.talk or now_ms() - self.last_voice_rx < 2500 and self.vstats.audio:
                 v = self.vstats
                 log(f"voice: audio={v.audio} active={v.active} keepalive={v.keepalive} echoed={v.echoed} "
-                    f"foreign={v.foreign} silent_for={now_ms() - max(self.talk_opened, self.last_activity)}ms")
+                    f"dropped={v.dropped} foreign={v.foreign} silent_for={now_ms() - max(self.talk_opened, self.last_activity)}ms")
 
     # ------------------------------------------------------------------ music
 
@@ -532,6 +570,8 @@ class Host:
             log("   (no playable tracks; enqueue ignored)")
             return
         mode = msg["mode"]
+        if mode == "now":
+            self._touch_play_ends_talk("client")
         if not self._has_current():
             mode = "now"  # nothing playing: next/end act like now
         if mode == "now":
@@ -559,6 +599,7 @@ class Host:
         if op == "remove":
             del self.queue[i]
         else:  # jump: the skipped tracks go behind the current one, so `previous` reaches them
+            self._touch_play_ends_talk("client")
             if self._has_current():
                 self.history.append(self.track)
             self.history += self.queue[:i]
@@ -566,12 +607,26 @@ class Host:
             self._start(track)
         self.send_state()
 
+    def _touch_play_ends_talk(self, by: str) -> None:
+        """PROTOCOL.md "Browsing" 3, Play by touch ends a talk: a `now` enqueue or a `jump` edit
+        during a talk closes it like a spoken `play` (by the side that touched); the new track
+        starts after the headset is back in media mode, instead of the old one resuming."""
+        if not self.talk:
+            return
+        log(f"   play by touch ends the talk (by {by})")
+        self.resume_after_talk = False
+        self._close_talk(by, "trigger")
+        self.no_resume = False  # an earlier spoken `pause` does not hold back what was just touched
+        self.media_at = now_ms() + RESUME_LEAD_MS
+
     def _client_command(self, text: str) -> None:
         """command.text from the client. The host enforces the first-phrase rule (PROTOCOL.md
         "Commands"): it acts only while a talk is open, the client opened it, and this is the
         first command.text of that talk. Any other is ignored and logged, with no announce."""
         if not self.talk:
             why = "no talk is open"
+        elif self.talk_mic == "host":
+            why = "host-mic talk: the host recognises the opener's channel, the client never does"
         elif self.talk_by != "client":
             why = "the client did not open this talk"
         elif self.client_command_seen:
@@ -584,13 +639,24 @@ class Host:
 
     def _hear(self, phrase: str) -> None:
         """A phrase the host's own ASR recognised on its talk microphone (stdin `hear`): its
-        first phrase in a talk it opened, or every non-empty phrase in a solo talk."""
+        first phrase in a talk it opened, or every non-empty phrase in a solo talk. In a
+        host-mic talk it is the opener's channel: the passenger's (right) when the client
+        opened the talk, acted on as if it were the client's command.text."""
         if not self.talk or self.gate is None:
             log("hear: no talk open; commands are spoken inside a talk")
             return
         text = self.gate.phrase(phrase, now_ms())
+        passenger = self.talk_mic == "host" and self.talk_by == "client" and self.current is not None
         if text is None:
             log(f"hear: {phrase!r} is conversation ({self.gate.why}), not acted on")
+        elif passenger:
+            if parse_command(text)["action"] in VOLUME_ACTIONS:
+                log(f"hear: {parse_command(text)['action']} on the passenger's channel ignored, "
+                    f"no announce (their volume keys do it)")
+            else:
+                log(f"hear: command {text!r} (passenger's channel, as the client's command)")
+                self.client_command_seen = True
+                self._command(text, "client")
         elif parse_command(text)["action"] in VOLUME_ACTIONS:
             log(f"local: {parse_command(text)['action']} handled here [earcon ok] "
                 f"(the peer has no real volume)")
@@ -654,6 +720,21 @@ class Host:
             title = pool[0 if a == "next" else -1].title
             self._music_control(a)
             self.send({"t": "announce", "text": f"{'Next' if a == 'next' else 'Back to'}: {title}", "earcon": "ok"})
+        elif a == "nowplaying":
+            t = self.track if self._has_current() else None
+            if t is None:
+                self.send({"t": "announce", "text": "Nothing playing", "earcon": "error"})
+            else:
+                text = f"{t.title} by {t.artist}" if t.artist else t.title
+                self.send({"t": "announce", "text": text, "earcon": "ok"})
+        elif a == "shuffle":
+            # the upcoming queue only; the current track stays (PROTOCOL.md "Commands")
+            if len(self.queue) < 2:
+                self.send({"t": "announce", "text": "Nothing to shuffle", "earcon": "error"})
+                return
+            random.shuffle(self.queue)
+            self.send_state()
+            self.send({"t": "announce", "text": "Shuffled", "earcon": "ok"})
         elif a in VOLUME_ACTIONS:
             # Volume is local: a client that sends a volume utterance is misbehaving
             # (PROTOCOL.md "Commands": "A host that still receives a volume utterance in
@@ -707,6 +788,20 @@ class Host:
                 log("mic UNAVAILABLE: a client talk.open is answered with "
                     "talk.close{by:'host',reason:'unavailable'}" if not self.mic_available
                     else "mic available again: a client talk.open opens talk")
+            elif cmd == "hostmic":
+                arg = rest.strip().lower()
+                if arg == "on":
+                    self.host_mic = True
+                elif arg == "off":
+                    self.host_mic = False
+                elif arg == "":
+                    self.host_mic = not self.host_mic
+                else:
+                    log("usage: hostmic on|off")
+                    continue
+                log(("host-mic ON: the next talk.open carries mic:'host'" if self.host_mic
+                     else "host-mic OFF: the next talk.open has no mic")
+                    + (" (the open talk keeps its mode)" if self.talk else ""))
             elif cmd == "hear":
                 if rest.strip():
                     self._hear(rest)

@@ -8,12 +8,17 @@ public enum LinkDefaults {
     public static let httpPort = 47802
     public static let pingIntervalMs = 2_000
     public static let livenessTimeoutMs = 6_000
+    /// The /24 sweep starts this long after discovery starts, whatever the browse shows.
     public static let bonjourGraceMs = 3_000
+    /// Bonjour probe: connect timeout, service resolution included.
+    public static let bonjourProbeTimeoutMs = 3_000
+    /// Bonjour candidates still unanswered are re-probed on this tick (backoff permitting).
+    public static let bonjourReprobeMs = 2_000
     public static let sweepParallelism = 64
     /// Sweep: TCP connect timeout per address…
     public static let sweepTimeoutMs = 400
-    /// …then how long to wait for the host's `hello`.
-    public static let sweepHelloTimeoutMs = 1_000
+    /// …then (sweep and Bonjour probes) how long to wait for the host's `hello`.
+    public static let probeHelloTimeoutMs = 1_000
     public static let keepaliveIntervalMs = 1_000
 }
 

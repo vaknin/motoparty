@@ -56,7 +56,10 @@ struct SearchView: View {
     @ViewBuilder
     private var results: some View {
         let list = model.searchResults
-        if list.loading {
+        let history = model.history
+        if query.isEmpty, !list.loading, !(history.searches.isEmpty && history.played.isEmpty) {
+            historyList(history)
+        } else if list.loading {
             ProgressView("Searching…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = list.error {
             ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
@@ -88,6 +91,75 @@ struct SearchView: View {
             }
             .listStyle(.plain)
             .scrollDismissesKeyboard(.immediately)
+        }
+    }
+}
+
+extension SearchView {
+    /// With an empty search box: recent searches (tap re-runs) and recently
+    /// played tracks (tap plays now). Kept on this phone only.
+    private func historyList(_ history: BrowseHistory) -> some View {
+        List {
+            if !history.searches.isEmpty {
+                Section {
+                    ForEach(history.searches, id: \.self) { entry in
+                        Button { rerun(entry) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
+                                Text(entry.query).lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text(entry.kind.label).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .frame(minHeight: 36)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!connected)
+                    }
+                } header: {
+                    HStack {
+                        Text("Recent searches")
+                        Spacer()
+                        Button("Clear") { model.clearRecentSearches() }
+                            .font(.subheadline)
+                            .textCase(nil)
+                    }
+                }
+            }
+            if !history.played.isEmpty {
+                Section("Recently played") {
+                    ForEach(history.played, id: \.id) { track in
+                        Button { model.playAgain(track) } label: {
+                            HStack(spacing: 12) {
+                                Artwork(url: track.art, size: 48)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(track.title).font(.body.weight(.medium)).lineLimit(1)
+                                    Text(TimeText.joined(track.artist, TimeText.clock(Double(track.durationMs))))
+                                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!connected)
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollDismissesKeyboard(.immediately)
+    }
+
+    /// Puts the entry back in the box and searches it; a kind change searches
+    /// through the picker's `onChange`.
+    private func rerun(_ entry: BrowseHistory.Search) {
+        query = entry.query
+        if kind == entry.kind {
+            model.search(kind, query: entry.query)
+        } else {
+            kind = entry.kind
         }
     }
 }

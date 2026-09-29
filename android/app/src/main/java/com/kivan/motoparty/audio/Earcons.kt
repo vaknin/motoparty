@@ -20,7 +20,7 @@ object Earcons {
         ERROR(listOf(330 to 160, 0 to 60, 330 to 160)),
     }
 
-    private const val RATE = 16_000
+    const val RATE = 16_000
 
     /**
      * Tracks still playing. The strong reference matters: the marker callback reaches Java
@@ -51,13 +51,34 @@ object Earcons {
     }
 
     /**
-     * Plays on its own static track. [call] selects the voice-communication usage so the tone
-     * follows the headset while it is in call mode; otherwise it is a sonification sound.
+     * The attributes of an earcon. [call]: voice communication, so the tone follows the headset
+     * while it is in call mode. Otherwise **media**, never `USAGE_ASSISTANCE_SONIFICATION`: that
+     * one plays on `STREAM_SYSTEM`, which the Pixel aliases to the ring stream and **mutes** when
+     * touch sounds are off / the ringer is on vibrate (`dumpsys audio`, 2026-09-29: "STREAM_SYSTEM
+     * Muted: true", every earcon track `muted … portVolume`). So every non-call earcon — the host-mic
+     * talk's LIVE, and every CLOSED, OK and ERROR — was played at volume 0 into the AirPods. Media is
+     * the stream the rider has turned up for the music.
      */
+    fun usage(call: Boolean): Int =
+        if (call) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA
+
+    /**
+     * [pcm] with [PREROLL_MS] of silence in front when it goes to the media route: a Bluetooth
+     * headset whose A2DP stream was idle (music paused, nothing else playing) starts rendering a
+     * little after the stream does, and would swallow the first note. The call route's tone is
+     * timed by [LiveCue] and stays as it was.
+     */
+    fun pcmFor(kind: Kind, call: Boolean): ShortArray {
+        val tone = pcm(kind)
+        if (call) return tone
+        return ShortArray(RATE * PREROLL_MS / 1000 + tone.size).also { tone.copyInto(it, RATE * PREROLL_MS / 1000) }
+    }
+
+    /** Plays on its own static track; see [usage] and [pcmFor]. */
     fun play(kind: Kind, call: Boolean) {
-        val data = pcm(kind)
+        val data = pcmFor(kind, call)
         val attrs = AudioAttributes.Builder()
-            .setUsage(if (call) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+            .setUsage(usage(call))
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
         val track = AudioTrack.Builder()
@@ -89,5 +110,7 @@ object Earcons {
     }
 
     private const val TAG = "Earcons"
+    /** Silence ahead of a media-route earcon (see [pcmFor]). */
+    const val PREROLL_MS = 150
     private const val RELEASE_SLACK_MS = 1_000L
 }

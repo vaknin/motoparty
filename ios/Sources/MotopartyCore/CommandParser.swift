@@ -15,6 +15,10 @@ public enum Command: Equatable, Sendable {
     case volumeDown
     /// Close the talk and change nothing else (PROTOCOL.md "Commands").
     case end
+    /// The host announces the current track; the talk stays open.
+    case nowPlaying
+    /// The host shuffles the upcoming queue; the talk stays open.
+    case shuffle
     case unknown
 
     public enum Kind: String, Equatable, Sendable, CaseIterable {
@@ -32,6 +36,8 @@ public enum Command: Equatable, Sendable {
         case .volumeUp: "volumeUp"
         case .volumeDown: "volumeDown"
         case .end: "end"
+        case .nowPlaying: "nowplaying"
+        case .shuffle: "shuffle"
         case .unknown: "unknown"
         }
     }
@@ -50,6 +56,9 @@ public enum CommandParser {
         "volume up": .volumeUp, "louder": .volumeUp,
         "volume down": .volumeDown, "quieter": .volumeDown,
         "over": .end, "end talk": .end, "hang up": .end,
+        "what's playing": .nowPlaying, "whats playing": .nowPlaying,
+        "what is playing": .nowPlaying, "what song is this": .nowPlaying,
+        "shuffle": .shuffle,
     ]
 
     private static let kinds: [String: Command.Kind] =

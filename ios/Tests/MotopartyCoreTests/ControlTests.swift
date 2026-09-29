@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 32)
+        XCTAssertEqual(messages.count, 34)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -192,7 +192,7 @@ final class FramingFixtureTests: XCTestCase {
     func testMalformedMessagesAreDroppedNotFatal() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let malformed = try XCTUnwrap(fixture["malformed"] as? [[String: Any]])
-        XCTAssertEqual(malformed.count, 10, "every malformed vector must be exercised")
+        XCTAssertEqual(malformed.count, 12, "every malformed vector must be exercised")
         for m in malformed {
             let json = try XCTUnwrap(m["json"] as? String)
             // Framed and received like any other frame…

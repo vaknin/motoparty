@@ -11,6 +11,10 @@ sealed interface Command {
     data object VolumeDown : Command
     /** "over" / "end talk" / "hang up": close the talk and change nothing else. */
     data object End : Command
+    /** "what's playing": announce the current track (2026-09-30). */
+    data object NowPlaying : Command
+    /** "shuffle": shuffle the upcoming queue, the current track stays (2026-09-30). */
+    data object Shuffle : Command
     data object Unknown : Command
 
     enum class Kind(val word: String) { SONG("song"), ALBUM("album"), ARTIST("artist"), PLAYLIST("playlist") }
@@ -27,6 +31,9 @@ object CommandParser {
         "volume up" to Command.VolumeUp, "louder" to Command.VolumeUp,
         "volume down" to Command.VolumeDown, "quieter" to Command.VolumeDown,
         "over" to Command.End, "end talk" to Command.End, "hang up" to Command.End,
+        "what's playing" to Command.NowPlaying, "whats playing" to Command.NowPlaying,
+        "what is playing" to Command.NowPlaying, "what song is this" to Command.NowPlaying,
+        "shuffle" to Command.Shuffle,
     )
 
     /** PROTOCOL.md "Commands": per code point, keep letters, marks, numbers, `'` and whitespace. */

@@ -4,6 +4,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -354,6 +355,65 @@ class SyncControllerTest {
         assertEquals("the trim is not drift: no nudge", 1f, player.speed)
     }
 
+    // --- the trim follows the output route (first two-phone run, 2026-09-29) ---
+
+    @Test
+    fun `a trim change while playing is absorbed by a nudge, not a restart`() = runTest {
+        val player = FakePlayer(now = { currentTime })
+        var trim = 260
+        val sync = SyncController(player, backgroundScope, hostNow = { currentTime }, trimMs = { trim })
+        val lines = logged(sync)
+        val anchor = Anchor("t1", 0, currentTime + 1_000, playing = true)
+        sync.apply(anchor)
+        advanceTimeBy(firstCheckAfter(1_000) + 3_000)
+        val seeks = player.seeks.size
+        val plays = player.calls.count { it.endsWith(" play") }
+
+        // The AirPods went away: the speaker's trim is 0, so the player is now 260 ms ahead.
+        trim = 0
+        sync.retrim(260, 0, "Phone speaker")
+        assertEquals("trim 260 -> 0 ms, route Phone speaker", lines.last().line)
+        // Re-read at once (two filtered readings to confirm), not at the next 10 s check.
+        untilNudge(player, withinMs = 2 * SyncController.FILTER_SPAN_MS + 500)
+        advanceTimeBy(40_000)
+
+        val ahead = player.positionMs - anchor.expectedAt(currentTime)
+        assertTrue("now on the timeline, got $ahead ms", abs(ahead) <= SyncController.RESYNC_MS)
+        assertEquals("no re-seek", seeks, player.seeks.size)
+        assertEquals("no restart", plays, player.calls.count { it.endsWith(" play") })
+    }
+
+    @Test
+    fun `a trim change before the start plays is simply used by it`() = runTest {
+        val player = FakePlayer(now = { currentTime })
+        var trim = 260
+        val sync = SyncController(player, backgroundScope, hostNow = { currentTime }, trimMs = { trim })
+        val anchor = Anchor("t1", 0, currentTime + 2_000, playing = true)
+        sync.apply(anchor)
+        advanceTimeBy(500)
+        trim = 0
+        sync.retrim(260, 0, "Phone speaker")
+        runCurrent()
+        assertEquals("the start is redone with the new trim", listOf(260L, 0L), player.seeks)
+        advanceTimeBy(firstCheckAfter(1_500) + 100)
+        val drift = player.positionMs - anchor.expectedAt(currentTime)
+        assertTrue("drift $drift ms", abs(drift) < SyncController.RESYNC_MS)
+        assertEquals("no nudge: ${player.calls}", emptyList<String>(), player.nudges())
+    }
+
+    @Test
+    fun `a trim change while paused only logs`() = runTest {
+        val player = FakePlayer(now = { currentTime })
+        val sync = SyncController(player, backgroundScope, hostNow = { currentTime }, trimMs = { 0 })
+        val lines = logged(sync)
+        sync.apply(Anchor("t1", 5_000, currentTime, playing = false))
+        player.calls.clear()
+        sync.retrim(260, 0, "Phone speaker")
+        advanceTimeBy(20_000)
+        assertEquals(listOf("trim 260 -> 0 ms, route Phone speaker"), lines.map { it.line })
+        assertEquals(emptyList<String>(), player.calls)
+    }
+
     // --- the filtered, confirmed drift reading (A2DP position flips, D2 bench 2026-09-19) ---
 
     private class Logged(val atMs: Long, val line: String)
@@ -512,7 +572,9 @@ class SyncControllerTest {
     @Test
     fun `trace runs once a second for 5 s after a warm and a cold start, in the logged format`() = runTest {
         val player = FakePlayer(now = { currentTime })
-        val sync = SyncController(player, backgroundScope, hostNow = { currentTime }, trimMs = { 25 })
+        val sync = SyncController(
+            player, backgroundScope, hostNow = { currentTime }, trimMs = { 25 }, routeName = { "AirPods Pro" },
+        )
         val lines = traced(sync)
 
         sync.apply(Anchor("t1", 0, currentTime + 1_000, playing = true))
@@ -524,7 +586,7 @@ class SyncControllerTest {
         // The line at play(), 300 ms before the anchor: pos is the seek point (anchor + trim),
         // expected is the timeline now (-300 ms + trim), so err is the lead.
         assertEquals(
-            "trace: pos 25 ms, expected -275 ms, err 300 ms, speed 1.0, phase start-warm, t 0",
+            "trace: pos 25 ms, expected -275 ms, err 300 ms, speed 1.0, phase start-warm, t 0, trim 25 ms, route AirPods Pro",
             lines.first().line,
         )
         assertTrue(lines.none { it.line.contains("drift") })

@@ -57,6 +57,11 @@ object EditOp {
     const val CLEAR = "clear"
 }
 
+/** PROTOCOL.md "Host-mic talk": the value of `mic` on the host's `talk.open` and in `state`. */
+object Mic {
+    const val HOST = "host"
+}
+
 /**
  * The closed value sets of PROTOCOL.md's message table, by type and field. A value outside its
  * set is malformed: dropped and logged, connection kept ("Control channel").
@@ -64,6 +69,8 @@ object EditOp {
 internal val ENUM_FIELDS: Map<Pair<String, String>, Set<String>> = mapOf(
     ("hello" to "role") to setOf(Role.HOST, Role.CLIENT),
     ("talk.open" to "by") to setOf(Role.HOST, Role.CLIENT),
+    ("talk.open" to "mic") to setOf(Mic.HOST),
+    ("state" to "mic") to setOf(Mic.HOST),
     ("talk.close" to "by") to setOf(Role.HOST, Role.CLIENT),
     ("talk.close" to "reason") to
         setOf(CloseReason.TRIGGER, CloseReason.LINK, CloseReason.UNAVAILABLE),
@@ -95,7 +102,14 @@ data class Pong(val id: Long, val t0: Long, val t1: Long, val t2: Long) : Messag
 
 @Serializable
 @SerialName("talk.open")
-data class TalkOpen(val by: String) : Message
+data class TalkOpen(
+    val by: String,
+    /**
+     * [Mic.HOST] on the host's decision when the host captures both riders itself (PROTOCOL.md
+     * "Host-mic talk"); absent otherwise. A client never sends it and the host ignores it there.
+     */
+    val mic: String? = null,
+) : Message
 
 @Serializable
 @SerialName("talk.close")
@@ -192,6 +206,8 @@ data class State(
     val music: MusicState? = null,
     /** Required on the wire, possibly empty. */
     val queue: List<QueueItem>,
+    /** [Mic.HOST] while [talk] is true and the open talk is a host-mic talk; absent otherwise. */
+    val mic: String? = null,
 ) : Message
 
 @Serializable

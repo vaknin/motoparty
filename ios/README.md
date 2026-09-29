@@ -13,14 +13,19 @@ Sources/COpus/           libopus 1.5.2, portable float build (vendored; see belo
 Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            Messages (all control messages, Codable), Framing (u32, 64 KiB cap),
                            ClockSync, VoicePacket/VoiceSequencer, JitterBuffer, Opus wrapper,
-                           MusicAnchor/DriftController, LinkMath (sweep, liveness, TXT), Earcons (WAV synth),
+                           MusicAnchor/DriftController, LinkMath (sweep, liveness, TXT),
+                           HostSelection (discovery: probe backoff, last-host preference), Earcons (WAV synth),
                            CommandParser (the grammar, run here too because volume is local;
                            FirstPhraseGate, the first-phrase rule and its 8 s window),
                            AppVolume + VolumeKeyGate (the app owns the volume keys while linked:
-                           park, app level steps, hold volume up = talk)
+                           park, app level steps, hold volume up = talk),
+                           TalkMode (own mic vs. host-mic talk, from talk.open's `mic`),
+                           MusicStatus ("Loading…" / "Paused for talk" under now playing),
+                           BrowseHistory (Search tab: recent searches, recently played)
 Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK):
-  Link/                    Discovery (NWBrowser + /24 sweep), ControlClient, VoiceSocket
-  Audio/                   SessionController (A2DP music ↔ HFP talk), VoiceEngine, KeepAlive, EarconPlayer,
+  Link/                    Discovery (NWBrowser + /24 sweep; see below), ControlClient, VoiceSocket
+  Audio/                   SessionController (A2DP music ↔ HFP talk; host-mic talk stays A2DP),
+                           VoiceEngine (duplex or receive only), KeepAlive, EarconPlayer,
                            LocalVolume (this phone's system volume), VolumeKey (outputVolume KVO,
                            park, app gains)
   Music/                   TrackCache (URLSession), SyncedPlayer (AVPlayer setRate atHostTime), NowPlaying
@@ -36,6 +41,15 @@ scripts/fetch-opus.sh    re-vendors libopus (verifies SHA-256)
 Every file in `Sources/Motoparty` is wrapped in `#if os(iOS)`. On Linux, `swift build` and
 `swift test` build COpus, MotopartyCore and the tests, and the app target compiles to an empty
 module.
+
+**Discovery** (PROTOCOL.md "Discovery"): a Bonjour result is only a candidate, since mDNS caches
+keep dead services (e.g. `peer-test-*`) for up to 75 min. `Discovery` probes every result in
+parallel (3 s connect incl. resolution, then 1 s for the host's `hello`; the probe sends
+nothing) and, from 3 s after start, the /24 alongside it. A failed candidate is skipped for
+10 s; Bonjour candidates are re-probed every 2 s. Only a valid host `hello` ends discovery; if
+several answer within 300 ms, the last linked host (`lastHostName` in UserDefaults) wins. The
+log shows `probe <name>: ok|timeout|refused|not a host` and `discovery: host <name> via
+bonjour|sweep` (sweep logs only addresses that answered, plus one line per pass).
 
 The app **compiles for arm64-apple-ios** against the real iOS SDK (iPhoneOS26.5, deployment
 target iOS 17), with no errors and no warnings. Building needs no phone, no Apple ID and no
@@ -87,9 +101,9 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 101 tests: fixtures, command parser + first-phrase gate, app volume +
-                      # volume-key gate,
-                      # jitter buffer, Opus, drift controller
+swift test            # 140 tests: fixtures, command parser + first-phrase gate, app volume +
+                      # volume-key gate, talk mode (host-mic), music status line,
+                      # search history, jitter buffer, Opus, drift controller
 ```
 
 Opus prints "compiling without optimization" in debug builds. That is expected. Use
@@ -235,15 +249,23 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   holding volume up (below).
 - **Screens:** three tabs. **Ride** has the link pill (host name and round trip), the
   now-playing card (cover from `state.music.art`, progress, previous / play-pause / next as
-  `music.control`), the downloading line, TALK, and the last command heard / announced /
-  problem lines; the gear opens Settings (latency trim, headset buttons, link details).
+  `music.control`), the downloading line, a compact "Voice commands" list (the same as the
+  Pixel's: say one first after pressing TALK, then it's just talk), TALK, and the last
+  command heard / announced / problem lines; the gear opens Settings (latency trim, headset buttons, link details).
   **Search** sends `music.search` (Songs / Albums / Playlists); a song tap is
   `music.enqueue{mode:"now"}` with that track, its ⋯ menu (or a swipe) is Play next / Add to
   queue. An album or playlist opens a detail screen (`music.browse`) with Play / Add to queue;
   a track tap enqueues `now` the tracks from that one to the end. Tracks carry the collection
   title as `album` and its cover as the top-level `art`. **Queue** shows `state.queue`: tap =
   `music.edit jump`, swipe = `remove`, Clear (confirmed) = `clear`. Browsing is disabled while
-  disconnected.
+  disconnected. With the search box empty, Search shows this phone's history
+  (`BrowseHistory`, JSON in UserDefaults `browseHistory`): **Recent searches** (last 10 sent,
+  newest first, one per query ignoring case, with its latest kind; tap re-runs it, Clear
+  empties it) and **Recently played** (last 20 distinct tracks named by `state.music`, newest
+  first; tap = `music.enqueue{mode:"now"}` with that track).
+- **Play by touch during a talk** (PROTOCOL.md "Browsing" step 3, 2026-09-30): the client
+  sends `music.enqueue{now}` and `music.edit{jump}` during a talk like at any other time. The
+  host ends the talk and sends `talk.close`; the client closes nothing itself.
 - **Browsing requests:** every search or browse takes the next request id; each list (search,
   collection) shows only its newest request's `music.results` and gives up after 20 s without
   an answer. `MusicEnqueue.fitted()` (MotopartyCore) keeps an enqueue at 200 tracks and under
@@ -255,9 +277,66 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   least 100 ms per buffer. Frames flagged by `OPUS_GET_IN_DTX` are not sent. Playback goes
   jitter buffer → Opus → AVAudioSourceNode. On `talk.close` the app switches back to
   `.playback` (A2DP), and the host resumes music with `music.play`.
+- **Host-mic talk** (PROTOCOL.md "Host-mic talk", 2026-09-29). When the host's
+  `talk.open` carries `mic:"host"` (its Hollyland Lark A1 receiver captures both riders), the
+  iPhone opens **no microphone**: `TalkMode.hostMic` (MotopartyCore) decides it once at the
+  open and it stays fixed until the talk closes. The app pauses music, activates
+  `SessionController`'s `.listen` route and starts `VoiceEngine.startReceiveOnly()`: the same
+  jitter buffer → Opus → source → `AUPeakLimiter` → mixer playback with the same app volume
+  (+3 dB boost at the top level), and nothing else. The engine never names `inputNode` (that
+  alone creates the input unit), so there is no voice processing, no capture, no `mic trace`,
+  no recogniser, no record-permission check and no audio sent; the voice socket's 1 s
+  keepalives go on by themselves. `command.text` is never sent: the host recognises the
+  passenger's first phrase on its right channel. The live earcon fires on the playback
+  source's first render (`live cue: fired … (playback up)`), with the same 3.5 s fallback.
+  `talk.close{by:"client",reason:"unavailable"}` is sent only if the session or the engine
+  will not start, or the engine fails mid-talk (restart cap, interruption, media reset), never
+  over the mic permission.
+  - **Session: `.listen` is exactly the media configuration, `.playback` / `.default`, no
+    options.** Chosen over `.playAndRecord` + `.allowBluetoothA2DP`: that is a different
+    category, so activating it is a real session switch (a route change, possibly a different
+    volume, and the built-in receiver as the default output unless `.defaultToSpeaker` is
+    added), and it would make an input available for nothing. With the category unchanged,
+    activating `.listen` is a no-op for the route: the Redmi Buds (or AirPods) stay on A2DP,
+    there is no profile switch either way, `outputVolume` KVO keeps reading the same A2DP volume
+    (so the volume-key park and hold go on as during music; `settle()` is still called at open
+    and close, it is cheap), and with no headset `.playback` plays on the speaker, never the
+    receiver.
+  - **Restarts.** Receive only has no voice processing to echo and no input to lose, so a
+    configuration change with the engine still running is always ignored (the mixer converts to
+    whatever the output became). A stopped engine (a headset leaving or arriving) is restarted in
+    place under the same backoff and the same cap of 6 in 10 s; if the output format changed, the
+    mixer → output link is reconnected first. The failed-restart rebuild keeps the mode.
+  - A talk learnt only from `state{talk:true}` (a join mid-talk) takes its mode from `state`'s
+    `mic`, which the host repeats while a host-mic talk is open (`TalkMode(state:)`); without it
+    the talk is an own-mic one.
+  - Logs: `talk mode: host-mic (receive only)` or `talk mode: own mic` at every open; the
+    `session → listen|talk|media, out: … (category/mode, out <type/name>, in <type/name>)` line;
+    `voice engine started: receive only (no input), out <Hz> × <ch>`; `voice rx: first packet`;
+    and `talk stats: receive only|duplex, …` with the usual rx numbers (tx stays 0).
+- **No headset → loudspeaker.** The talk category has `.defaultToSpeaker` besides
+  `.allowBluetoothHFP`, and if the output is still the built-in receiver after activation (or
+  after a headset drops mid-talk) `SessionController` overrides it to the speaker
+  (`talk output was the receiver; overridden to the speaker`). A Bluetooth HFP or wired
+  headset still wins; voice processing cancels the speaker's echo. The first device run played
+  talk on the earpiece (`out: מקלט`), far too quiet.
+- **Configuration changes restart the same engine** (first device run, iPhone 15 / iOS 26:
+  83 restarts a minute and no capture at all). Enabling voice processing reconfigures the I/O
+  and posts `AVAudioEngineConfigurationChange`; the old handler rebuilt the engine, which
+  toggled voice processing off and on, which posted the change again, every ~0.7 s. Now
+  `VoiceEngine` builds a fresh engine only at `start` (a new talk). A change that arrives
+  within 1 s of our own start while the engine still runs, or with the engine running and the
+  input format unchanged, is ignored (`… still running: ignored`). Otherwise the stopped
+  engine is `prepare()`d and started again in place, keeping voice processing, the graph, the
+  jitter buffer and the decoder; only if the input format really changed is the capture sink
+  reconnected with a new converter (`restart #n (k in 10 s) … input format changed`).
+  Restarts back off (0, 100, 200, 400 ms … 2 s) and at most 6 in 10 s are allowed; one more
+  gives up through `onFailure` (the usual "cannot talk" path). If an in-place restart throws,
+  a full rebuild is tried once per talk.
 - **The "live" earcon fires on a real signal, never on a delay** (Android's F7/F8/F9a rule,
-  `LiveCue`). `VoiceEngine.onCaptureUp` is called on the main queue from the first buffer the
-  capture sink delivers — exactly once per `start`, re-armed by the next one, and it never
+  `LiveCue`). `VoiceEngine.onLive` is called on the main queue from the first buffer the
+  capture sink delivers (in a host-mic talk: the playback source's first render) — exactly
+  once per start, re-armed by the next one, and it never
   blocks the sink thread (it flips a flag under an unfair lock and hops to Main). `AppModel`
   arms the cue when the voice engine starts and plays it on that callback, at most once per
   talk open, with a 3.5 s fallback timer (the same number as Android's `LiveCue.TIMEOUT_MS`)
@@ -308,7 +387,8 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   `first phrase spent: recognition off for this talk`. Every phrase is logged as
   `heard: "<text>" (command|conversation)`. A command's text (normalised, fillers kept: the
   parser drops them) goes through `CommandParser`: volume is handled here (below); everything
-  else, `end` ("over", "end talk", "hang up") included, is sent as
+  else, `end` ("over", "end talk", "hang up"), `nowplaying` ("what's playing") and `shuffle`
+  (2026-09-30, answered with `announce`, talk stays open) included, is sent as
   `command.text{text, lang}` and the host decides what it does to the talk (`play`, `resume`
   and `end` close it with the usual `talk.close`). The host also enforces the rule: it acts
   only on the first `command.text` of a talk the client opened.
@@ -320,7 +400,13 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   volume level (below), like a key press; while it is down it is one system step (1/16), as
   before. iOS has no public system-volume setter, so `LocalVolume` writes the hidden `UISlider`
   of an off-screen `MPVolumeView` — the real system / AirPods volume, reading the current level
-  from `AVAudioSession.outputVolume`. It is the only place that trick lives.
+  from `AVAudioSession.outputVolume`. It is the only place that trick lives. The view is made
+  at app start (next run-loop turn after `start()`), off-screen, 120×40, alpha 0.0001 (not
+  hidden), and the slider is found by a recursive subview search (on iOS 26 it is not a direct
+  subview; the first device run failed the park with `no MPVolumeView slider`). A `set` before
+  the slider exists keeps the value and retries on the next run-loop turn, then up to 8 × 100 ms
+  (`local volume: set <v> on retry <n>` / `… after <n> tries`). `local volume: slider ready`
+  is logged once.
 - **Music:** each track is downloaded in full, then `music.ready` is sent. Playback uses
   `AVPlayer.setRate(1, time:, atHostTime:)`, converting host clock → local clock → CMClock host
   time. The player starts early by this phone's output delay —
@@ -359,7 +445,10 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
     always active here (KeepAlive between talks, the voice engine during one) — and hands every
     reading to `VolumeKeyGate` (MotopartyCore, pure, times passed in). A reading at the park
     within `ownChangeMs` = 1000 ms of asking for it is the gate's own reset and is ignored (a
-    key always moves the volume *off* the park). Keys are read against the latest reading, not
+    key always moves the volume *off* the park). "At the park" is within 0.02, not the 0.01
+    of other comparisons: in an HFP talk the park reads back as 0.95 (device log
+    2026-09-29). In that window, a reading between the previous one and the park is the
+    park in transit, not a key (arming at 0.2 once read a phantom up). Keys are read against the latest reading, not
     the park, so a repeat that beats the reset still counts.
   - **App gain.** Loudness is one app level, 0...16 (`AppVolume`): 15 is 0 dB (the parked
     system volume as it is), each level below is `stepDb` = 3 dB quieter (1 = -42 dB), 0 is
@@ -389,9 +478,17 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
     reading in the window, and once more when it ends. A hold that already toggled stays
     absorbed across the window (talk opens while the key is still held).
   - **Unlinked:** the keys are the plain system volume and all app gains are unity. Arming
-    starts the app level at the step matching the system volume (`round(volume × 16)`), so
-    loudness does not jump (to the extent the iOS volume curve is 3 dB a step near the top);
-    disarming sets the system volume back to `level / 16` (16 = max).
+    starts at the **remembered** app level (`AppSettings.appVolumeLevel`, UserDefaults; first
+    ever `AppVolume.defaultLevel` = 12, -9 dB), never at one derived from the system volume:
+    that once armed a passenger at level 3 (-36 dB, from a 20% system volume) while the parked
+    system volume read 94%, and the talk was near inaudible (device log 2026-09-29). Every
+    key, hold revert and spoken volume command saves the level. Disarming sets the system
+    volume to `level / 16` (16 = max).
+  - **Shown on RideView:** a speaker, a 16-step bar and `12/16`, always visible (dimmed while
+    unlinked: the level the next link starts at). While linked the system volume always
+    reads 15/16, so this is the only true volume on the phone. The voice engine logs the
+    talk gain in `voice engine started` and `talk stats` (`app gain -9 dB (mixer 0.355),
+    boost 0 dB`); `peak out` is measured before it.
 
   The `audio` log shows `volume key: up +<gap> ms (<n>/4) → level <l>` for every up press
   (`first` for a burst's first; `hold`, `absorbed` instead of the level), so the real repeat
@@ -436,5 +533,36 @@ them:
   - How loud the +3 dB talk boost is behind the limiter, whether the limiter pumps, and whether
     arming at the matching level really keeps loudness steady (the iOS volume curve is not
     exactly 3 dB a step).
+- **First-device-run fixes (2026-09-29), to confirm:**
+  - During a talk, `voice engine started` is followed by at most one or two
+    `configuration changed … ignored` / `restart #1` lines, not a line every 0.7 s;
+    `live cue: fired … (capture up)` rather than `(fallback)`; the Pixel receives voice.
+  - `local volume: slider ready` shortly after launch, and no `park failed` after
+    `volume key: armed …`.
+  - With no earbuds connected, `session → talk, out:` names the speaker (רמקול / Speaker),
+    not the receiver (מקלט); with AirPods connected it still names the AirPods.
+  - In talk the log read the system volume 1.0, then 0.95, while settling. 0.95 is outside the
+    park's 0.01 tolerance around 15/16 = 0.9375: if parks during HFP read back as 0.95 (the call
+    volume may be quantised differently), every park would look like a key after the settle
+    window. Look for `volume key: down|up` lines nobody pressed during a talk.
+- **Host-mic talk, home test** (Pixel with the Lark A1 receiver in Stereo mode, the host
+  setting on, Redmi Buds 6 Pro on the iPhone, music playing): open a talk from the iPhone
+  (TALK, then a hold of volume up) and from the Pixel. Look for `talk mode: host-mic (receive
+  only)`, a `session → listen` line still naming the buds with `out BluetoothA2DPOutput/…` and
+  `in none`, no `route change` line at the open or close, `voice engine started: receive only`,
+  `live cue: fired … (playback up)`, `voice rx: first packet`, and at the close `talk stats:
+  receive only, tx 0 sent …, rx <n> received` with `in none`. By ear: music pauses, the rider's
+  lavalier is heard in the buds at full A2DP quality with no profile-switch gap, the passenger
+  is not heard back, and music resumes after the close. Also: the orange mic dot never
+  appears; a volume press during the talk is one app level (`volume key: up … → level`), and a
+  hold of volume up closes it; "play …" as the passenger's first phrase in a talk the iPhone
+  opened works (the host recognised it) and no `heard:` line appears on the iPhone. Then
+  switch the host setting off and check the next talk logs `talk mode: own mic` and goes to HFP
+  as before. With no buds, the host-mic talk plays on the speaker (`out Speaker/…`).
+- **2026-09-30 additions:** "what's playing" and "shuffle" as the first phrase are recognised
+  and the host's `announce` is spoken in the talk; tapping a song (or a recently played track)
+  during a talk closes the talk (end earcon, back to media mode) and the song starts; the
+  Ride screen with the command list still fits without scrolling on the real iPhone; history
+  survives an app restart.
 - The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
   the AirPods A2DP ↔ HFP switch time.

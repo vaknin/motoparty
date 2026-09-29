@@ -22,6 +22,11 @@ _EXACT = {
     "over": "end",
     "end talk": "end",
     "hang up": "end",
+    "what's playing": "nowplaying",
+    "whats playing": "nowplaying",
+    "what is playing": "nowplaying",
+    "what song is this": "nowplaying",
+    "shuffle": "shuffle",
 }
 
 # The first phrase decides (PROTOCOL.md "Commands"): the opener's first non-empty phrase is a

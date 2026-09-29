@@ -74,6 +74,7 @@ def now_ms() -> int:
 _ROLE = ("host", "client")
 _BY = ("host", "client")
 _REASON = ("trigger", "link", "unavailable")
+_MIC = ("host",)
 # Volume is local (PROTOCOL.md "Commands"): volumeUp/volumeDown are not wire actions.
 _ACTION = ("pause", "resume", "next", "previous")
 _EARCON = ("ok", "error")
@@ -128,7 +129,8 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
     },
     "ping": {"id": ("int", True), "t0": ("int", True)},
     "pong": {"id": ("int", True), "t0": ("int", True), "t1": ("int", True), "t2": ("int", True)},
-    "talk.open": {"by": (_BY, True)},
+    # mic: H->C only (PROTOCOL.md "Host-mic talk"); its only value is "host".
+    "talk.open": {"by": (_BY, True), "mic": (_MIC, False)},
     "talk.close": {"by": (_BY, True), "reason": (_REASON, True)},
     "music.load": {
         "id": ("str", True),
@@ -165,6 +167,8 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
         "talk": ("bool", True),
         "music": (("obj", STATE_MUSIC_SCHEMA), False),
         "queue": (("list", QUEUE_ITEM_SCHEMA), True),
+        # Only while talk is true and the talk is host-mic (see _check_state).
+        "mic": (_MIC, False),
     },
     "bye": {"reason": ("str", False)},
 }
@@ -223,6 +227,13 @@ def _check_hello(msg: dict[str, Any]) -> None:
         msg.pop("httpPort", None)
 
 
+def _check_state(msg: dict[str, Any]) -> None:
+    # PROTOCOL.md `state`: mic is present only while talk is true. A stray one on a closed
+    # talk describes no talk, so it is dropped (like a client hello's ports), not fatal.
+    if not msg["talk"]:
+        msg.pop("mic", None)
+
+
 def validate_message(obj: Any) -> dict[str, Any]:
     """Validate a parsed JSON value; return the normalised message.
 
@@ -241,6 +252,8 @@ def validate_message(obj: Any) -> dict[str, Any]:
     out.update(_check_object(t, schema, obj))
     if t == "hello":
         _check_hello(out)
+    elif t == "state":
+        _check_state(out)
     return out
 
 

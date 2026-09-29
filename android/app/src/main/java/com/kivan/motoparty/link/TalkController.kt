@@ -50,8 +50,9 @@ class TalkController {
     fun onMicFailure(): Action? = if (isOpen) close(Role.HOST, CloseReason.UNAVAILABLE) else null
 
     /**
-     * A spoken command ends the talk (PROTOCOL.md "Commands": `play`, `resume`, `end`): closed
-     * like a press by the side that spoke it, [by].
+     * A spoken command ends the talk (PROTOCOL.md "Commands": `play`, `resume`, `end`), or a play
+     * by touch does ("Browsing" step 3: a `now` enqueue, a jump): closed like a press by the side
+     * that spoke or touched, [by].
      */
     fun onCommandClose(by: String): Action? = if (isOpen) close(by, CloseReason.TRIGGER) else null
 

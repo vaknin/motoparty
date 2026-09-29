@@ -48,8 +48,17 @@ class Client:
         self.audio = not args.no_audio
         self.clock = ClockEstimator()
         self.conn: discovery.Connection | None = None
+        no_mdns = bool(getattr(args, "no_mdns", False))
+        # PROTOCOL.md "Discovery"; kept across reconnects (backoff table, last host linked).
+        # --no-mdns: no browse, so the sweep starts at once instead of after 3 s.
+        self.discovery = discovery.Discovery(
+            port=args.port or CONTROL_PORT, mdns=not no_mdns, sweep_delay=0.0 if no_mdns else discovery.SWEEP_DELAY, log=log
+        )
         self.talk = False
         self.gate: FirstPhraseGate | None = None  # this talk's first-phrase gate
+        # This talk's mic mode from the host's talk.open: "host" = host-mic talk (PROTOCOL.md
+        # "Host-mic talk"): no mic, no audio sent, keepalives only, no command.text.
+        self.talk_mic: str | None = None
         self.ping_id = 0
         self.last_rx = 0
         self.sender: VoiceSender | None = None
@@ -110,26 +119,23 @@ class Client:
             if a.host:
                 log(f"connecting to {a.host}:{a.port}")
                 return await discovery.handshake(a.host, a.port, self.name, 3.0, 3.0)
-            found = None
-            if not getattr(a, "no_mdns", False):
-                log("discovery: browsing _motoparty._tcp for 3 s")
-                found = await asyncio.to_thread(discovery.browse, discovery.BROWSE_SECONDS)
-            if found:
-                log(f"discovery: bonjour found {found.name!r} at {found.address}:{found.port} txt={found.txt}")
-                conn = await discovery.handshake(found.address, found.port, self.name, 3.0, 3.0)
-                for key, field in (("voice", "voicePort"), ("http", "httpPort")):
-                    if found.txt.get(key) != str(conn.hello[field]):
-                        log(f"warning: TXT {key}={found.txt.get(key)!r} but hello {field}={conn.hello[field]}")
-                if found.txt.get("proto") != "1":
-                    log(f"warning: TXT proto={found.txt.get('proto')!r}, expected '1'")
-                return conn
-            cands = discovery.sweep_candidates()
-            why = "--no-mdns" if getattr(a, "no_mdns", False) else "no bonjour result"
-            log(f"discovery: {why}, sweeping {len(cands)} addresses on port {a.port}")
-            conn = await discovery.sweep(cands, a.port, self.name)
-            if conn is None:
-                log("discovery: no host found")
-                await asyncio.sleep(1)
+            found = await self.discovery.find()
+            if found is None:
+                return None
+            log(f"discovery: host {found.hello['name']!r} at {found.ip}:{found.port} (via {found.via})")
+            try:
+                conn = await discovery.handshake(found.ip, found.port, self.name, 3.0, 3.0)
+            except BaseException:
+                self.discovery.mark_failed(found.ip, found.port)
+                raise
+            if found.bonjour is not None:
+                txt = found.bonjour.txt
+                for key, fld in (("voice", "voicePort"), ("http", "httpPort")):
+                    if txt.get(key) != str(conn.hello[fld]):
+                        log(f"warning: TXT {key}={txt.get(key)!r} but hello {fld}={conn.hello[fld]}")
+                if txt.get("proto") != "1":
+                    log(f"warning: TXT proto={txt.get('proto')!r}, expected '1'")
+            self.discovery.prefer = conn.hello["name"]  # the last host linked wins a tie next time
             return conn
         except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ProtocolError) as e:
             log(f"connect failed: {type(e).__name__}: {e}")
@@ -244,12 +250,19 @@ class Client:
         elif t == "hello":
             log("   (unexpected second hello ignored)")
         elif t == "state":
-            self._set_talk(msg["talk"])
+            # A talk learnt only from state (joined mid-talk) opens in the mode state names.
+            self._set_talk(msg["talk"], mic=msg.get("mic"))
             self.queue = msg["queue"]
         elif t == "music.results":
             self._results(msg)
         elif t == "talk.open":
-            if self.mic_unavailable:
+            if msg.get("mic") == "host":
+                # PROTOCOL.md "Host-mic talk": we open no microphone, so a dead or unpermitted
+                # mic is no reason to refuse; only a failed playback route would be.
+                if self.mic_unavailable:
+                    log("   (mic marked unavailable, but a host-mic talk needs none: accepting)")
+                self._set_talk(True, by=msg["by"], mic="host")
+            elif self.mic_unavailable:
                 # PROTOCOL.md "Talk flow" 1: the failure is on our side, so we answer the
                 # host's talk.open with a close request; the host treats it as one.
                 log("   MIC UNAVAILABLE: refusing talk (the host asked, so it plays the error earcon)")
@@ -280,13 +293,21 @@ class Client:
 
     # ------------------------------------------------------------------ talk / voice
 
-    def _set_talk(self, open_: bool, quiet: bool = False, by: str | None = None) -> None:
-        if open_ and self.mic_unavailable:
-            return  # we refused; never open the mic, whatever state the host broadcasts
+    def _set_talk(self, open_: bool, quiet: bool = False, by: str | None = None,
+                  mic: str | None = None) -> None:
         if open_ == self.talk:
             return
+        if open_ and self.mic_unavailable and mic != "host":
+            return  # we refused; never open the mic, whatever state the host broadcasts
         self.talk = open_
-        if open_:
+        if open_ and mic == "host":
+            # Receive only: music paused, voice played, media mode kept; the keepalive task
+            # goes on sending keepalives, and nothing is recognised or sent as a command.
+            self.talk_mic = "host"
+            self.gate = None
+            self.player.stop()
+            log("TALK OPEN - talk mode: host-mic (receive only)")
+        elif open_:
             # The live earcon plays now (the peer has none). A talk seen only through `state`
             # (joined mid-talk) has no known opener, so this phone is not it.
             self.gate = FirstPhraseGate("opener" if by == "client" else "other", now_ms())
@@ -298,6 +319,7 @@ class Client:
         else:
             self._stop_source()
             self.gate = None
+            self.talk_mic = None
             if not quiet:
                 log("TALK CLOSED")
 
@@ -305,6 +327,9 @@ class Client:
         """A phrase the on-device ASR recognised on the talk microphone (PROTOCOL.md "Commands"):
         only the first non-empty one in a talk this client opened, within 8 s of the live
         earcon, is a command, and only if it parses."""
+        if self.talk and self.talk_mic == "host":
+            log(f"hear: {phrase!r} skipped: host-mic talk, the host recognises commands; nothing sent")
+            return
         if not self.talk or self.gate is None:
             log("hear: no talk open; commands are spoken inside a talk, nothing sent")
             return
@@ -346,7 +371,7 @@ class Client:
             self.mic = None
 
     def _send_pcm(self, pcm: bytes) -> None:
-        if self.talk and self.sender:
+        if self.talk and self.talk_mic != "host" and self.sender:
             self.sender.send_pcm(pcm)
 
     async def _tone(self) -> None:
