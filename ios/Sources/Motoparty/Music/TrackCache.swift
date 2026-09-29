@@ -4,7 +4,9 @@ import Foundation
 
 /// Downloads tracks from the host (`GET http://<host>:<httpPort>/track/<id>.m4a`)
 /// into Caches/tracks, fully, before `music.ready`. LRU-pruned to `maxBytes`.
-/// Main-queue API.
+/// A download lands as `<id>.part.m4a` and only takes its real name once
+/// AVFoundation has confirmed it plays, so `isCached` never sees a file that
+/// is still being checked. Main-queue API.
 final class TrackCache {
     enum Outcome {
         case ready(URL)
@@ -20,6 +22,11 @@ final class TrackCache {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         directory = caches.appendingPathComponent("tracks", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Leftovers from a download or check the app was killed during.
+        for url in (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        where url.lastPathComponent.hasSuffix(".part.m4a") {
+            try? FileManager.default.removeItem(at: url)
+        }
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 15
         config.timeoutIntervalForResource = 300
@@ -34,6 +41,10 @@ final class TrackCache {
         return directory.appendingPathComponent(safe).appendingPathExtension("m4a")
     }
 
+    private func stagingURL(for id: String) -> URL {
+        localURL(for: id).deletingPathExtension().appendingPathExtension("part.m4a")
+    }
+
     func isCached(_ id: String) -> Bool {
         FileManager.default.fileExists(atPath: localURL(for: id).path)
     }
@@ -41,6 +52,7 @@ final class TrackCache {
     /// `path` is the music.load path (e.g. "/track/<id>.m4a").
     func fetch(id: String, host: String, port: Int, path: String, completion: @escaping (Outcome) -> Void) {
         let dest = localURL(for: id)
+        let staging = stagingURL(for: id)
         if FileManager.default.fileExists(atPath: dest.path) {
             touch(dest)
             completion(.ready(dest))
@@ -71,9 +83,9 @@ final class TrackCache {
                 outcome = .failed("HTTP \(http.statusCode)")
             } else if let tmp {
                 do {
-                    try? FileManager.default.removeItem(at: dest)
-                    try FileManager.default.moveItem(at: tmp, to: dest)
-                    outcome = .ready(dest)
+                    try? FileManager.default.removeItem(at: staging)
+                    try FileManager.default.moveItem(at: tmp, to: staging)
+                    outcome = .ready(staging)
                 } catch {
                     outcome = .failed("store: \(error.localizedDescription)")
                 }
@@ -88,16 +100,24 @@ final class TrackCache {
     // MARK: - Private
 
     private func verify(id: String, outcome: Outcome) {
-        guard case .ready(let url) = outcome else { return finish(id, outcome) }
+        guard case .ready(let staging) = outcome else { return finish(id, outcome) }
         Task { @MainActor in
-            let asset = AVURLAsset(url: url)
+            let asset = AVURLAsset(url: staging)
             let playable = (try? await asset.load(.isPlayable)) ?? false
             let duration = (try? await asset.load(.duration))?.seconds ?? 0
             if playable, duration > 0 {
-                self.finish(id, outcome)
+                let dest = self.localURL(for: id)
+                do {
+                    try? FileManager.default.removeItem(at: dest)
+                    try FileManager.default.moveItem(at: staging, to: dest)
+                } catch {
+                    try? FileManager.default.removeItem(at: staging)
+                    return self.finish(id, .failed("store: \(error.localizedDescription)"))
+                }
+                self.finish(id, .ready(dest))
                 self.prune()
             } else {
-                try? FileManager.default.removeItem(at: url)
+                try? FileManager.default.removeItem(at: staging)
                 self.finish(id, .failed("not decodable"))
             }
         }

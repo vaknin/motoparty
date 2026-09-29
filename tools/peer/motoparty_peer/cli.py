@@ -37,7 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("-v", "--verbose", action="store_true", help="also print raw ping/pong frames")
 
     h = sub.add_parser("host", help="act as a minimal fake host (the Pixel)")
-    h.add_argument("--track", help="an .m4a file to serve for `load`")
+    h.add_argument("--track", action="append",
+                   help="an .m4a file, or a directory of them, to serve and search (repeatable; "
+                        "`load` plays the first)")
     h.add_argument("--name", help="Bonjour instance / hello name (default: '<hostname> peer')")
     h.add_argument("--bind", default="0.0.0.0", help="listen address (default %(default)s)")
     h.add_argument("--port", type=int, help="control port (default 47800; 0 = any)")

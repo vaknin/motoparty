@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 23)
+        XCTAssertEqual(messages.count, 32)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -29,7 +29,8 @@ final class MessageFixtureTests: XCTestCase {
         let allTypes: Set<String> = [
             "hello", "ping", "pong", "talk.open", "talk.close", "music.load", "music.ready",
             "music.error", "music.play", "music.pause", "music.stop", "music.control",
-            "command.text", "announce", "state", "bye",
+            "command.text", "music.search", "music.browse", "music.results", "music.enqueue",
+            "music.edit", "announce", "state", "bye",
         ]
         XCTAssertEqual(seenTypes, allTypes, "fixtures should cover every message type")
     }
@@ -59,6 +60,50 @@ final class MessageFixtureTests: XCTestCase {
         let load = MusicLoad(id: "a", path: "/track/a.m4a", title: "T", artist: "A", durationMs: 1)
         let text = String(decoding: try ControlCodec.encode(.musicLoad(load)), as: UTF8.self)
         XCTAssertTrue(text.contains(#""/track/a.m4a""#), text)
+    }
+
+    func testDecodedBrowsingValues() throws {
+        let search = try ControlCodec.decode(Data(#"{"t":"music.search","id":7,"kind":"songs","query":"money"}"#.utf8))
+        XCTAssertEqual(search, .musicSearch(MusicSearch(id: 7, kind: .songs, query: "money")))
+
+        let edit = try ControlCodec.decode(Data(#"{"t":"music.edit","op":"remove","index":0,"id":"a"}"#.utf8))
+        XCTAssertEqual(edit, .musicEdit(MusicEdit(op: .remove, index: 0, id: "a")))
+
+        // `clear` needs neither field, and they are omitted, not null.
+        let clear = try ControlCodec.encode(.musicEdit(MusicEdit(op: .clear)))
+        XCTAssertEqual(try Fixtures.canonical(jsonData: clear), #"{"op":"clear","t":"music.edit"}"#)
+    }
+
+    func testEnqueueFitsOneFrame() throws {
+        func size(_ m: MusicEnqueue) throws -> Int { try ControlCodec.encode(.musicEnqueue(m)).count }
+        let art = "https://i.ytimg.com/vi/" + String(repeating: "x", count: 200) + "/mqdefault.jpg"
+        let tracks = (0..<300).map {
+            EnqueueTrack(id: "id\($0)", title: String(repeating: "t", count: 100), artist: "A", durationMs: 1000, art: art)
+        }
+
+        // Capped at 200 first.
+        let small = MusicEnqueue(mode: .end, tracks: Array(tracks.prefix(3))).fitted()
+        XCTAssertEqual(small.tracks.count, 3)
+        XCTAssertNotNil(small.tracks[0].art, "art is only dropped when needed")
+
+        // 200 tracks with art are over 64 KiB; without art they fit.
+        let capped = MusicEnqueue(mode: .now, tracks: tracks, art: "https://a").fitted()
+        XCTAssertEqual(capped.tracks.count, MusicEnqueue.maxTracks)
+        XCTAssertTrue(capped.tracks.allSatisfy { $0.art == nil })
+        XCTAssertEqual(capped.art, "https://a")
+        XCTAssertLessThan(try size(capped), Framing.maxFrameLength)
+
+        // Still too big without art: trailing tracks go, the order stays.
+        let long = tracks.map { t in
+            var t = t; t.title = String(repeating: "t", count: 1000); return t
+        }
+        let cut = MusicEnqueue(mode: .now, tracks: long).fitted()
+        XCTAssertLessThan(cut.tracks.count, MusicEnqueue.maxTracks)
+        XCTAssertGreaterThan(cut.tracks.count, 50)
+        XCTAssertEqual(cut.tracks.map(\.id), long.prefix(cut.tracks.count).map(\.id))
+        XCTAssertLessThan(try size(cut), Framing.maxFrameLength)
+        var one = cut; one.tracks.append(long[cut.tracks.count]); one.tracks = one.tracks.map { var t = $0; t.art = nil; return t }
+        XCTAssertGreaterThanOrEqual(try size(one), Framing.maxFrameLength, "the largest prefix that fits")
     }
 
     func testMalformedInputClassification() {
@@ -147,7 +192,7 @@ final class FramingFixtureTests: XCTestCase {
     func testMalformedMessagesAreDroppedNotFatal() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let malformed = try XCTUnwrap(fixture["malformed"] as? [[String: Any]])
-        XCTAssertEqual(malformed.count, 6, "every malformed vector must be exercised")
+        XCTAssertEqual(malformed.count, 10, "every malformed vector must be exercised")
         for m in malformed {
             let json = try XCTUnwrap(m["json"] as? String)
             // Framed and received like any other frame…

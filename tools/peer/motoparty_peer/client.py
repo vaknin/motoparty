@@ -30,7 +30,9 @@ from .util import js, log, stdin_lines
 from .voice import Pacer, VoiceProtocol, VoiceReceiver, VoiceSender
 
 HELP = """commands: talk | say <text> | pause | resume | next | previous | vol+ | vol- (local) |
-          unavailable (toggle "my mic is dead") | stats | raw <json> (send unvalidated) | quit"""
+          unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
+          browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit clear |
+          stats | raw <json> (send unvalidated) | quit"""
 
 MUSIC_CONTROL = {"pause": "pause", "resume": "resume", "next": "next", "previous": "previous"}
 
@@ -62,6 +64,12 @@ class Client:
         self.http_port: int | None = None
         # "this phone cannot open its microphone": refuse talk with reason "unavailable"
         self.mic_unavailable = bool(getattr(args, "mic_unavailable", False))
+        # Browsing: newest request id, its kind, the numbered results and the host's queue
+        self.req_id = 0
+        self.req_kind = "songs"
+        self.req_album: str | None = None  # collection title when browsing one
+        self.results: list[dict] = []
+        self.queue: list[dict] = []
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -235,6 +243,9 @@ class Client:
             log("   (unexpected second hello ignored)")
         elif t == "state":
             self._set_talk(msg["talk"])
+            self.queue = msg["queue"]
+        elif t == "music.results":
+            self._results(msg)
         elif t == "talk.open":
             if self.mic_unavailable:
                 # PROTOCOL.md "Talk flow" 1: the failure is on our side, so we answer the
@@ -404,6 +415,72 @@ class Client:
             return
         self.player.schedule(file, msg["positionMs"], local)
 
+    # ------------------------------------------------------------------ browsing
+
+    def _request(self, msg: dict, kind: str, album: str | None = None) -> None:
+        self.req_id += 1
+        self.req_kind, self.req_album = kind, album
+        self.send({**msg, "id": self.req_id})
+
+    def _results(self, msg: dict) -> None:
+        if msg["id"] != self.req_id:  # PROTOCOL.md "Browsing" 1: only the newest request
+            log(f"   (results for old request {msg['id']} ignored)")
+            return
+        self.results = msg["items"]
+        if "error" in msg:
+            log(f"   results: {msg['error']}")
+        for n, it in enumerate(self.results, 1):
+            extra = f" ({it['count']} tracks)" if "count" in it else ""
+            extra += f" {it['durationMs'] // 1000}s" if "durationMs" in it else ""
+            log(f"   {n:3}. {it['title']} - {it['artist'] or '?'}{extra}")
+
+    def _pick(self, arg: str) -> list[dict] | None:
+        """`all` or a 1-based result number -> result items, else None."""
+        if arg == "all":
+            return self.results
+        if arg.isdigit() and 1 <= int(arg) <= len(self.results):
+            return [self.results[int(arg) - 1]]
+        log(f"no result {arg!r} (have {len(self.results)})")
+        return None
+
+    def _browse_cmd(self, cmd: str, rest: str) -> None:
+        args = rest.split()
+        if cmd == "search":
+            kind, _, query = rest.strip().partition(" ")
+            if kind not in ("songs", "albums", "playlists"):
+                log("usage: search songs|albums|playlists <query>")
+                return
+            self._request({"t": "music.search", "kind": kind, "query": query.strip()}, kind)
+        elif cmd == "browse":
+            items = self._pick(args[0]) if len(args) == 1 and args[0] != "all" else None
+            if items is None or self.req_kind == "songs":
+                log("usage: browse <n> (an album or playlist result)")
+                return
+            self._request({"t": "music.browse", "ref": items[0]["ref"]}, "songs",
+                          items[0]["title"] if self.req_kind == "albums" else None)
+        elif cmd == "enqueue":
+            items = self._pick(args[1]) if len(args) == 2 and args[0] in ("now", "next", "end") else None
+            if items is None or self.req_kind != "songs":
+                log("usage: enqueue now|next|end <n>|all (song results)")
+                return
+            tracks = []
+            for it in items:
+                tr = {"id": it["ref"], "title": it["title"], "artist": it["artist"], "durationMs": it.get("durationMs", 0)}
+                if self.req_album:
+                    tr["album"] = self.req_album
+                if "art" in it:
+                    tr["art"] = it["art"]
+                tracks.append(tr)
+            self.send({"t": "music.enqueue", "mode": args[0], "tracks": tracks})
+        elif cmd == "edit":
+            if args == ["clear"]:
+                self.send({"t": "music.edit", "op": "clear"})
+            elif len(args) == 2 and args[0] in ("jump", "remove") and args[1].isdigit() and int(args[1]) < len(self.queue):
+                i = int(args[1])
+                self.send({"t": "music.edit", "op": args[0], "index": i, "id": self.queue[i]["id"]})
+            else:
+                log(f"usage: edit jump|remove <i> (0-based, queue has {len(self.queue)}) | edit clear")
+
     # ------------------------------------------------------------------ stdin
 
     async def _stdin(self) -> None:
@@ -444,6 +521,8 @@ class Client:
                     f"nothing sent (the peer has no real volume)")
             elif cmd in MUSIC_CONTROL:
                 self.send({"t": "music.control", "action": MUSIC_CONTROL[cmd]})
+            elif cmd in ("search", "browse", "enqueue", "edit"):
+                self._browse_cmd(cmd, rest)
             elif cmd == "stats":
                 log("voice:", self.receiver.summary() if self.receiver else "(not connected)")
                 best = self.clock.best

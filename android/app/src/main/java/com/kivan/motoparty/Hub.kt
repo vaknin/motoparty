@@ -1,5 +1,7 @@
 package com.kivan.motoparty
 
+import com.kivan.motoparty.core.SearchKind
+import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.Track
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,16 +34,43 @@ data class LinkStatus(
     val lastAnnounce: String? = null,
     val lastDriftMs: Long? = null,
     val cacheMb: Long = 0,
-    val searchResults: List<Track> = emptyList(),
+    val search: SearchState = SearchState(),
+    /** The album or playlist open on the Search tab, or null. */
+    val browse: BrowseState? = null,
     /** A long Lark recording ([com.kivan.motoparty.audio.UsbStereoProbe.startLong]) is running. */
     val longRecording: Boolean = false,
     val log: List<String> = emptyList(),
 )
 
+/** The Search tab's last search: songs or collections, depending on [kind] ([SearchKind]). */
+data class SearchState(
+    val kind: String = SearchKind.SONGS,
+    val query: String = "",
+    val loading: Boolean = false,
+    val songs: List<Track> = emptyList(),
+    val collections: List<CollectionItem> = emptyList(),
+    val error: String? = null,
+)
+
+data class BrowseState(
+    val collection: CollectionItem,
+    val loading: Boolean = true,
+    val tracks: List<Track> = emptyList(),
+    val error: String? = null,
+)
+
 /** Requests from the UI to the running service. */
 sealed interface UiAction {
-    data class Search(val query: String) : UiAction
-    data class Play(val tracks: List<Track>, val index: Int) : UiAction
+    /** [kind] is a [SearchKind]. */
+    data class Search(val kind: String, val query: String) : UiAction
+    data class Browse(val collection: CollectionItem) : UiAction
+    data object CloseBrowse : UiAction
+    /** [mode] is an [com.kivan.motoparty.core.EnqueueMode]. */
+    data class Enqueue(val mode: String, val tracks: List<Track>) : UiAction
+    /** Jump to `upcoming[index]`, if it is still [id]. */
+    data class Jump(val index: Int, val id: String) : UiAction
+    data class Remove(val index: Int, val id: String) : UiAction
+    data object ClearQueue : UiAction
     /** Typed text, handled exactly like a recognised utterance. */
     data class Command(val text: String) : UiAction
     data class Control(val action: String) : UiAction

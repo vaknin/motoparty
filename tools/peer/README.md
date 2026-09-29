@@ -57,6 +57,10 @@ Stdin commands:
 | `pause` `resume` `next` `previous` | `music.control{action}` |
 | `vol+` `vol-` | nothing: volume is local (the peer has no real volume, so it just logs it) |
 | `unavailable` | toggles "my mic is dead": while on, the host's `talk.open` is answered with `talk.close{by:"client",reason:"unavailable"}` and talk never opens locally; `talk` will not ask for talk either |
+| `search <kind> <query>` | `music.search{id, kind, query}` (`songs`/`albums`/`playlists`, empty query allowed); the newest request's results print numbered |
+| `browse <n>` | `music.browse` for album/playlist result `n` |
+| `enqueue now\|next\|end <n>\|all` | `music.enqueue` with song result `n` (or all of them); `album` is set after a `browse` of an album |
+| `edit jump\|remove <i>` / `edit clear` | `music.edit`; `i` is 0-based into the last `state.queue`, and its `id` is filled in from there |
 | `stats` | prints jitter-buffer/voice stats and the clock estimate |
 | `raw <json>` | sends any JSON object **unvalidated**, to test how the other side handles bad input — the only way to send a message the codec now rejects, e.g. `raw {"t":"music.control","action":"volumeUp"}` |
 | `quit` | `bye{reason:"user"}`, then exits |
@@ -77,7 +81,7 @@ Voice: the peer sends a keepalive after 1 s without sending anything. While talk
 it sends Opus frames (VOIP, 24 kbps, FEC 10 %, DTX, 16 kHz mono, 20 ms) from the mic or
 the tone. Received audio is played through the adaptive jitter buffer.
 
-## Host: `uv run motoparty-peer host [--track FILE.m4a]`
+## Host: `uv run motoparty-peer host [--track FILE.m4a|DIR ...]`
 
 Advertises `<name>._motoparty._tcp` with TXT `proto=1 voice=47801 http=47802` and listens on
 47800/tcp, 47801/udp and 47802/tcp (`--port/--voice-port/--http-port`, where 0 means any free
@@ -95,7 +99,15 @@ port; `--bind`; `--no-mdns`). The hello carries the real ports.
 - Voice: replies to the source of the most recent valid packet from the client's IP. While
   talk is open it **echoes** every audio packet back (own seq, same ts and payload), so one
   phone can hear itself.
-- HTTP: `GET`/`HEAD /track/<id>.m4a` for the `--track` file, `Content-Type: audio/mp4`, single
+- Tracks: `--track` is repeatable and takes files or directories of `.m4a` (e.g. `--track tracks`).
+  `load` plays the first one.
+- Browsing: `music.search` matches title/artist/album (case-insensitive substring, empty query
+  = all) over those tracks. `albums` are the distinct album tags among the matching songs, with
+  `ref` = `al` + 14 chars of the album name's SHA-1; `playlists` is always empty.
+  `music.browse` answers an album's tracks or `error` ("Invalid ref" / "Not found").
+  `music.enqueue`/`music.edit` change the queue as the spec says and broadcast `state`;
+  `next`/`previous` walk it. There is no auto-advance at the end of a track.
+- HTTP: `GET`/`HEAD /track/<id>.m4a` for each `--track` file, `Content-Type: audio/mp4`, single
   `Range` → 206, unsatisfiable → 416, anything else → 404. `<id>` is 11 URL-safe characters
   derived from the file's SHA-1.
 - `command.text` goes through the grammar parser and is answered with `announce`.
@@ -276,6 +288,16 @@ CELT-only and other packets count as activity. Why:
   with "Didn't catch that", and drops a volume `music.control` as malformed.
 - The fake host treats `music.error` like a missed `music.ready`: it plays alone and still
   sends `music.play`.
+
+**Browsing (fake host).**
+
+- An enqueued id that is valid but not one of the host's files is skipped like an invalid one.
+- "Nothing playing" means no current track (no `state.music` and no load in flight); a paused
+  track counts as current.
+- `"now"` and `"jump"` push the old current track onto the `previous` history.
+- The 200 cap applies to the tracks of one enqueue and to the resulting upcoming queue
+  (the tail is dropped).
+- A `jump`/`remove` without `index` and `id` is decoded fine and then ignored, like a stale one.
 
 **Discovery.** During the sweep, a candidate that accepts the TCP connection gets 1 s to
 send its hello; the spec's 400 ms covers only the connect. The connection that wins the

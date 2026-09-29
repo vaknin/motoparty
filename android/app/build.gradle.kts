@@ -68,6 +68,8 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric (screenshot tests) needs the merged resources.
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -77,6 +79,8 @@ tasks.withType<Test>().configureEach {
     systemProperty("motoparty.fixtures", fixturesDir)
     // Network tests (YouTube extraction) run only when asked: ./gradlew test -Pnetwork
     systemProperty("motoparty.network", providers.gradleProperty("network").isPresent.toString())
+    // Screenshot tests write PNGs to app/build/outputs/roborazzi only when asked: -Pscreenshots
+    systemProperty("roborazzi.test.record", providers.gradleProperty("screenshots").isPresent.toString())
     testLogging {
         events("failed", "skipped")
         showStandardStreams = providers.gradleProperty("network").isPresent
@@ -103,6 +107,15 @@ dependencies {
     implementation(libs.media3.muxer)
     implementation(libs.okhttp)
     implementation(libs.newpipe.extractor)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.coil.test)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

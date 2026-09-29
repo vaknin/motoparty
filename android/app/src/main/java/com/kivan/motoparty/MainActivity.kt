@@ -10,12 +10,11 @@ import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import com.kivan.motoparty.ui.MainScreen
+import com.kivan.motoparty.ui.MotopartyTheme
 import com.kivan.motoparty.ui.Permission
 
 class MainActivity : ComponentActivity() {
@@ -28,7 +27,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            MotopartyTheme {
                 @Suppress("UNUSED_EXPRESSION") permissionEpoch
                 MainScreen(
                     permissions = permissions(),
@@ -64,8 +63,16 @@ class MainActivity : ComponentActivity() {
     private fun granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
     private fun permissions(): List<Permission> =
-        runtimePermissions.map { Permission(it.substringAfterLast('.'), granted(it), it) } +
+        runtimePermissions.map { Permission(label(it), granted(it), it) } +
             Permission("Draw over other apps", AndroidSettings.canDrawOverlays(this), OVERLAY)
+
+    private fun label(p: String) = when (p) {
+        Manifest.permission.RECORD_AUDIO -> "Microphone"
+        Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
+        Manifest.permission.BLUETOOTH_CONNECT -> "Nearby devices (Bluetooth)"
+        ACCESS_LOCAL_NETWORK -> "Local network"
+        else -> p.substringAfterLast('.')
+    }
 
     private fun grant(p: Permission) {
         if (p.key == OVERLAY) {

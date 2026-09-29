@@ -16,6 +16,11 @@ public enum ControlMessage: Equatable, Sendable {
     case musicStop
     case musicControl(MusicControl)
     case commandText(CommandText)
+    case musicSearch(MusicSearch)
+    case musicBrowse(MusicBrowse)
+    case musicResults(MusicResults)
+    case musicEnqueue(MusicEnqueue)
+    case musicEdit(MusicEdit)
     case announce(Announce)
     case state(HostState)
     case bye(Bye)
@@ -37,6 +42,11 @@ public enum ControlMessage: Equatable, Sendable {
         case .musicStop: "music.stop"
         case .musicControl: "music.control"
         case .commandText: "command.text"
+        case .musicSearch: "music.search"
+        case .musicBrowse: "music.browse"
+        case .musicResults: "music.results"
+        case .musicEnqueue: "music.enqueue"
+        case .musicEdit: "music.edit"
         case .announce: "announce"
         case .state: "state"
         case .bye: "bye"
@@ -64,16 +74,28 @@ public enum MusicAction: String, Codable, Sendable, CaseIterable {
 
 public enum Earcon: String, Codable, Sendable { case ok, error }
 
+/// What a `music.search` looks for (PROTOCOL.md "Browsing").
+public enum SearchKind: String, Codable, Sendable, CaseIterable { case songs, albums, playlists }
+
+/// Where `music.enqueue` puts its tracks.
+public enum EnqueueMode: String, Codable, Sendable { case now, next, end }
+
+/// A `music.edit` of the upcoming queue.
+public enum QueueEditOp: String, Codable, Sendable { case jump, remove, clear }
+
 // MARK: - Payloads
 
 public struct Hello: Codable, Equatable, Sendable {
+    /// PROTOCOL.md version this build speaks; a host with another one is refused.
+    public static let currentProto = 1
+
     public var proto: Int
     public var role: Role
     public var name: String
     public var voicePort: Int?
     public var httpPort: Int?
 
-    public init(proto: Int = 1, role: Role, name: String, voicePort: Int? = nil, httpPort: Int? = nil) {
+    public init(proto: Int = Hello.currentProto, role: Role, name: String, voicePort: Int? = nil, httpPort: Int? = nil) {
         self.proto = proto
         self.role = role
         self.name = name
@@ -160,6 +182,76 @@ public struct CommandText: Codable, Equatable, Sendable {
     public init(text: String, lang: String) { self.text = text; self.lang = lang }
 }
 
+public struct MusicSearch: Codable, Equatable, Sendable {
+    public var id: Int
+    public var kind: SearchKind
+    public var query: String
+    public init(id: Int, kind: SearchKind, query: String) { self.id = id; self.kind = kind; self.query = query }
+}
+
+public struct MusicBrowse: Codable, Equatable, Sendable {
+    public var id: Int
+    /// The `ref` of an album or playlist result.
+    public var ref: String
+    public init(id: Int, ref: String) { self.id = id; self.ref = ref }
+}
+
+/// One search or browse result. Songs carry `durationMs` and their YouTube id
+/// as `ref`; albums and playlists carry `count` and a playlist id.
+public struct ResultItem: Codable, Hashable, Sendable {
+    public var ref: String
+    public var title: String
+    public var artist: String
+    public var durationMs: Int64?
+    public var count: Int?
+    public var art: String?
+
+    public init(ref: String, title: String, artist: String, durationMs: Int64? = nil, count: Int? = nil, art: String? = nil) {
+        self.ref = ref; self.title = title; self.artist = artist
+        self.durationMs = durationMs; self.count = count; self.art = art
+    }
+}
+
+public struct MusicResults: Codable, Equatable, Sendable {
+    public var id: Int
+    public var items: [ResultItem]
+    /// Short text to show instead of an empty list.
+    public var error: String?
+    public init(id: Int, items: [ResultItem], error: String? = nil) { self.id = id; self.items = items; self.error = error }
+}
+
+public struct EnqueueTrack: Codable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var artist: String
+    public var album: String?
+    public var durationMs: Int64
+    public var art: String?
+
+    public init(id: String, title: String, artist: String, album: String? = nil, durationMs: Int64, art: String? = nil) {
+        self.id = id; self.title = title; self.artist = artist
+        self.album = album; self.durationMs = durationMs; self.art = art
+    }
+}
+
+public struct MusicEnqueue: Codable, Equatable, Sendable {
+    public var mode: EnqueueMode
+    public var tracks: [EnqueueTrack]
+    /// Cover for tracks without their own `art` (an album's cover).
+    public var art: String?
+    public init(mode: EnqueueMode, tracks: [EnqueueTrack], art: String? = nil) {
+        self.mode = mode; self.tracks = tracks; self.art = art
+    }
+}
+
+public struct MusicEdit: Codable, Equatable, Sendable {
+    public var op: QueueEditOp
+    /// `state.queue` index and the id there, for `jump` and `remove`.
+    public var index: Int?
+    public var id: String?
+    public init(op: QueueEditOp, index: Int? = nil, id: String? = nil) { self.op = op; self.index = index; self.id = id }
+}
+
 public struct Announce: Codable, Equatable, Sendable {
     public var text: String
     public var earcon: Earcon?
@@ -175,11 +267,14 @@ public struct HostState: Codable, Equatable, Sendable {
         public var positionMs: Int64
         public var atHostTimeMs: Int64
         public var durationMs: Int64
+        /// Cover image URL, when the host has one.
+        public var art: String?
 
         public init(id: String, title: String, artist: String, playing: Bool,
-                    positionMs: Int64, atHostTimeMs: Int64, durationMs: Int64) {
+                    positionMs: Int64, atHostTimeMs: Int64, durationMs: Int64, art: String? = nil) {
             self.id = id; self.title = title; self.artist = artist; self.playing = playing
             self.positionMs = positionMs; self.atHostTimeMs = atHostTimeMs; self.durationMs = durationMs
+            self.art = art
         }
 
         public var anchor: MusicAnchor {
@@ -264,6 +359,11 @@ public enum ControlCodec {
         case "music.stop": return .musicStop
         case "music.control": return .musicControl(try d(MusicControl.self))
         case "command.text": return .commandText(try d(CommandText.self))
+        case "music.search": return .musicSearch(try d(MusicSearch.self))
+        case "music.browse": return .musicBrowse(try d(MusicBrowse.self))
+        case "music.results": return .musicResults(try d(MusicResults.self))
+        case "music.enqueue": return .musicEnqueue(try d(MusicEnqueue.self))
+        case "music.edit": return .musicEdit(try d(MusicEdit.self))
         case "announce": return .announce(try d(Announce.self))
         case "state": return .state(try d(HostState.self))
         case "bye": return .bye(try d(Bye.self))
@@ -290,6 +390,11 @@ public enum ControlCodec {
         case .musicStop: return try encoder.encode(Tagged(t: t, payload: Empty()))
         case .musicControl(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .commandText(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicSearch(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicBrowse(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicResults(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicEnqueue(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicEdit(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .announce(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .state(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .bye(let p): return try encoder.encode(Tagged(t: t, payload: p))
@@ -308,5 +413,37 @@ public enum ControlCodec {
             try c.encode(t, forKey: .t)
             try payload.encode(to: encoder)
         }
+    }
+}
+
+// MARK: - Browsing size limits
+
+extension MusicEnqueue {
+    /// Hosts keep at most this many tracks of one enqueue (PROTOCOL.md "Browsing").
+    public static let maxTracks = 200
+
+    /// This enqueue cut to fit one control frame (PROTOCOL.md "Browsing" step
+    /// 5): at most `maxTracks`, then per-track `art` dropped, then trailing
+    /// tracks, until the encoded message is under `maxBytes`.
+    public func fitted(maxBytes: Int = Framing.maxFrameLength) -> MusicEnqueue {
+        func fits(_ m: MusicEnqueue) -> Bool {
+            ((try? ControlCodec.encode(.musicEnqueue(m)))?.count ?? .max) < maxBytes
+        }
+        var out = self
+        if out.tracks.count > Self.maxTracks { out.tracks = Array(out.tracks.prefix(Self.maxTracks)) }
+        if fits(out) { return out }
+        for i in out.tracks.indices { out.tracks[i].art = nil }
+        if fits(out) { return out }
+        // Largest prefix that fits; every track is roughly the same size, so
+        // a binary search over the count is exact enough and cheap.
+        var lo = 0, hi = out.tracks.count
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            var candidate = out
+            candidate.tracks = Array(out.tracks.prefix(mid))
+            if fits(candidate) { lo = mid } else { hi = mid - 1 }
+        }
+        out.tracks = Array(out.tracks.prefix(lo))
+        return out
     }
 }

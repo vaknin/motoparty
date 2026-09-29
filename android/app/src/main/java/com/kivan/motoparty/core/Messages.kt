@@ -37,6 +37,27 @@ object ControlAction {
     const val PREVIOUS = "previous"
 }
 
+/** PROTOCOL.md "Browsing": what `music.search` looks for. */
+object SearchKind {
+    const val SONGS = "songs"
+    const val ALBUMS = "albums"
+    const val PLAYLISTS = "playlists"
+}
+
+/** PROTOCOL.md "Browsing": where `music.enqueue` puts its tracks. */
+object EnqueueMode {
+    const val NOW = "now"
+    const val NEXT = "next"
+    const val END = "end"
+}
+
+/** PROTOCOL.md "Browsing": `music.edit` operations on the upcoming queue. */
+object EditOp {
+    const val JUMP = "jump"
+    const val REMOVE = "remove"
+    const val CLEAR = "clear"
+}
+
 /**
  * The closed value sets of PROTOCOL.md's message table, by type and field. A value outside its
  * set is malformed: dropped and logged, connection kept ("Control channel").
@@ -50,6 +71,9 @@ internal val ENUM_FIELDS: Map<Pair<String, String>, Set<String>> = mapOf(
     ("music.control" to "action") to
         setOf(ControlAction.PAUSE, ControlAction.RESUME, ControlAction.NEXT, ControlAction.PREVIOUS),
     ("announce" to "earcon") to setOf(Earcon.OK, Earcon.ERROR),
+    ("music.search" to "kind") to setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS),
+    ("music.enqueue" to "mode") to setOf(EnqueueMode.NOW, EnqueueMode.NEXT, EnqueueMode.END),
+    ("music.edit" to "op") to setOf(EditOp.JUMP, EditOp.REMOVE, EditOp.CLEAR),
 )
 
 @Serializable
@@ -118,6 +142,47 @@ data class MusicControl(val action: String) : Message
 data class CommandText(val text: String, val lang: String) : Message
 
 @Serializable
+@SerialName("music.search")
+data class MusicSearch(val id: Long, val kind: String, val query: String) : Message
+
+@Serializable
+@SerialName("music.browse")
+data class MusicBrowse(val id: Long, val ref: String) : Message
+
+@Serializable
+@SerialName("music.results")
+data class MusicResults(val id: Long, val items: List<ResultItem>, val error: String? = null) : Message
+
+/** A song (`ref` = track id) or an album/playlist (`ref` = playlist id), PROTOCOL.md "Browsing". */
+@Serializable
+data class ResultItem(
+    val ref: String,
+    val title: String,
+    val artist: String,
+    val durationMs: Long? = null,
+    val count: Int? = null,
+    val art: String? = null,
+)
+
+@Serializable
+@SerialName("music.enqueue")
+data class MusicEnqueue(val mode: String, val tracks: List<EnqueueTrack>, val art: String? = null) : Message
+
+@Serializable
+data class EnqueueTrack(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val album: String? = null,
+    val durationMs: Long,
+    val art: String? = null,
+)
+
+@Serializable
+@SerialName("music.edit")
+data class MusicEdit(val op: String, val index: Int? = null, val id: String? = null) : Message
+
+@Serializable
 @SerialName("announce")
 data class Announce(val text: String, val earcon: String? = null) : Message
 
@@ -139,6 +204,7 @@ data class MusicState(
     val positionMs: Long,
     val atHostTimeMs: Long,
     val durationMs: Long,
+    val art: String? = null,
 )
 
 @Serializable

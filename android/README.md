@@ -26,6 +26,7 @@ the source is missing. To bump libopus, change `VERSION`/`SHA256` in the script 
 ```sh
 ./gradlew test                       # JVM unit tests (protocol fixtures from ../fixtures)
 ./gradlew :app:testDebugUnitTest -Pnetwork --tests '*CatalogNetworkTest*'   # live YouTube
+./gradlew testDebugUnitTest -Pscreenshots --tests '*ScreensTest*'   # PNGs of every tab → app/build/outputs/roborazzi/
 ./gradlew assembleDebug
 adb -s 192.168.1.100:5555 install -r app/build/outputs/apk/debug/app-debug.apk
 adb -s 192.168.1.100:5555 shell am start -n com.kivan.motoparty/.MainActivity
@@ -69,7 +70,7 @@ type (it cannot be claimed from the background).
 | `voicecmd/` | `Transcriber` (on-device SpeechRecognizer, falls back to the default service), `Announcer` (TTS + earcons) |
 | `overlay/OverlayService` | Draggable TYPE_APPLICATION_OVERLAY with TALK and MUSIC zones (112×100 dp), colour = state; drag onto the X at the bottom to hide (sets `overlayEnabled=false`, back via the notification's "Show buttons") |
 | `trigger/` | `Triggers`: one stream fed by overlay, headset buttons, notification and UI |
-| `ui/MainScreen` | Link status, now playing/queue, search, settings, log |
+| `ui/` | `MainScreen` (tabs, stateless `Motoparty(...)`), `RideTab`, `SearchTab`, `QueueTab`, `SettingsTab` (Diagnostics: link numbers, debug tools, log), `Theme`, `Icons` (path data, no icon library), `Common` (Coil cover art, rows) |
 
 Headset buttons (via the MediaSession): play/pause → talk toggle (setting: or music
 play/pause); next (AirPods double press) → voice command (setting: or next track); previous →

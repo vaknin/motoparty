@@ -28,11 +28,11 @@ final class AppSettings: ObservableObject {
     @Published var latencyTrimMs: Double { didSet { defaults.set(latencyTrimMs, forKey: "latencyTrimMs") } }
     /// BCP-47 tag for on-device ASR and TTS.
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "speechLanguage") } }
-    /// AirPods single press / lock-screen play-pause.
+    /// Headset play/pause (AirPods single press) / lock-screen play-pause.
     @Published var playPauseAction: RemoteAction { didSet { defaults.set(playPauseAction.rawValue, forKey: "playPauseAction") } }
-    /// AirPods double press.
+    /// Headset next track (AirPods double press).
     @Published var nextTrackAction: RemoteAction { didSet { defaults.set(nextTrackAction.rawValue, forKey: "nextTrackAction") } }
-    /// AirPods triple press.
+    /// Headset previous track (AirPods triple press).
     @Published var previousTrackAction: RemoteAction { didSet { defaults.set(previousTrackAction.rawValue, forKey: "previousTrackAction") } }
     /// iOS also sends "pause" when an AirPod is taken out of the ear, so the
     /// explicit pause command is ignored unless this is on.

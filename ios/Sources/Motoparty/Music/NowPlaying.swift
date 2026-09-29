@@ -3,9 +3,9 @@ import Foundation
 import MediaPlayer
 
 /// Lock screen / Control Center info and headset buttons. Because the app owns
-/// the audio session and the player, AirPods stem presses arrive here as
-/// remote commands: single press → play/pause, double → next, triple →
-/// previous. AppModel maps them to actions (Settings).
+/// the audio session and the player, headset presses arrive here as remote
+/// commands: play/pause, next, previous (AirPods: single, double, triple
+/// press; other buds: whatever their own app maps to those). AppModel maps them to actions (Settings).
 final class NowPlaying {
     enum Button { case playPause, pause, next, previous }
 

@@ -28,6 +28,7 @@ class TrackInfo:
     artist: str
     album: str | None
     duration_ms: int
+    art: str | None = None  # cover URL from a music.enqueue; the local files have none
 
     @property
     def path(self) -> str:
@@ -115,6 +116,53 @@ def load_track(file: Path) -> TrackInfo:
         album=tags.get("album") or None,
         duration_ms=duration or 0,
     )
+
+
+def load_library(paths: list[str]) -> list[TrackInfo]:
+    """The host's tracks: each path is an .m4a file or a directory of them. Dedup by id."""
+    files: list[Path] = []
+    for p in map(Path, paths):
+        files += sorted(p.glob("*.m4a")) if p.is_dir() else [p]
+    out: dict[str, TrackInfo] = {}
+    for f in files:
+        t = load_track(f)
+        out.setdefault(t.id, t)
+    return list(out.values())
+
+
+# PROTOCOL.md "Browsing": only YouTube-style ids travel as refs and track ids.
+VALID_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def album_ref(album: str) -> str:
+    """A stable ref for a local album name (the real host uses a YouTube playlist id)."""
+    return "al" + base64.urlsafe_b64encode(hashlib.sha1(album.encode()).digest()).decode()[:14]
+
+
+def search(library: list[TrackInfo], kind: str, query: str) -> list[dict]:
+    """music.search over the local tracks: substring match on title/artist/album."""
+    q = query.casefold()
+    songs = [t for t in library if any(q in (v or "").casefold() for v in (t.title, t.artist, t.album))]
+    if kind == "songs":
+        return [song_item(t) for t in songs]
+    if kind == "albums":
+        albums: dict[str, dict] = {}
+        for t in songs:
+            if t.album and t.album not in albums:
+                n = sum(1 for u in library if u.album == t.album)
+                albums[t.album] = {"ref": album_ref(t.album), "title": t.album, "artist": t.artist, "count": n}
+        return list(albums.values())
+    return []  # playlists: the fake host has none
+
+
+def browse(library: list[TrackInfo], ref: str) -> list[dict] | None:
+    """An album's songs in library order; None for an unknown ref."""
+    songs = [song_item(t) for t in library if t.album and album_ref(t.album) == ref]
+    return songs or None
+
+
+def song_item(t: TrackInfo) -> dict:
+    return {"ref": t.id, "title": t.title, "artist": t.artist, "durationMs": t.duration_ms}
 
 
 _SAFE = re.compile(r"[^A-Za-z0-9_-]")

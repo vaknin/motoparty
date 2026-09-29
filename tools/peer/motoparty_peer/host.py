@@ -1,7 +1,8 @@
 """`motoparty-peer host`: a minimal fake Pixel, for testing the iOS client without the Pixel.
 
 Advertises over Bonjour, serves control/voice/HTTP, is the talk authority (incl. the 20 s
-silence close), echoes voice back to the client, serves one track and parses command.text.
+silence close), echoes voice back to the client, serves its --track files, parses command.text
+and answers the Browsing messages (search, browse, enqueue, edit) from those files.
 """
 
 from __future__ import annotations
@@ -13,13 +14,12 @@ import random
 import re
 import socket
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 from . import discovery
 from .commands import UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, parse_command
-from .music import TrackInfo, load_track
+from .music import VALID_ID, TrackInfo, browse, load_library, search
 from .opus import is_voice_activity
 from .protocol import (
     CONTROL_PORT,
@@ -47,7 +47,9 @@ from .voice import VoiceProtocol
 HELP = """commands: load | play | pause | stop | talk | mic on|off (refuse talk as unavailable) |
           announce <text> | state | stats | raw <json> (send unvalidated) | quit"""
 
-C2H_ONLY = {"ping", "music.ready", "music.error", "music.control", "command.text"}
+C2H_ONLY = {"ping", "music.ready", "music.error", "music.control", "command.text",
+            "music.search", "music.browse", "music.enqueue", "music.edit"}
+MAX_QUEUE = 200  # PROTOCOL.md "Browsing" 3 and 5
 
 
 @dataclass(eq=False)
@@ -83,10 +85,16 @@ class Host:
         self.talk_opened = 0
         self.last_activity = 0
         self.resume_after_talk = False
-        self.track: TrackInfo | None = load_track(Path(args.track)) if args.track else None
+        self.library: list[TrackInfo] = load_library(args.track or [])
+        self.by_id = {t.id: t for t in self.library}
+        # The current track (`load` plays the first library track), the upcoming queue
+        # (state.queue) and the tracks before the current one (for `previous`).
+        self.track: TrackInfo | None = self.library[0] if self.library else None
+        self.queue: list[TrackInfo] = []
+        self.history: list[TrackInfo] = []
         self.music: dict | None = None
         self.pending_ready: dict[str, asyncio.Future] = {}
-        self.loading = False
+        self.load_task: asyncio.Task | None = None
         self.voice_transport: asyncio.DatagramTransport | None = None
         self.voice_addr = None
         self.voice_seq = random.randrange(1 << 16)
@@ -110,8 +118,7 @@ class Host:
         self.http_port = httpd.server_address[1]
         threading.Thread(target=httpd.serve_forever, name="http", daemon=True).start()
         log(f"host {self.name!r}: control tcp/{self.port} voice udp/{self.voice_port} http tcp/{self.http_port}")
-        if self.track:
-            t = self.track
+        for t in self.library:
             log(f"track: {t.path} {t.title!r} by {t.artist!r} ({t.duration_ms} ms) <- {t.file}")
         adv = None
         if not a.no_mdns:
@@ -163,7 +170,7 @@ class Host:
         s: dict = {"t": "state", "talk": self.talk}
         if self.music:
             s["music"] = dict(self.music)
-        s["queue"] = []
+        s["queue"] = [{"id": t.id, "title": t.title, "artist": t.artist} for t in self.queue]
         return s
 
     def send_state(self) -> None:
@@ -286,6 +293,12 @@ class Host:
             self._music_control(msg["action"])
         elif t == "command.text":
             self._command(msg["text"])
+        elif t in ("music.search", "music.browse"):
+            self._browse(msg)
+        elif t == "music.enqueue":
+            self._enqueue(msg)
+        elif t == "music.edit":
+            self._edit(msg)
         elif t not in C2H_ONLY:
             log(f"   ({t!r} is host-to-client; ignored)")
         return None
@@ -367,17 +380,13 @@ class Host:
         assert t is not None
         self.music = {"id": t.id, "title": t.title, "artist": t.artist, "playing": True,
                       "positionMs": pos, "atHostTimeMs": at, "durationMs": t.duration_ms}
+        if t.art:
+            self.music["art"] = t.art
         self.send({"t": "music.play", "id": t.id, "positionMs": pos, "atHostTimeMs": at})
 
     async def _load_and_play(self) -> None:
         t = self.track
-        if t is None:
-            log("no --track given")
-            return
-        if self.loading:
-            log("already loading")
-            return
-        self.loading = True
+        assert t is not None
         fut = self.loop.create_future()
         self.pending_ready[t.id] = fut
         try:
@@ -399,14 +408,30 @@ class Host:
             if self.talk:
                 self.music = {"id": t.id, "title": t.title, "artist": t.artist, "playing": False,
                               "positionMs": 0, "atHostTimeMs": now, "durationMs": t.duration_ms}
+                if t.art:
+                    self.music["art"] = t.art
                 self.resume_after_talk = True
                 log("music: talk is open; will start when it closes")
             else:
                 self._play_from(0, now + PLAY_LEAD_MS)
             self.send_state()
         finally:
-            self.pending_ready.pop(t.id, None)
-            self.loading = False
+            if self.pending_ready.get(t.id) is fut:
+                del self.pending_ready[t.id]
+
+    def _start(self, track: TrackInfo) -> None:
+        """Make `track` current and load/play it, replacing any load still in flight."""
+        if self.load_task and not self.load_task.done():
+            self.load_task.cancel()
+        self.track = track
+        self.load_task = asyncio.create_task(self._load_and_play())
+
+    def _loading(self) -> bool:
+        return self.load_task is not None and not self.load_task.done()
+
+    def _has_current(self) -> bool:
+        """A track is loaded or being loaded (state.music, or about to be)."""
+        return self.track is not None and (self.music is not None or self._loading())
 
     def _pause(self) -> bool:
         if not self.music or not self.music["playing"]:
@@ -437,8 +462,81 @@ class Host:
             self._pause() or log("   (nothing playing)")
         elif action == "resume":
             self._resume() or log("   (nothing paused)")
+        elif action == "next" and self.queue:
+            if self._has_current():
+                self.history.append(self.track)
+            self._start(self.queue.pop(0))
+            self.send_state()
+        elif action == "previous" and self.history:
+            if self._has_current():
+                self.queue.insert(0, self.track)
+            self._start(self.history.pop())
+            self.send_state()
         else:
-            log(f"   ({action}: no queue in the fake host)")
+            log(f"   ({action}: nothing {'queued' if action == 'next' else 'before this track'})")
+
+    # ------------------------------------------------------------------ browsing
+
+    def _browse(self, msg: dict) -> None:
+        res: dict = {"t": "music.results", "id": msg["id"], "items": []}
+        if msg["t"] == "music.search":
+            res["items"] = search(self.library, msg["kind"], msg["query"])
+        elif not VALID_ID.fullmatch(msg["ref"]):
+            res["error"] = "Invalid ref"
+        elif (items := browse(self.library, msg["ref"])) is None:
+            res["error"] = "Not found"
+        else:
+            res["items"] = items
+        self.send(res)
+
+    def _enqueue(self, msg: dict) -> None:
+        # PROTOCOL.md "Browsing" 3. The fake host can only play its own files, so an id
+        # that is valid but not one of them is skipped like an invalid one.
+        tracks = []
+        for tr in msg["tracks"]:
+            lib = self.by_id.get(tr["id"]) if VALID_ID.fullmatch(tr["id"]) else None
+            if lib is None:
+                log(f"   (skipping {tr['id']!r}: not a track this host serves)")
+                continue
+            tracks.append(replace(lib, art=tr.get("art") or msg.get("art")))
+        tracks = tracks[:MAX_QUEUE]
+        if not tracks:
+            log("   (no playable tracks; enqueue ignored)")
+            return
+        mode = msg["mode"]
+        if not self._has_current():
+            mode = "now"  # nothing playing: next/end act like now
+        if mode == "now":
+            if self._has_current():
+                self.history.append(self.track)
+            self.queue = tracks[1:]
+            self._start(tracks[0])
+        elif mode == "next":
+            self.queue[0:0] = tracks
+        else:
+            self.queue += tracks
+        del self.queue[MAX_QUEUE:]
+        self.send_state()
+
+    def _edit(self, msg: dict) -> None:
+        op = msg["op"]
+        if op == "clear":
+            self.queue.clear()
+            self.send_state()
+            return
+        i, id_ = msg.get("index"), msg.get("id")
+        if i is None or id_ is None or not 0 <= i < len(self.queue) or self.queue[i].id != id_:
+            log("   (stale or incomplete edit: the queue changed under the client; ignored)")
+            return
+        if op == "remove":
+            del self.queue[i]
+        else:  # jump: the skipped tracks go behind the current one, so `previous` reaches them
+            if self._has_current():
+                self.history.append(self.track)
+            self.history += self.queue[:i]
+            track, self.queue = self.queue[i], self.queue[i + 1 :]
+            self._start(track)
+        self.send_state()
 
     def _command(self, text: str) -> None:
         cmd = parse_command(text)
@@ -452,7 +550,7 @@ class Host:
                 self.send({"t": "announce", "text": f"No results for {cmd['query']}", "earcon": "error"})
                 return
             self.send({"t": "announce", "text": f"Playing {self.track.title} by {self.track.artist}", "earcon": "ok"})
-            asyncio.create_task(self._load_and_play())
+            self._start(self.track)
         elif a == "pause":
             ok = self._pause()
             self.send({"t": "announce", "text": "Paused" if ok else "Nothing is playing", "earcon": "ok" if ok else "error"})
@@ -481,7 +579,12 @@ class Host:
             if not cmd:
                 continue
             if cmd == "load":
-                asyncio.create_task(self._load_and_play())
+                if self.track is None:
+                    log("no --track given")
+                elif self._loading():
+                    log("already loading")
+                else:
+                    self._start(self.track)
             elif cmd in ("play", "resume"):
                 self._resume() or log("nothing paused (use load)")
             elif cmd == "pause":
@@ -566,9 +669,10 @@ def _make_handler(host: Host):
             log(f"http: {self.client_address[0]} {fmt % args}")
 
         def _serve(self, body: bool) -> None:
-            t = host.track
             path = self.path.split("?", 1)[0]
-            if t is None or path != t.path:
+            m = re.fullmatch(r"/track/([A-Za-z0-9_-]+)\.m4a", path)
+            t = host.by_id.get(m[1]) if m else None
+            if t is None:
                 self.send_response(404)
                 self.send_header("Content-Length", "0")
                 self.end_headers()

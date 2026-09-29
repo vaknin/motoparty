@@ -14,7 +14,10 @@ struct SettingsView: View {
                     Picker("Speech language", selection: $settings.speechLanguage) {
                         ForEach(AppSettings.languages, id: \.self) { Text($0).tag($0) }
                     }
-                    Stepper(value: $settings.latencyTrimMs, in: -500...1_000, step: 10) {
+                    // Through the model, so a playing track re-syncs to the new trim.
+                    Stepper(value: Binding(get: { settings.latencyTrimMs },
+                                           set: { model.adjustTrim(by: $0 - settings.latencyTrimMs) }),
+                            in: -500...1_000, step: 10) {
                         Text("Latency trim: \(Int(settings.latencyTrimMs)) ms")
                     }
                     Stepper(value: $settings.commandMaxSeconds, in: 3...15, step: 1) {
@@ -23,20 +26,14 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    actionPicker("Single press", $settings.playPauseAction)
-                    actionPicker("Double press", $settings.nextTrackAction)
-                    actionPicker("Triple press", $settings.previousTrackAction)
+                    actionPicker("Play / pause", $settings.playPauseAction)
+                    actionPicker("Next track", $settings.nextTrackAction)
+                    actionPicker("Previous track", $settings.previousTrackAction)
                     Toggle("Explicit “pause” also counts", isOn: $settings.pauseCommandTriggers)
                 } header: {
-                    Text("AirPods / headset buttons")
+                    Text("Headset buttons")
                 } footer: {
-                    Text("iOS also sends “pause” when an AirPod leaves the ear, so that is ignored by default.")
-                }
-
-                Section("Music") {
-                    Button("Pause / resume") { model.musicControl(model.musicPlaying ? .pause : .resume) }
-                    Button("Next track") { model.musicControl(.next) }
-                    Button("Previous track") { model.musicControl(.previous) }
+                    Text("AirPods: single, double, triple press. Other buds: set their gestures to play/pause, next and previous in their own app. Buds send “pause” when taken out of the ear, so that is ignored by default.")
                 }
 
                 Section("Link") {

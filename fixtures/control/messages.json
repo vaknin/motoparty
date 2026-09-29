@@ -96,6 +96,97 @@
    "lang": "en-US"
   },
   {
+   "t": "music.search",
+   "id": 3,
+   "kind": "albums",
+   "query": "dark side of the moon"
+  },
+  {
+   "t": "music.browse",
+   "id": 4,
+   "ref": "OLAK5uy_nMr9h2VlS-2PULNz3M3XVXQj_P3C2bqaY"
+  },
+  {
+   "t": "music.results",
+   "id": 3,
+   "items": [
+    {
+     "ref": "OLAK5uy_nMr9h2VlS-2PULNz3M3XVXQj_P3C2bqaY",
+     "title": "The Dark Side of the Moon",
+     "artist": "Pink Floyd",
+     "count": 10,
+     "art": "https://lh3.googleusercontent.com/abc=w226-h226"
+    },
+    {
+     "ref": "PLx0sYbCqOb8TBPRdmBHs5Iftvv9TPboYG",
+     "title": "Mix",
+     "artist": ""
+    }
+   ]
+  },
+  {
+   "t": "music.results",
+   "id": 5,
+   "items": [
+    {
+     "ref": "dQw4w9WgXcQ",
+     "title": "Never Gonna Give You Up",
+     "artist": "Rick Astley",
+     "durationMs": 213000
+    }
+   ]
+  },
+  {
+   "t": "music.results",
+   "id": 6,
+   "items": [],
+   "error": "No coverage"
+  },
+  {
+   "t": "music.enqueue",
+   "mode": "now",
+   "tracks": [
+    {
+     "id": "dQw4w9WgXcQ",
+     "title": "Never Gonna Give You Up",
+     "artist": "Rick Astley",
+     "durationMs": 213000,
+     "art": "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg"
+    }
+   ]
+  },
+  {
+   "t": "music.enqueue",
+   "mode": "end",
+   "tracks": [
+    {
+     "id": "abc-_123",
+     "title": "Speak to Me",
+     "artist": "Pink Floyd",
+     "album": "The Dark Side of the Moon",
+     "durationMs": 65000
+    },
+    {
+     "id": "abc-_124",
+     "title": "Breathe",
+     "artist": "Pink Floyd",
+     "album": "The Dark Side of the Moon",
+     "durationMs": 169000
+    }
+   ],
+   "art": "https://lh3.googleusercontent.com/abc=w226-h226"
+  },
+  {
+   "t": "music.edit",
+   "op": "jump",
+   "index": 2,
+   "id": "x1"
+  },
+  {
+   "t": "music.edit",
+   "op": "clear"
+  },
+  {
    "t": "announce",
    "text": "Playing Money by Pink Floyd",
    "earcon": "ok"
@@ -119,7 +210,8 @@
     "playing": false,
     "positionMs": 1234,
     "atHostTimeMs": 987654,
-    "durationMs": 213000
+    "durationMs": 213000,
+    "art": "https://lh3.googleusercontent.com/abc=w544-h544"
    },
    "queue": [
     {

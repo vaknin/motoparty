@@ -78,6 +78,10 @@ _REASON = ("trigger", "silence", "link", "unavailable")
 # Volume is local (PROTOCOL.md "Commands"): volumeUp/volumeDown are not wire actions.
 _ACTION = ("pause", "resume", "next", "previous")
 _EARCON = ("ok", "error")
+# Browsing (PROTOCOL.md "Browsing")
+_KIND = ("songs", "albums", "playlists")
+_MODE = ("now", "next", "end")
+_OP = ("jump", "remove", "clear")
 
 STATE_MUSIC_SCHEMA: dict[str, tuple[Any, bool]] = {
     "id": ("str", True),
@@ -87,12 +91,31 @@ STATE_MUSIC_SCHEMA: dict[str, tuple[Any, bool]] = {
     "positionMs": ("int", True),
     "atHostTimeMs": ("int", True),
     "durationMs": ("int", True),
+    "art": ("str", False),
 }
 
 QUEUE_ITEM_SCHEMA: dict[str, tuple[Any, bool]] = {
     "id": ("str", True),
     "title": ("str", True),
     "artist": ("str", True),
+}
+
+RESULT_ITEM_SCHEMA: dict[str, tuple[Any, bool]] = {
+    "ref": ("str", True),
+    "title": ("str", True),
+    "artist": ("str", True),
+    "durationMs": ("int", False),
+    "count": ("int", False),
+    "art": ("str", False),
+}
+
+ENQUEUE_TRACK_SCHEMA: dict[str, tuple[Any, bool]] = {
+    "id": ("str", True),
+    "title": ("str", True),
+    "artist": ("str", True),
+    "durationMs": ("int", True),
+    "album": ("str", False),
+    "art": ("str", False),
 }
 
 SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
@@ -123,6 +146,21 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
     "music.stop": {},
     "music.control": {"action": (_ACTION, True)},
     "command.text": {"text": ("str", True), "lang": ("str", True)},
+    "music.search": {"id": ("int", True), "kind": (_KIND, True), "query": ("str", True)},
+    "music.browse": {"id": ("int", True), "ref": ("str", True)},
+    "music.results": {
+        "id": ("int", True),
+        "items": (("list", RESULT_ITEM_SCHEMA), True),
+        "error": ("str", False),
+    },
+    "music.enqueue": {
+        "mode": (_MODE, True),
+        "tracks": (("list", ENQUEUE_TRACK_SCHEMA), True),
+        "art": ("str", False),
+    },
+    # index/id are required for jump/remove, but a stale or missing pair is the host's
+    # "ignore the edit" case, not a malformed frame (see host.py).
+    "music.edit": {"op": (_OP, True), "index": ("int", False), "id": ("str", False)},
     "announce": {"text": ("str", True), "earcon": (_EARCON, False)},
     "state": {
         "talk": ("bool", True),

@@ -43,7 +43,9 @@ object Codec {
         TalkClose.serializer(), MusicLoad.serializer(), MusicReady.serializer(),
         MusicError.serializer(), MusicPlay.serializer(), MusicPause.serializer(),
         MusicStop.serializer(), MusicControl.serializer(), CommandText.serializer(),
-        Announce.serializer(), State.serializer(), Bye.serializer(),
+        Announce.serializer(), State.serializer(), Bye.serializer(), MusicSearch.serializer(),
+        MusicBrowse.serializer(), MusicResults.serializer(), MusicEnqueue.serializer(),
+        MusicEdit.serializer(),
     ).associateBy { it.descriptor.serialName }
 
     fun encode(message: Message): String {
@@ -123,6 +125,20 @@ object Codec {
     }
 
     fun frame(message: Message): ByteArray = frameText(encode(message))
+
+    /** True when [message] frames within [MAX_FRAME]. */
+    fun fits(message: Message): Boolean = encode(message).toByteArray(Charsets.UTF_8).size <= MAX_FRAME
+
+    /**
+     * PROTOCOL.md "Browsing" step 5: a `music.results` that would not fit loses its per-item
+     * `art` first, then trailing items.
+     */
+    fun fit(results: MusicResults): MusicResults {
+        if (fits(results)) return results
+        var r = results.copy(items = results.items.map { it.copy(art = null) })
+        while (!fits(r)) r = r.copy(items = r.items.dropLast(maxOf(1, r.items.size / 8)))
+        return r
+    }
 
     fun frameText(text: String): ByteArray {
         val body = text.toByteArray(Charsets.UTF_8)

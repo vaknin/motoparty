@@ -4,6 +4,7 @@ import com.kivan.motoparty.core.Command
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
@@ -18,6 +19,7 @@ import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import java.io.IOException
 
 /**
  * YouTube Music search and audio resolution through NewPipeExtractor. YouTube does the fuzzy
@@ -46,50 +48,75 @@ class Catalog(private val http: OkHttpClient) {
                 if (list.isEmpty()) throw NotFound(query)
                 Result(list, "songs by ${list.first().artist}")
             }
-            Command.Kind.ALBUM -> collection(Q.MUSIC_ALBUMS, query, "album")
-            Command.Kind.PLAYLIST -> collection(Q.MUSIC_PLAYLISTS, query, "playlist")
+            Command.Kind.ALBUM -> topCollection(albums = true, query, "album")
+            Command.Kind.PLAYLIST -> topCollection(albums = false, query, "playlist")
         }
     }
 
-    /** Free-text search for the manual search box: YouTube Music songs. */
+    /** Free-text song search for the search screens: YouTube Music songs. */
     suspend fun searchSongs(query: String, limit: Int = 20): List<Track> =
         withContext(Dispatchers.IO) { songs(query).take(limit) }
 
+    /** Albums ([albums]) or playlists matching [query], for the search screens. */
+    suspend fun searchCollections(albums: Boolean, query: String, limit: Int = 20): List<CollectionItem> =
+        withContext(Dispatchers.IO) {
+            val filter = if (albums) Q.MUSIC_ALBUMS else Q.MUSIC_PLAYLISTS
+            val hits = runSearch(query, filter).filterIsInstance<PlaylistInfoItem>()
+                .ifEmpty { runSearch(query, Q.PLAYLISTS).filterIsInstance<PlaylistInfoItem>() }
+            hits.mapNotNull { it.toCollection() }.take(limit)
+        }
+
+    /** The tracks of the album or playlist [id], in order, at most [MAX_COLLECTION]. */
+    suspend fun browse(id: String): List<Track> = withContext(Dispatchers.IO) { tracksOf(id).second }
+
     private fun songs(query: String): List<Track> {
         val items = runSearch(query, Q.MUSIC_SONGS).filterIsInstance<StreamInfoItem>()
-        val fromMusic = items.mapNotNull { it.toTrack(album = null) }
+        val fromMusic = items.mapNotNull { it.toTrack(album = null, art = null) }
         if (fromMusic.isNotEmpty()) return fromMusic
         // Plain YouTube as a fallback when the Music endpoint returns nothing or breaks.
-        return runSearch(query, Q.VIDEOS).filterIsInstance<StreamInfoItem>().mapNotNull { it.toTrack(null) }
+        return runSearch(query, Q.VIDEOS).filterIsInstance<StreamInfoItem>().mapNotNull { it.toTrack(null, null) }
     }
 
-    private fun collection(filter: String, query: String, word: String): Result {
-        val hit = runSearch(query, filter).filterIsInstance<PlaylistInfoItem>().firstOrNull()
-            ?: runSearch(query, Q.PLAYLISTS).filterIsInstance<PlaylistInfoItem>().firstOrNull()
+    private fun topCollection(albums: Boolean, query: String, word: String): Result {
+        val filter = if (albums) Q.MUSIC_ALBUMS else Q.MUSIC_PLAYLISTS
+        val hit = (runSearch(query, filter).filterIsInstance<PlaylistInfoItem>().firstNotNullOfOrNull { it.toCollection() }
+            ?: runSearch(query, Q.PLAYLISTS).filterIsInstance<PlaylistInfoItem>().firstNotNullOfOrNull { it.toCollection() })
             ?: throw NotFound(query)
-        val info = PlaylistInfo.getInfo(yt, hit.url)
-        val name = (info.name ?: hit.name).removePrefix("Album – ").removePrefix("Album - ")
+        val (name, tracks) = tracksOf(hit.id, hit.art)
+        if (tracks.isEmpty()) throw NotFound(query)
+        val by = hit.artist.takeIf { it.isNotBlank() }?.let { " by $it" } ?: ""
+        return Result(tracks, "$word $name$by")
+    }
+
+    /**
+     * The collection's name and tracks. Every track gets the collection's cover ([art], or the
+     * playlist's own), which for an album is the right picture and saves a URL per track.
+     */
+    private fun tracksOf(id: String, art: String? = null): Pair<String, List<Track>> {
+        require(isValidTrackId(id)) { "bad playlist id" }
+        val url = "https://www.youtube.com/playlist?list=$id"
+        val info = PlaylistInfo.getInfo(yt, url)
+        val name = cleanAlbum(info.name ?: id)
+        val cover = art ?: bestImage(info.thumbnails)
         val items = ArrayList<StreamInfoItem>(info.relatedItems)
         var page = info.nextPage
         while (page != null && items.size < MAX_COLLECTION) {
-            val more = PlaylistInfo.getMoreItems(yt, hit.url, page)
+            val more = PlaylistInfo.getMoreItems(yt, url, page)
             items += more.items
             page = more.nextPage
         }
-        val tracks = items.take(MAX_COLLECTION).mapNotNull { it.toTrack(album = name) }
-        if (tracks.isEmpty()) throw NotFound(query)
-        val by = hit.uploaderName?.takeIf { it.isNotBlank() }?.let { " by ${cleanArtist(it)}" } ?: ""
-        return Result(tracks, "$word $name$by")
+        return name to items.take(MAX_COLLECTION).mapNotNull { it.toTrack(album = name, art = cover) }
     }
 
     private fun runSearch(query: String, filter: String): List<InfoItem> = try {
         SearchInfo.getInfo(yt, yt.searchQHFactory.fromQuery(query, listOf(filter), "")).relatedItems
     } catch (e: Exception) {
-        if (e is InterruptedException) throw e
+        // No network is an answer in itself ("No coverage"); a broken endpoint falls back.
+        if (e is InterruptedException || e is IOException) throw e
         emptyList()
     }
 
-    private fun StreamInfoItem.toTrack(album: String?): Track? {
+    private fun StreamInfoItem.toTrack(album: String?, art: String?): Track? {
         val id = runCatching { yt.streamLHFactory.getId(url) }.getOrNull() ?: return null
         if (!isValidTrackId(id)) return null
         return Track(
@@ -98,6 +125,19 @@ class Catalog(private val http: OkHttpClient) {
             artist = cleanArtist(uploaderName ?: ""),
             album = album,
             durationMs = if (duration > 0) duration * 1000 else 0,
+            art = art ?: bestImage(thumbnails),
+        )
+    }
+
+    private fun PlaylistInfoItem.toCollection(): CollectionItem? {
+        val id = runCatching { yt.playlistLHFactory.getId(url) }.getOrNull() ?: return null
+        if (!isValidTrackId(id)) return null
+        return CollectionItem(
+            id = id,
+            title = cleanAlbum(name ?: id),
+            artist = cleanArtist(uploaderName ?: ""),
+            count = streamCount.takeIf { it > 0 }?.toInt(),
+            art = bestImage(thumbnails),
         )
     }
 
@@ -139,6 +179,21 @@ class Catalog(private val http: OkHttpClient) {
             NewPipe.init(OkHttpDownloader(http), Localization("en", "US"), ContentCountry("US"))
             initialised = true
         }
+
+        /**
+         * The smallest image at least [ART_PX] wide, else the largest: enough for a phone
+         * screen, and the URL is what goes on the wire.
+         */
+        fun bestImage(images: List<Image>): String? {
+            val known = images.filter { it.width > 0 }
+            return (known.filter { it.width >= ART_PX }.minByOrNull { it.width }
+                ?: known.maxByOrNull { it.width }
+                ?: images.lastOrNull())?.url
+        }
+
+        private const val ART_PX = 300
+
+        fun cleanAlbum(name: String): String = name.removePrefix("Album – ").removePrefix("Album - ")
 
         /** Auto-generated YouTube Music channels are named "Artist - Topic". */
         fun cleanArtist(name: String): String = name.removeSuffix(" - Topic").trim()

@@ -151,19 +151,37 @@ framework what devices the phone has.
 
 | Component | State |
 |---|---|
-| `android/` | The host. 191 tests, 0 fail, 2 skipped. Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
-| `ios/` | The passenger. `swift test`: 66 pass on Linux; `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. |
-| `tools/peer` | Python/uv fake host + client. `uv run pytest`: 161 pass. |
+| `android/` | The host. 216 tests, 0 fail, 2 skipped (2026-09-29, incl. 8 screenshot tests). Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
+| `ios/` | The passenger. `swift test`: 71 pass on Linux (2026-09-29); `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. 2026-09-29: release build clean (xtool auth valid to 2027-09), audit items fixed; next is `xtool dev -c release` with the iPhone 15 on USB-C. |
+| `tools/peer` | Python/uv fake host + client. `.venv/bin/python -m pytest -q`: 184 pass (2026-09-29; `uv run pytest` fails until `.venv` is recreated, its pytest script points at an old path). |
 | `tools/bench` | `talk_cycles.sh`, `music_sync.sh`, `unavailable.sh`, `overlay_rotation.sh`, `beeps.sh`, shared `lib.sh`, summaries in `bench.py` (`summary.txt`, last line `VERDICT:`). All adb paths are proven on the device except `beeps.sh`'s silence step. `HOST_IP` is overridable. `results/*/logcat_all.txt` (whole-phone dumps) are gitignored; the filtered `logcat.txt` is committed. |
 | `spikes/recognizer-pfd/` | Throwaway app, its question answered (see "Recognizer" below). Still installed on the Pixel. |
 | git | Remote `origin` = https://github.com/vaknin/motoparty (**public**: nothing personal in commits). **Commit only when the user asks.** |
 
-**Open in `ios/`, found by the 2026-09-19 audit and deliberately not changed** (nothing else records
-these, and none can be checked without an iPhone): a call interruption mid-talk closes with
-`"trigger"` rather than `"unavailable"` (harmless — the host treats both as a close); a mid-track
-join can send up to three `music.ready` for one id (check how Android handles duplicates); the clock
-offset is not reset on reconnect; `hello.proto` is never checked; `TrackCache` marks a file cached
-before the decode check has finished. Also unverified on a real phone: whether the mic-permission
+**UI/UX pass and touch browsing (2026-09-29, uncommitted, device-unverified).** The user found
+both apps ugly and choosing music clunky, and chose: the passenger can search and queue from the
+iPhone (a protocol addition), cover art, and screenshot tests. `PROTOCOL.md` gained a "Browsing"
+section and five messages (`music.search`, `music.browse`, `music.results`, `music.enqueue`,
+`music.edit`) plus optional `state.music.art`; still `proto:1`, since old peers ignore unknown
+types. The host keeps at most 200 upcoming tracks so `state` stays under 64 KiB. Both apps now
+have tabs: **Pixel** Ride / Search / Queue / Settings (Songs, Albums and Playlists chips; albums
+open before they play; ⋮ = play next / add to queue; tap-to-jump and ✕ in the queue; link numbers,
+debug tools and the log are folded into Settings → Diagnostics). **iPhone** Ride / Search / Queue
+(transport controls on the main screen, latency trim moved to Settings). Pixel screens render on
+Linux: `./gradlew testDebugUnitTest -Pscreenshots --tests '*ScreensTest*'` →
+`android/app/build/outputs/roborazzi/*.png`. To check on the devices: cover images loading over
+the hotspot, the ⋮ menu in iPhone list rows, and whether the iPhone Ride tab fits without
+scrolling.
+
+**The 2026-09-19 audit's `ios/` items are fixed (2026-09-29, uncommitted, still device-unverified):**
+a call interruption or media-services reset mid-talk now closes with `"unavailable"` (PROTOCOL.md
+"Talk flow" step 4); `music.ready` goes out at most once per track per connection (Android's
+`onClientReady` re-sends the anchor on every duplicate, which would re-seek the iPhone); a new
+connection resets the clock estimate; a host with another `hello.proto` is refused; `TrackCache`
+downloads to `<id>.part.m4a` and renames only after the decode check. Headset labels in Settings
+are generic now (the passenger has **Redmi Buds 6 Pro** on an **iPhone 15**, not AirPods).
+Test tracks for the fake host: `tools/peer/tracks/` (gitignored, recipe in `ios/README.md`).
+Still unverified on a real phone: whether the mic-permission
 prompt appears while backgrounded or locked, which route-change notifications the A2DP↔HFP switch
 posts, and whether `AVPlayer`/KeepAlive survive a media-services reset, and whether `AVPlayer` plays
 the Opus-in-MP4 tracks (iOS 17+ should; if not, the host falls back to AAC on the first

@@ -1,6 +1,7 @@
 package com.kivan.motoparty.music
 
 import android.util.Log
+import com.kivan.motoparty.core.EnqueueMode
 import com.kivan.motoparty.core.Message
 import com.kivan.motoparty.core.MusicLoad
 import com.kivan.motoparty.core.MusicPause
@@ -50,9 +51,45 @@ class MusicController(
     private var talkPausing = false
 
     fun setQueue(tracks: List<Track>, start: Int = 0) {
-        queue = tracks
+        queue = QueueEdits.capped(tracks, start)
         index = start
         startCurrent(0)
+    }
+
+    /**
+     * PROTOCOL.md "Browsing" `music.enqueue`: [EnqueueMode.NOW] replaces the queue; NEXT and END
+     * insert after the current track or append, and act like NOW when nothing is loaded.
+     */
+    fun enqueue(mode: String, tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        if (mode == EnqueueMode.NOW || current == null) return setQueue(tracks, 0)
+        val nextBefore = upcoming.firstOrNull()
+        queue = QueueEdits.inserted(queue, index, mode, tracks)
+        onChanged()
+        if (upcoming.firstOrNull() != nextBefore) prefetchNext()
+    }
+
+    /** `music.edit jump`: play `upcoming[i]` now. False when [id] no longer sits at [i] (stale). */
+    fun jump(i: Int, id: String): Boolean {
+        index = QueueEdits.at(queue, index, i, id) ?: return false
+        startCurrent(0)
+        return true
+    }
+
+    /** `music.edit remove`: drop `upcoming[i]`. False when [id] no longer sits at [i] (stale). */
+    fun remove(i: Int, id: String): Boolean {
+        val at = QueueEdits.at(queue, index, i, id) ?: return false
+        queue = queue.toMutableList().apply { removeAt(at) }
+        onChanged()
+        if (i == 0) prefetchNext()
+        return true
+    }
+
+    /** `music.edit clear`: drop every upcoming track; the current one plays on. */
+    fun clearUpcoming() {
+        if (upcoming.isEmpty()) return
+        queue = queue.take(index + 1)
+        onChanged()
     }
 
     fun next() {
@@ -192,6 +229,7 @@ class MusicController(
             positionMs = a?.positionMs ?: 0,
             atHostTimeMs = a?.atHostTimeMs ?: hostNow(),
             durationMs = t.durationMs,
+            art = t.art,
         )
     }
 
@@ -269,5 +307,27 @@ class MusicController(
         /** PROTOCOL.md: a `music.error` message starting with this = the client cannot play the file. */
         const val NOT_DECODABLE = "not decodable"
         private const val TAG = "MusicController"
+    }
+}
+
+/** The queue arithmetic of PROTOCOL.md "Browsing", pure so it can be tested without a player. */
+internal object QueueEdits {
+    /** Keeps `state.queue` well under the 64 KiB frame limit. */
+    const val MAX_UPCOMING = 200
+
+    /** At most [MAX_UPCOMING] tracks after [current]. */
+    fun capped(queue: List<Track>, current: Int): List<Track> = queue.take(maxOf(current, -1) + 1 + MAX_UPCOMING)
+
+    /** [tracks] put right after [current] ([EnqueueMode.NEXT]) or at the end (END), capped. */
+    fun inserted(queue: List<Track>, current: Int, mode: String, tracks: List<Track>): List<Track> {
+        val head = queue.take(current + 1)
+        val upcoming = queue.drop(current + 1)
+        return head + (if (mode == EnqueueMode.NEXT) tracks + upcoming else upcoming + tracks).take(MAX_UPCOMING)
+    }
+
+    /** The queue position of `upcoming[i]`, or null when that is not [id] any more. */
+    fun at(queue: List<Track>, current: Int, i: Int, id: String): Int? {
+        val at = current + 1 + i
+        return at.takeIf { i >= 0 && queue.getOrNull(it)?.id == id }
     }
 }

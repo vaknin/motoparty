@@ -21,7 +21,8 @@ Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK
                            LocalVolume (this phone's system volume)
   Music/                   TrackCache (URLSession), SyncedPlayer (AVPlayer setRate atHostTime), NowPlaying
   Voice/                   Transcriber (on-device SFSpeechRecognizer), Announcer (AVSpeechSynthesizer)
-  UI/                      SwiftUI: status, TALK and MUSIC buttons, now playing, latency trim, settings
+  UI/                      SwiftUI tabs: Ride (link pill, now playing + transport, TALK/MUSIC),
+                           Search (songs/albums/playlists, album detail), Queue; Settings sheet
   AppModel.swift           ties it together (talk / music / command flows)
 Tests/MotopartyCoreTests/ XCTest: every fixture file, jitter buffer, Opus round trip + FEC
 scripts/fetch-opus.sh    re-vendors libopus (verifies SHA-256)
@@ -81,7 +82,7 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 69 tests: fixtures, command parser, jitter buffer, Opus, drift controller
+swift test            # 71 tests: fixtures, command parser, jitter buffer, Opus, drift controller
 ```
 
 Opus prints "compiling without optimization" in debug builds. That is expected. Use
@@ -152,7 +153,21 @@ Wi-Fi:
 ```bash
 # laptop firewall: let the iPhone reach the fake host (nft ruleset reload removes it again)
 sudo sh -c 'nft insert rule inet filter input tcp dport { 47800, 47802 } accept && nft insert rule inet filter input udp dport 47801 accept'
-cd tools/peer && uv run motoparty-peer host --track X.m4a
+cd tools/peer && uv run motoparty-peer host --track tracks/test-opus.m4a
+```
+
+`tools/peer/tracks/` (gitignored) holds two 90 s stereo test tracks, 440 Hz on the left and an
+880 Hz beep on the right: `test-opus.m4a` (Opus in MP4, what the Pixel sends first) and
+`test-aac.m4a` (the AAC fallback). If AVPlayer cannot play the Opus one, the app answers
+`music.error "not decodable"`; the fake host does not fall back on its own, so restart it with
+the AAC track. To regenerate them:
+
+```bash
+cd tools/peer/tracks
+ffmpeg -f lavfi -i "sine=frequency=440:duration=90,volume=0.3" \
+  -f lavfi -i "sine=frequency=880:duration=90:beep_factor=4" \
+  -filter_complex "[0][1]amerge=inputs=2" -ar 48000 -c:a libopus -b:a 160k -f mp4 test-opus.m4a
+ffmpeg -i test-opus.m4a -c:a aac -b:a 192k test-aac.m4a
 ```
 
 The fake host advertises `_motoparty._tcp`, serves the track, and answers `command.text`. While
@@ -210,6 +225,21 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 - **No floating buttons on iOS.** The TALK/MUSIC overlay above other apps exists on the Pixel
   only (decided with the user 2026-09-20): iOS cannot draw over other apps, and nothing in
   `ios/` tries to. The passenger's triggers are the app's own buttons and the headset controls.
+- **Screens:** three tabs. **Ride** has the link pill (host name and round trip), the
+  now-playing card (cover from `state.music.art`, progress, previous / play-pause / next as
+  `music.control`), the downloading line, TALK and MUSIC, and the last heard / announced /
+  problem lines; the gear opens Settings (latency trim, headset buttons, link details).
+  **Search** sends `music.search` (Songs / Albums / Playlists); a song tap is
+  `music.enqueue{mode:"now"}` with that track, its ⋯ menu (or a swipe) is Play next / Add to
+  queue. An album or playlist opens a detail screen (`music.browse`) with Play / Add to queue;
+  a track tap enqueues `now` the tracks from that one to the end. Tracks carry the collection
+  title as `album` and its cover as the top-level `art`. **Queue** shows `state.queue`: tap =
+  `music.edit jump`, swipe = `remove`, Clear (confirmed) = `clear`. Browsing is disabled while
+  disconnected.
+- **Browsing requests:** every search or browse takes the next request id; each list (search,
+  collection) shows only its newest request's `music.results` and gives up after 20 s without
+  an answer. `MusicEnqueue.fitted()` (MotopartyCore) keeps an enqueue at 200 tracks and under
+  64 KiB: per-track art goes first, then trailing tracks.
 - **Talk:** TALK sends `talk.open{by:client}`, and nothing changes until the host decides. On
   `talk.open` the app pauses music and switches the session to `.playAndRecord`/`.voiceChat`
   with Bluetooth HFP. It then starts a fresh voice-processing AVAudioEngine and plays the
@@ -257,7 +287,7 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 - **Music:** each track is downloaded in full, then `music.ready` is sent. Playback uses
   `AVPlayer.setRate(1, time:, atHostTime:)`, converting host clock → local clock → CMClock host
   time. The player starts early by this phone's output delay —
-  `AVAudioSession.outputLatency` plus the latency trim (±10 ms buttons) — so the *sound*, not
+  `AVAudioSession.outputLatency` plus the latency trim (Settings, 10 ms steps) — so the *sound*, not
   the player, lands on the anchor.
   Drift is then handled by `DriftController` in MotopartyCore, the same rule as Android's
   `SyncController` (PROTOCOL.md "Music flow" step 4, because a seek on A2DP costs a fresh
@@ -267,8 +297,18 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   item's `audioTimePitchAlgorithm` is `.spectral`); above 1 s it re-seeks and the rate goes
   back to 1. A running correction is held until the error is under 40 ms, so noise around the
   80 ms boundary cannot flap the rate.
+- **Protocol version:** a host whose `hello.proto` is not `Hello.currentProto` (1) is refused:
+  the app drops the link, shows why, and waits for Settings → Reconnect.
+- **Per connection:** a new connection resets the clock estimate (it may be another host, or a
+  restarted one) and answers each track's `music.ready` at most once (every answer makes the
+  host re-send the anchor, which on A2DP costs a fresh seek).
+- **Track cache:** a download lands as `<id>.part.m4a` and is renamed to `<id>.m4a` only after
+  AVFoundation reports it playable with a duration, so nothing plays or answers `music.ready`
+  from a file that is still being checked. Leftover `.part.m4a` files are deleted at launch.
 - **Buttons:** by default an AirPods single press is talk, a double press is a voice command,
-  and a triple press is previous track (configurable in Settings). iOS also sends `pause` when
+  and a triple press is previous track (configurable in Settings). The app only sees the remote
+  commands play/pause, next and previous, so other buds (the passenger's Redmi Buds 6 Pro) work
+  once their own app maps gestures to those three. iOS also sends `pause` when
   an AirPod leaves the ear, so an explicit `pause` is ignored unless enabled in Settings. While
   the mic is open, the iOS 17 AirPods mute gesture is treated as the single-press action; this
   is untested (Spike 2). `AVAudioApplication.setInputMuteStateChangeHandler` is **macOS only**

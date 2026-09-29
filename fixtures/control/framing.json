@@ -50,6 +50,22 @@
   {
    "_doc": "unknown talk.close reason: drop, keep",
    "json": "{\"t\":\"talk.close\",\"by\":\"host\",\"reason\":\"bored\"}"
+  },
+  {
+   "_doc": "music.search kind outside its set: drop, keep",
+   "json": "{\"t\":\"music.search\",\"id\":1,\"kind\":\"artists\",\"query\":\"x\"}"
+  },
+  {
+   "_doc": "music.enqueue mode outside its set: drop, keep",
+   "json": "{\"t\":\"music.enqueue\",\"mode\":\"shuffle\",\"tracks\":[]}"
+  },
+  {
+   "_doc": "music.edit op outside its set: drop, keep",
+   "json": "{\"t\":\"music.edit\",\"op\":\"move\",\"index\":0,\"id\":\"x\"}"
+  },
+  {
+   "_doc": "music.enqueue track missing durationMs: drop, keep",
+   "json": "{\"t\":\"music.enqueue\",\"mode\":\"now\",\"tracks\":[{\"id\":\"x\",\"title\":\"a\",\"artist\":\"b\"}]}"
   }
  ],
  "fatal": [

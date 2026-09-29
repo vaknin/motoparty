@@ -22,6 +22,19 @@ enum LinkStatus: Equatable {
     var isConnected: Bool { if case .connected = self { true } else { false } }
 }
 
+/// One list of browse results as the UI shows it: the answer to the newest
+/// request for this list, or that request still in flight.
+struct ResultList: Equatable {
+    var items: [ResultItem] = []
+    var loading = false
+    var error: String?
+    /// Request id whose answer this list is waiting for (or showing).
+    fileprivate var requestId: Int?
+
+    /// A request was made (so an empty list means "no results", not "not yet").
+    var requested: Bool { requestId != nil }
+}
+
 /// Owns every component and implements the client side of PROTOCOL.md:
 /// discovery → control → voice socket; talk and music flows; commands.
 /// Everything here runs on the main queue.
@@ -41,6 +54,13 @@ final class AppModel: ObservableObject {
     @Published private(set) var rttMs: Double?
     @Published private(set) var driftMs: Double?
     @Published private(set) var audioRoute = ""
+    /// Search tab results (PROTOCOL.md "Browsing").
+    @Published private(set) var searchResults = ResultList()
+    /// What the newest search looked for: songs are played, the rest browsed.
+    @Published private(set) var searchedKind: SearchKind = .songs
+    /// Songs of the album or playlist being browsed, and which one it is.
+    @Published private(set) var collectionResults = ResultList()
+    @Published private(set) var browsedCollection: ResultItem?
 
     let settings = AppSettings()
 
@@ -72,6 +92,10 @@ final class AppModel: ObservableObject {
     private var voicePort = LinkDefaults.voicePort
     private var httpPort = LinkDefaults.httpPort
     private var loads: [String: MusicLoad] = [:]
+    /// Tracks this connection has already answered with `music.ready`. A join
+    /// re-sends music.load and state names the track too, and every answer
+    /// makes the host re-send the anchor (a fresh A2DP seek), so answer once.
+    private var readySent: Set<String> = []
     /// The host's current play anchor (from music.play or state), if playing.
     private var currentPlay: MusicPlay?
     private var started = false
@@ -89,6 +113,8 @@ final class AppModel: ObservableObject {
     private var liveCueOpenedAtMs: Double?
     /// Safety net for the cue: a talk whose capture never delivers still beeps.
     private var liveCueTimer: Timer?
+    /// Last `music.search` / `music.browse` id; every request takes the next.
+    private var lastRequestId = 0
 
     // MARK: - Lifecycle
 
@@ -165,6 +191,10 @@ final class AppModel: ObservableObject {
             voicePort = txt.voicePort
             httpPort = txt.httpPort
         }
+        // A new connection may be a different host (or a restarted one):
+        // its clock and its view of our cache start from scratch.
+        clock.reset()
+        readySent = []
         let client = ControlClient(endpoint: candidate.endpoint, name: settings.deviceName, clock: clock)
         client.delegate = self
         control = client
@@ -192,6 +222,9 @@ final class AppModel: ObservableObject {
         talkOpenPending = false
         micUnavailable = false
         if listening { transcriber.cancel(); listening = false; restoreMediaRoute() }
+        // An answer can no longer arrive for a request in flight.
+        failPending(&searchResults, "Link lost")
+        failPending(&collectionResults, "Link lost")
         // Music keeps playing locally along the last anchor (the host does the same).
         link = .searching
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -210,6 +243,14 @@ final class AppModel: ObservableObject {
         switch message {
         case .hello(let hello):
             guard hello.role == .host else { return }
+            guard hello.proto == Hello.currentProto else {
+                problem = "\(hello.name) speaks protocol \(hello.proto), this app speaks \(Hello.currentProto): update one of them"
+                Log.link.error("hello.proto \(hello.proto) != \(Hello.currentProto); dropping the link")
+                control?.stop(sendBye: true)
+                control = nil
+                link = .idle
+                return
+            }
             hostName = hello.name
             link = .connected(hello.name)
             let newVoice = hello.voicePort ?? LinkDefaults.voicePort
@@ -259,7 +300,10 @@ final class AppModel: ObservableObject {
             lastAnnouncement = announce.text
             if let earcon = announce.earcon { earcons.play(earcon) }
             announcer.speak(announce.text, language: settings.speechLanguage)
-        case .bye, .ping, .pong, .musicReady, .musicError, .musicControl, .commandText, .unknown:
+        case .musicResults(let results):
+            receive(results)
+        case .bye, .ping, .pong, .musicReady, .musicError, .musicControl, .commandText,
+             .musicSearch, .musicBrowse, .musicEnqueue, .musicEdit, .unknown:
             break
         }
     }
@@ -311,7 +355,9 @@ final class AppModel: ObservableObject {
             if self.downloading == load.title { self.downloading = nil }
             switch outcome {
             case .ready:
-                self.send(.musicReady(MusicReady(id: load.id)))
+                if self.readySent.insert(load.id).inserted {
+                    self.send(.musicReady(MusicReady(id: load.id)))
+                }
                 if self.currentPlay?.id == load.id { self.startMusicIfPossible() }
             case .failed(let why):
                 self.send(.musicError(MusicError(id: load.id, message: why)))
@@ -354,8 +400,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func requestTalkClose() {
-        send(.talkClose(TalkClose(by: .client, reason: .trigger)))
+    private func requestTalkClose(_ reason: TalkCloseReason = .trigger) {
+        send(.talkClose(TalkClose(by: .client, reason: reason)))
     }
 
     /// The host could not open talk (`reason: "unavailable"`) or closed it
@@ -367,7 +413,7 @@ final class AppModel: ObservableObject {
         if reason == .unavailable { problem = "The other phone could not open its microphone" }
     }
 
-    /// Host decided talk is open: pause music, switch AirPods to call mode,
+    /// Host decided talk is open: pause music, switch the headset to call mode,
     /// open the mic, earcon when live.
     private func openTalkLocally() {
         let weAsked = talkRequested
@@ -581,13 +627,98 @@ final class AppModel: ObservableObject {
         send(.musicControl(MusicControl(action: action)))
     }
 
+    // MARK: - Browsing
+
+    /// How long a search or browse may take before the list gives up. The host
+    /// searches over the phone's mobile data, which can be slow on the road.
+    private static let resultsTimeout: TimeInterval = 20
+
+    /// Asks the host to search. Only the newest search's answer is shown.
+    func search(_ kind: SearchKind, query: String) {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        searchedKind = kind
+        request(&searchResults, .musicSearch(MusicSearch(id: nextRequestId(), kind: kind, query: query)))
+    }
+
+    /// Asks the host for the songs of an album or playlist result.
+    func browse(_ collection: ResultItem) {
+        browsedCollection = collection
+        request(&collectionResults, .musicBrowse(MusicBrowse(id: nextRequestId(), ref: collection.ref)))
+    }
+
+    /// Queues song results. From a collection, the tracks name it as their
+    /// album and its cover stands in for tracks without their own.
+    func enqueue(_ mode: EnqueueMode, songs: [ResultItem], from collection: ResultItem? = nil) {
+        let tracks = songs.map {
+            EnqueueTrack(id: $0.ref, title: $0.title, artist: $0.artist, album: collection?.title,
+                         durationMs: $0.durationMs ?? 0, art: $0.art)
+        }
+        enqueue(mode, tracks: tracks, art: collection?.art)
+    }
+
+    func enqueue(_ mode: EnqueueMode, tracks: [EnqueueTrack], art: String? = nil) {
+        let message = MusicEnqueue(mode: mode, tracks: tracks, art: art).fitted()
+        guard !message.tracks.isEmpty else { return }
+        send(.musicEnqueue(message))
+    }
+
+    /// Changes the upcoming queue. `index`/`id` name `state.queue[index]` for
+    /// jump and remove; the host ignores the edit if the queue moved since.
+    func editQueue(_ op: QueueEditOp, index: Int? = nil, id: String? = nil) {
+        send(.musicEdit(MusicEdit(op: op, index: index, id: id)))
+    }
+
+    private func nextRequestId() -> Int {
+        lastRequestId += 1
+        return lastRequestId
+    }
+
+    private func request(_ list: inout ResultList, _ message: ControlMessage) {
+        let id: Int
+        switch message {
+        case .musicSearch(let m): id = m.id
+        case .musicBrowse(let m): id = m.id
+        default: return
+        }
+        guard link.isConnected, control != nil else {
+            list = ResultList(error: "Not connected to the host")
+            return
+        }
+        list = ResultList(loading: true, requestId: id)
+        send(message)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.resultsTimeout) { [weak self] in
+            guard let self else { return }
+            if self.searchResults.requestId == id { self.failPending(&self.searchResults, "The host did not answer") }
+            if self.collectionResults.requestId == id { self.failPending(&self.collectionResults, "The host did not answer") }
+        }
+    }
+
+    /// Answers to anything but a list's newest request are stale: dropped.
+    private func receive(_ results: MusicResults) {
+        func fill(_ list: inout ResultList) {
+            list.items = results.items
+            list.error = results.items.isEmpty ? results.error : nil
+            list.loading = false
+        }
+        if searchResults.requestId == results.id { fill(&searchResults) }
+        else if collectionResults.requestId == results.id { fill(&collectionResults) }
+    }
+
+    private func failPending(_ list: inout ResultList, _ why: String) {
+        guard list.loading else { return }
+        list.loading = false
+        list.error = why
+    }
+
     // MARK: - Audio session events
 
     private func interruptionBegan() {
         // Phone call, Siri, alarm… the system has stopped our audio.
         player.suspend()
         if talkOpen {
-            requestTalkClose()
+            // The mic is gone after talk opened (PROTOCOL.md "Talk flow" step 4).
+            requestTalkClose(.unavailable)
             closeTalkLocally()
         }
         if listening { transcriber.cancel(); listening = false }
@@ -610,7 +741,7 @@ final class AppModel: ObservableObject {
         audioRoute = session.outputName
         switch reason {
         case .oldDeviceUnavailable:
-            // AirPods gone: don't blast music out of the speaker.
+            // Headset gone: don't blast music out of the speaker.
             if !session.hasHeadphones { player.suspend() }
         case .newDeviceAvailable:
             if currentPlay != nil, !talkOpen, !listening { player.resume() }
@@ -626,8 +757,8 @@ final class AppModel: ObservableObject {
         if talkOpen {
             // The host is the authority on talk: tell it, as after an
             // interruption, instead of leaving it in a talk whose mic here
-            // is gone until its 10 s silence timeout.
-            requestTalkClose()
+            // is gone until its 20 s silence timeout.
+            requestTalkClose(.unavailable)
             closeTalkLocally()
         } else {
             restoreMediaRoute()

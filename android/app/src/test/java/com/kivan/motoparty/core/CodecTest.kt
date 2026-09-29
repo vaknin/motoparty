@@ -163,4 +163,23 @@ class CodecTest {
             assertTrue(e !is MalformedMessageException)
         }
     }
+
+    @Test
+    fun oversizeResultsLoseArtThenTrailingItems() {
+        val art = "https://lh3.googleusercontent.com/" + "a".repeat(200)
+        val small = MusicResults(1, List(10) { ResultItem("id$it", "t", "a", art = art) })
+        assertEquals(small, Codec.fit(small))
+
+        val big = MusicResults(2, List(300) { ResultItem("id$it", "title $it", "artist", durationMs = 1000, art = art) })
+        val fitted = Codec.fit(big)
+        assertTrue(Codec.fits(fitted))
+        assertEquals(300, fitted.items.size) // dropping the art was enough
+        assertTrue(fitted.items.all { it.art == null })
+
+        val huge = MusicResults(3, List(2000) { ResultItem("id$it", "ש".repeat(20), "artist", durationMs = 1000) })
+        val cut = Codec.fit(huge)
+        assertTrue(Codec.fits(cut))
+        assertEquals("id0", cut.items.first().ref)
+        assertTrue(cut.items.size in 100 until 2000)
+    }
 }

@@ -25,6 +25,8 @@ import com.kivan.motoparty.core.Bye
 import com.kivan.motoparty.core.Command
 import com.kivan.motoparty.core.CommandParser
 import com.kivan.motoparty.core.CommandText
+import com.kivan.motoparty.core.Codec
+import com.kivan.motoparty.core.EditOp
 import com.kivan.motoparty.core.CloseReason
 import com.kivan.motoparty.core.ControlAction
 import com.kivan.motoparty.core.Earcon
@@ -32,10 +34,17 @@ import com.kivan.motoparty.core.Hello
 import com.kivan.motoparty.core.MainLag
 import com.kivan.motoparty.core.PROTO_VERSION
 import com.kivan.motoparty.core.Message
+import com.kivan.motoparty.core.MusicBrowse
 import com.kivan.motoparty.core.MusicControl
+import com.kivan.motoparty.core.MusicEdit
+import com.kivan.motoparty.core.MusicEnqueue
+import com.kivan.motoparty.core.MusicResults
+import com.kivan.motoparty.core.MusicSearch
+import com.kivan.motoparty.core.ResultItem
 import com.kivan.motoparty.core.MusicError
 import com.kivan.motoparty.core.MusicReady
 import com.kivan.motoparty.core.Role
+import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.core.State
 import com.kivan.motoparty.core.TalkClose
 import com.kivan.motoparty.core.TalkOpen
@@ -45,6 +54,9 @@ import com.kivan.motoparty.link.Discovery
 import com.kivan.motoparty.link.TalkController
 import com.kivan.motoparty.link.VoiceSocket
 import com.kivan.motoparty.music.Catalog
+import com.kivan.motoparty.music.CollectionItem
+import com.kivan.motoparty.music.isValidTrackId
+import com.kivan.motoparty.music.Track
 import com.kivan.motoparty.music.MusicController
 import com.kivan.motoparty.music.Player
 import com.kivan.motoparty.music.RemoteAction
@@ -329,6 +341,21 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is MusicError -> music.onClientError(m.id, m.message)
             is MusicControl -> onMusicControl(m.action)
             is CommandText -> executeCommand(m.text, fromClient = true)
+            is MusicSearch -> onClientSearch(m.id) {
+                if (m.kind == SearchKind.SONGS) {
+                    catalog.searchSongs(m.query).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs, art = it.art) }
+                } else {
+                    catalog.searchCollections(m.kind == SearchKind.ALBUMS, m.query)
+                        .map { ResultItem(it.id, it.title, it.artist, count = it.count, art = it.art) }
+                }
+            }
+            is MusicBrowse -> onClientSearch(m.id) {
+                if (!isValidTrackId(m.ref)) throw IllegalArgumentException("bad ref")
+                // Per-item art is left out: the client already has the collection's cover.
+                catalog.browse(m.ref).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs) }
+            }
+            is MusicEnqueue -> onClientEnqueue(m)
+            is MusicEdit -> onClientEdit(m)
             is Bye -> Unit // the server closes the connection and reports ClientGone
             else -> Unit // unknown or host-to-client types: ignored per PROTOCOL.md
         }
@@ -810,14 +837,16 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     private fun onUiAction(a: UiAction) {
         when (a) {
-            is UiAction.Search -> scope.launch {
-                Hub.status.update { it.copy(busy = "Searching \"${a.query}\"") }
-                val results = runCatching { catalog.searchSongs(a.query) }.getOrElse {
-                    Hub.log("search failed: $it"); emptyList()
-                }
-                Hub.status.update { it.copy(busy = null, searchResults = results) }
+            is UiAction.Search -> uiSearch(a.kind, a.query)
+            is UiAction.Browse -> uiBrowse(a.collection)
+            is UiAction.CloseBrowse -> {
+                uiBrowseJob?.cancel()
+                Hub.status.update { it.copy(browse = null) }
             }
-            is UiAction.Play -> music.setQueue(a.tracks, a.index)
+            is UiAction.Enqueue -> music.enqueue(a.mode, a.tracks)
+            is UiAction.Jump -> music.jump(a.index, a.id)
+            is UiAction.Remove -> music.remove(a.index, a.id)
+            is UiAction.ClearQueue -> music.clearUpcoming()
             is UiAction.Command -> executeCommand(a.text)
             is UiAction.Control -> onMusicControl(a.action)
             is UiAction.UsbStereoProbe -> when {
@@ -830,6 +859,86 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 !usbProbe.startLong() -> Hub.log("usb probe: already running")
             }
         }
+    }
+
+    private var uiSearchJob: Job? = null
+    private var uiBrowseJob: Job? = null
+
+    private fun uiSearch(kind: String, query: String) {
+        uiSearchJob?.cancel()
+        Hub.status.update { it.copy(search = SearchState(kind, query, loading = true)) }
+        uiSearchJob = scope.launch {
+            val done = try {
+                if (kind == SearchKind.SONGS) {
+                    SearchState(kind, query, songs = catalog.searchSongs(query))
+                } else {
+                    SearchState(kind, query, collections = catalog.searchCollections(kind == SearchKind.ALBUMS, query))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Hub.log("search failed: $e")
+                SearchState(kind, query, error = failure(e))
+            }
+            Hub.status.update { it.copy(search = done) }
+        }
+    }
+
+    private fun uiBrowse(c: CollectionItem) {
+        uiBrowseJob?.cancel()
+        Hub.status.update { it.copy(browse = BrowseState(c)) }
+        uiBrowseJob = scope.launch {
+            val done = try {
+                BrowseState(c, loading = false, tracks = catalog.browse(c.id).map { it.copy(art = c.art ?: it.art) })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Hub.log("browse ${c.id} failed: $e")
+                BrowseState(c, loading = false, error = failure(e))
+            }
+            Hub.status.update { it.copy(browse = done) }
+        }
+    }
+
+    /** Short text for a failed search or browse, for either screen. */
+    private fun failure(e: Exception) = if (e is IOException) "No coverage" else "Search failed"
+
+    // ---- browsing (PROTOCOL.md "Browsing") ----
+
+    private var clientSearchJob: Job? = null
+
+    /** A newer request replaces an older one; the client only shows its newest `id` anyway. */
+    private fun onClientSearch(id: Long, block: suspend () -> List<ResultItem>) {
+        clientSearchJob?.cancel()
+        clientSearchJob = scope.launch {
+            val reply = try {
+                MusicResults(id, block())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Hub.log("client search failed: $e")
+                MusicResults(id, emptyList(), failure(e))
+            }
+            control.send(Codec.fit(reply))
+        }
+    }
+
+    private fun onClientEnqueue(m: MusicEnqueue) {
+        val tracks = m.tracks.filter { isValidTrackId(it.id) }.map {
+            Track(it.id, it.title, it.artist, it.album, it.durationMs, it.art ?: m.art)
+        }
+        Hub.log("client enqueue ${m.mode}: ${tracks.size} track(s)")
+        music.enqueue(m.mode, tracks)
+    }
+
+    private fun onClientEdit(m: MusicEdit) {
+        val applied = when (m.op) {
+            EditOp.CLEAR -> { music.clearUpcoming(); true }
+            EditOp.JUMP -> m.index != null && m.id != null && music.jump(m.index, m.id)
+            EditOp.REMOVE -> m.index != null && m.id != null && music.remove(m.index, m.id)
+            else -> false
+        }
+        if (!applied) Hub.log("client edit ${m.op} ${m.index} ignored: the queue changed")
     }
 
     private fun refreshStatus() {

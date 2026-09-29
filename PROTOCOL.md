@@ -64,6 +64,11 @@ catches up.
 | `music.stop`    | H→C   | (nothing) |
 | `music.control` | C→H   | `action`: `"pause"`\|`"resume"`\|`"next"`\|`"previous"` (button presses on the client; volume is local, see Commands) |
 | `command.text`  | C→H   | `text`: recognised utterance, `lang`: BCP-47 tag |
+| `music.search`  | C→H   | `id`: int (request id), `kind`: `"songs"`\|`"albums"`\|`"playlists"`, `query`: string. See Browsing |
+| `music.browse`  | C→H   | `id`: int, `ref`: string — the `ref` of an album or playlist result |
+| `music.results` | H→C   | `id` (echoed), `items`: array of result items, `error` (optional): string to show instead of an empty list |
+| `music.enqueue` | C→H   | `mode`: `"now"`\|`"next"`\|`"end"`, `tracks`: array of tracks, `art` (optional): URL for tracks without their own |
+| `music.edit`    | C→H   | `op`: `"jump"`\|`"remove"`\|`"clear"`, `index` (optional): int, `id` (optional): string |
 | `announce`      | H→C   | `text`: to be spoken by TTS; `earcon` (optional): `"ok"`\|`"error"` |
 | `state`         | H→C   | see below |
 | `bye`           | both  | `reason` (optional). Sender closes the socket after it |
@@ -73,11 +78,11 @@ catches up.
 ```json
 {"t":"state","talk":false,
  "music":{"id":"dQw4w9WgXcQ","title":"…","artist":"…","playing":true,"positionMs":1234,
-          "atHostTimeMs":987654,"durationMs":213000},
+          "atHostTimeMs":987654,"durationMs":213000,"art":"https://…"},
  "queue":[{"id":"…","title":"…","artist":"…"}]}
 ```
 
-`music` is omitted when nothing is loaded. `queue` (required, possibly empty) is the upcoming
+`music` is omitted when nothing is loaded; its `art` (optional) is a cover image URL. `queue` (required, possibly empty) is the upcoming
 tracks after the current one. `positionMs`/`atHostTimeMs` form the same anchor as in
 `music.play`; while paused (including during talk) `playing` is false and `positionMs` is the
 pause position.
@@ -198,6 +203,41 @@ link re-encodes to AAC or SBC anyway.
    (setting, ms) to account for Bluetooth delay.
 5. Pause/stop are immediate on receipt. The host sends `music.load` for the next queue
    item as soon as the current one starts, so the client prefetches it.
+
+## Browsing
+
+The client can search and queue music by touch; the host does the searching (it has the
+catalog and the internet) and stays the only authority over the queue. None of this changes
+the Music flow: an enqueued track is loaded, readied and played exactly as before.
+
+1. The client sends `music.search{id, kind, query}` with a fresh `id` (any increasing int).
+   The host answers `music.results{id, items}` for that `id`, or `music.results{id, items:[],
+   error}` when the search failed (`error` is short text for the screen, e.g. "No coverage").
+   The client shows only the results of its newest request and ignores older `id`s.
+2. A result item is `{ref, title, artist}` plus optional `durationMs` (songs), `count`
+   (albums and playlists: number of tracks, when known) and `art` (a cover image URL the
+   client fetches itself, over the host's hotspot). For `kind:"songs"` the `ref` is the
+   track's YouTube id; for `"albums"` and `"playlists"` it is a YouTube playlist id, which the
+   client passes to `music.browse{id, ref}`. The host answers that with `music.results` whose
+   items are the collection's songs, in order. `artist` may be empty (a playlist's owner can
+   be unknown). Only YouTube ids travel: `[A-Za-z0-9_-]`, 1–64 characters; the host answers a
+   `music.browse` with any other `ref` with an `error`.
+3. The client sends `music.enqueue{mode, tracks}`. A track is `{id, title, artist,
+   durationMs}` plus optional `album` and `art`, built from song results (`id` = the item's
+   `ref`, `album` = the collection's title when browsing one). `mode`: `"now"` replaces the
+   queue with these tracks and starts the first; `"next"` inserts them right after the current
+   track; `"end"` appends them. With nothing playing, `"next"` and `"end"` act like `"now"`.
+   The host skips tracks with an invalid `id` and ignores an enqueue left with none. It never
+   holds more than 200 upcoming tracks (so `state` stays well under 64 KiB): tracks past that
+   are dropped, from the end of the queue. The top-level `art` covers tracks without their own (an album's cover).
+4. The client sends `music.edit{op, index, id}` to change the upcoming queue: `"jump"` plays
+   `state.queue[index]` now (the tracks before it stay behind the current one, so `previous`
+   still reaches them), `"remove"` drops it, `"clear"` drops every upcoming track and needs
+   neither field. For `"jump"` and `"remove"`, `index` and `id` are required and `id` must equal
+   `state.queue[index].id`; otherwise the queue changed under the client and the host ignores
+   the edit. Every change reaches the client as a new `state`.
+5. Size: a `music.results` or `music.enqueue` frame must stay under 64 KiB. The sender drops
+   per-item `art` first, then trailing items. Hosts cap a collection at 200 tracks.
 
 ## Commands
 

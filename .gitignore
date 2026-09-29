@@ -24,3 +24,6 @@ __pycache__/
 
 # Bench: whole-phone raw logcat dumps (the filtered logcat.txt next to them is kept)
 tools/bench/results/*/logcat_all.txt
+
+# Peer: generated test tracks (ios/README.md, "Testing without the Pixel")
+tools/peer/tracks/
