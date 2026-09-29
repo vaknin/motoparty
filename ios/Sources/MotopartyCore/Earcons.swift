@@ -6,15 +6,12 @@ public enum EarconSynth {
     public static let sampleRate = 22_050
 
     /// "live": rising two-tone. "ok": single soft blip. "error": falling pair.
-    /// "listen": one high blip, the wake word heard alone (the next phrase is
-    /// a command); same note as Android's `Earcons.Kind.LISTEN`.
     public static func wav(for name: String) -> Data {
         switch name {
         case "live": return wav(tones: [(660, 0.07), (0, 0.03), (990, 0.09)])
         case "ok": return wav(tones: [(880, 0.10)])
         case "error": return wav(tones: [(440, 0.12), (0, 0.04), (330, 0.18)])
         case "end": return wav(tones: [(990, 0.07), (0, 0.03), (660, 0.09)])
-        case "listen": return wav(tones: [(1175, 0.12)])
         default: return wav(tones: [(880, 0.05)])
         }
     }

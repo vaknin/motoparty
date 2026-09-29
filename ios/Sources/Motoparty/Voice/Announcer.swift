@@ -9,6 +9,8 @@ final class Announcer: NSObject, AVSpeechSynthesizerDelegate {
     var onSpeakingChanged: ((Bool) -> Void)?
 
     private let synthesizer = AVSpeechSynthesizer()
+    /// The app volume (`AppVolume.Gains.cueVolume`), for the next utterance.
+    var volume: Float = 1
 
     override init() {
         super.init()
@@ -20,7 +22,7 @@ final class Announcer: NSObject, AVSpeechSynthesizerDelegate {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: language) ?? AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.volume = 1
+        utterance.volume = volume
         synthesizer.speak(utterance)
     }
 

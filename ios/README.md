@@ -14,12 +14,15 @@ Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            Messages (all control messages, Codable), Framing (u32, 64 KiB cap),
                            ClockSync, VoicePacket/VoiceSequencer, JitterBuffer, Opus wrapper,
                            MusicAnchor/DriftController, LinkMath (sweep, liveness, TXT), Earcons (WAV synth),
-                           CommandParser (the grammar, run here too because volume is local; the
-                           wake-word rule and WakeGate, its 5 s arming window)
+                           CommandParser (the grammar, run here too because volume is local;
+                           FirstPhraseGate, the first-phrase rule and its 8 s window),
+                           AppVolume + VolumeKeyGate (the app owns the volume keys while linked:
+                           park, app level steps, hold volume up = talk)
 Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK):
   Link/                    Discovery (NWBrowser + /24 sweep), ControlClient, VoiceSocket
   Audio/                   SessionController (A2DP music ↔ HFP talk), VoiceEngine, KeepAlive, EarconPlayer,
-                           LocalVolume (this phone's system volume)
+                           LocalVolume (this phone's system volume), VolumeKey (outputVolume KVO,
+                           park, app gains)
   Music/                   TrackCache (URLSession), SyncedPlayer (AVPlayer setRate atHostTime), NowPlaying
   Voice/                   Transcriber (on-device SFSpeechRecognizer fed by the talk's mic, one
                            request per phrase), Announcer (AVSpeechSynthesizer)
@@ -84,7 +87,9 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 80 tests: fixtures, command parser + wake word, jitter buffer, Opus, drift controller
+swift test            # 101 tests: fixtures, command parser + first-phrase gate, app volume +
+                      # volume-key gate,
+                      # jitter buffer, Opus, drift controller
 ```
 
 Opus prints "compiling without optimization" in debug builds. That is expected. Use
@@ -226,7 +231,8 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 
 - **No floating buttons on iOS.** The TALK overlay above other apps exists on the Pixel
   only (decided with the user 2026-09-20): iOS cannot draw over other apps, and nothing in
-  `ios/` tries to. The passenger's triggers are the app's own buttons and the headset controls.
+  `ios/` tries to. The passenger's triggers are the app's own buttons, the headset controls and
+  holding volume up (below).
 - **Screens:** three tabs. **Ride** has the link pill (host name and round trip), the
   now-playing card (cover from `state.music.art`, progress, previous / play-pause / next as
   `music.control`), the downloading line, TALK, and the last command heard / announced /
@@ -276,39 +282,45 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   case — `talk.close{reason:"unavailable"}` answering our own `talk.open`, so talk never
   opened and `state.talk` stayed false — only clears the "requesting" state and plays the
   error earcon: no audio session is torn down and no music is resumed, because none was paused.
-- **Commands inside talk** (option A, 2026-09-29; PROTOCOL.md "Commands"). There is no
-  command mode and no MUSIC button: one press toggles talk, and while a talk is open the
-  phone recognises speech on the mic the talk already has. `VoiceEngine` tees every 16 kHz
-  capture buffer, on the capture queue and before the Opus encoder (so DTX never cuts it), to
-  `Transcriber.append`, which only counts and hops to its own queue (at most 50 buffers
-  waiting; past that they are dropped), so the capture path never waits for the recogniser.
-  The recogniser is on-device when the language has a model, and runs one
-  `SFSpeechAudioBufferRecognitionRequest` per phrase: a final result, or 1.2 s without new
-  partial text, ends the request, hands its text to `AppModel`, and the next request starts at
-  once, until the talk closes. Errors (typically "no speech detected" after a quiet stretch)
-  are logged in the `voice` category and the chain restarts, backing off 1, 2, 4 … 10 s while
-  it keeps failing at once; the talk itself is never touched, and a missing recogniser or
-  speech authorisation only means this talk has no commands. `AppModel` passes each phrase
-  through `WakeGate`: the client is never solo, so the wake word is always required
-  ("motoparty", "moto party" or "motor party" first, after any "hey"/"ok"/"okay";
-  `fixtures/wake.json`). A phrase that is only the wake word arms the gate and plays the
-  `listen` earcon (one 1175 Hz blip, Android's `LISTEN`): the next phrase within 5 s is a
-  command without it. Anything else is conversation, never sent or acted on. Every phrase is
-  logged as `heard: "<text>" (command|conversation|armed)`. A command's text (after the wake
-  word, normalised) goes through `CommandParser`: volume is handled here (below); everything
+- **Commands inside talk** (option A, 2026-09-29; PROTOCOL.md "Commands", The first phrase
+  decides). There is no command mode, no MUSIC button and no wake word: one press toggles talk,
+  and the phone that opened the talk may speak one command as its first phrase. The iPhone is
+  the client, so it is never solo; it recognises only in a talk it opened (the host's
+  `talk.open{by:"client"}`; a talk learnt only from `state`, e.g. a join mid-talk, counts as
+  not ours), and in a talk the host opened it does not recognise at all. Recognition starts
+  when the "live" earcon plays (on capture up or on the fallback), on the mic the talk already
+  has. `VoiceEngine` tees every 16 kHz capture buffer, on the capture queue and before the
+  Opus encoder (so DTX never cuts it), to `Transcriber.append`, which only counts and hops to
+  its own queue (at most 50 buffers waiting; past that they are dropped), so the capture path
+  never waits for the recogniser. The recogniser is on-device when the language has a model,
+  and runs one `SFSpeechAudioBufferRecognitionRequest` per phrase: a final result, or 1.2 s
+  without new partial text, ends the request, hands its text to `AppModel`, and the next
+  request starts at once. Errors (typically "no speech detected" after a quiet stretch) are
+  logged in the `voice` category and the chain restarts, backing off 1, 2, 4 … 10 s while it
+  keeps failing at once; the talk itself is never touched, and a missing recogniser or speech
+  authorisation only means this talk has no command. `AppModel` passes each phrase through
+  `FirstPhraseGate` (MotopartyCore, pure, times passed in; `fixtures/first_phrase.json`),
+  started at the live earcon: the first phrase that is not empty after normalisation and
+  arrives within `FIRST_PHRASE_MS` = 8000 ms (inclusive) is a command if it parses, and
+  otherwise conversation, with no "Didn't catch that"; every later phrase is conversation,
+  never sent or acted on. As soon as the gate is spent (that first phrase, or an 8 s timer
+  from the earcon) the transcriber is stopped for the rest of the talk, which is logged as
+  `first phrase spent: recognition off for this talk`. Every phrase is logged as
+  `heard: "<text>" (command|conversation)`. A command's text (normalised, fillers kept: the
+  parser drops them) goes through `CommandParser`: volume is handled here (below); everything
   else, `end` ("over", "end talk", "hang up") included, is sent as
   `command.text{text, lang}` and the host decides what it does to the talk (`play`, `resume`
-  and `end` close it with the usual `talk.close`).
+  and `end` close it with the usual `talk.close`). The host also enforces the rule: it acts
+  only on the first `command.text` of a talk the client opened.
 - **Volume is local** (PROTOCOL.md "Commands"): `MotopartyCore.CommandParser` runs on this
   phone's own command before anything is sent, and `volume up`/`louder`/`volume down`/
   `quieter` change *this* phone's volume with the `ok` earcon and no `command.text`. Everything
   else goes to the host unchanged. `music.control` has no volume actions any more (one on the
-  wire is a malformed message and is dropped). iOS has no public system-volume setter, so
-  `LocalVolume` writes the hidden `UISlider` of an off-screen `MPVolumeView` — the real system
-  / AirPods volume, in steps of 1/16 (one hardware-button press), reading the current level
-  from `AVAudioSession.outputVolume`. That private-view trick and the system volume HUD it may
-  show are the parts to check on a real phone; if it ever stops working, only `LocalVolume`
-  changes. The hardware volume buttons need nothing: they are already local.
+  wire is a malformed message and is dropped). While the link is up the command is one app
+  volume level (below), like a key press; while it is down it is one system step (1/16), as
+  before. iOS has no public system-volume setter, so `LocalVolume` writes the hidden `UISlider`
+  of an off-screen `MPVolumeView` — the real system / AirPods volume, reading the current level
+  from `AVAudioSession.outputVolume`. It is the only place that trick lives.
 - **Music:** each track is downloaded in full, then `music.ready` is sent. Playback uses
   `AVPlayer.setRate(1, time:, atHostTime:)`, converting host clock → local clock → CMClock host
   time. The player starts early by this phone's output delay —
@@ -331,13 +343,62 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   AVFoundation reports it playable with a duration, so nothing plays or answers `music.ready`
   from a file that is still being checked. Leftover `.part.m4a` files are deleted at launch.
 - **Buttons:** no headset button starts or ends a talk (2026-09-29: the earbuds sit inside the
-  helmet). Talk is the Ride tab's TALK button. Remote commands (lock screen, Control Center, a
+  helmet). Talk is the Ride tab's TALK button, or a hold of volume up (below). Remote commands (lock screen, Control Center, a
   headset) control the music only: play/pause, next, previous; `pause` alone is ignored, since
   buds send it when they leave the ear. While the mic is open the iOS 17 AirPods mute gesture
   would mute it: `SessionController` observes
   `AVAudioApplication.inputMuteStateChangeNotification` and unmutes again with
   `setInputMuted(false)` (`setInputMuteStateChangeHandler` is macOS only), and the gesture does
   nothing else.
+- **The app owns the volume** (2026-09-29: the passenger's iPhone rides locked in a jacket
+  pocket, and its volume keys are the passenger's only trigger). While the link is up:
+  - **Park.** The system volume is parked at 15/16 (`VolumeKeyGate.parkVolume`, one step below
+    max) through `LocalVolume`'s slider, and every key reading is put straight back there, so
+    both keys always move it (at 16/16 an up press would make no reading). iOS reports no key
+    presses, so `VolumeKey` observes `AVAudioSession.outputVolume` by KVO — the session is
+    always active here (KeepAlive between talks, the voice engine during one) — and hands every
+    reading to `VolumeKeyGate` (MotopartyCore, pure, times passed in). A reading at the park
+    within `ownChangeMs` = 1000 ms of asking for it is the gate's own reset and is ignored (a
+    key always moves the volume *off* the park). Keys are read against the latest reading, not
+    the park, so a repeat that beats the reset still counts.
+  - **App gain.** Loudness is one app level, 0...16 (`AppVolume`): 15 is 0 dB (the parked
+    system volume as it is), each level below is `stepDb` = 3 dB quieter (1 = -42 dB), 0 is
+    silence, and 16 is +3 dB, winning back the system step the park gives up. Talk playback
+    runs source → Apple's peak limiter (`AUPeakLimiter` as an `AVAudioUnitEffect`) → main mixer:
+    below unity the level is the mixer's `outputVolume`, above it the limiter's pre-gain
+    (+3 dB), so the boost cannot clip. Music (`AVPlayer.volume`) and earcons / announcements
+    (`AVAudioPlayer.volume`, `AVSpeechUtterance.volume`) cannot go above 1.0; boosting music
+    would need an `MTAudioProcessingTap` on the player item plus a limiter, which is not cheap
+    or safe enough, so **music and cues stop at unity: level 16 plays them like level 15**.
+    The announcer's music duck (0.35) multiplies the music level.
+  - **Single presses** of up or down are one app level each, applied at once. Holding volume
+    down just keeps stepping down.
+  - **Hold volume up = talk.** A held key repeats: the press, iOS's initial repeat delay, then
+    fast regular repeats. A burst of `HOLD_STEPS` = 4 up readings whose first gap is at most
+    `FIRST_REPEAT_GAP_MS` = 700 ms and whose later gaps are each at most `REPEAT_GAP_MS` =
+    200 ms is a hold: it toggles talk once through the same `talkButton()` as TALK
+    (`talk.open{by:"client"}` / `talk.close{reason:"trigger"}`), the steps the burst made are
+    taken back (app gain only, so no HUD), and the rest of the hold is absorbed until the key
+    has been quiet for more than `REPEAT_GAP_MS`. So a hold has no net volume change, though
+    its first three steps are heard for a moment. Three taps can never be a hold, and four
+    count only if the last three come within 200 ms of each other, which fingers rarely do. A
+    down press ends an up burst.
+  - **Re-park.** Every route change and every session switch (talk opening or closing: HFP and
+    A2DP keep separate system volumes, so the volume jumps) calls `settle()`: for
+    `settleMs` = 1500 ms readings are not keys, the volume is parked at once, again at every
+    reading in the window, and once more when it ends. A hold that already toggled stays
+    absorbed across the window (talk opens while the key is still held).
+  - **Unlinked:** the keys are the plain system volume and all app gains are unity. Arming
+    starts the app level at the step matching the system volume (`round(volume × 16)`), so
+    loudness does not jump (to the extent the iOS volume curve is 3 dB a step near the top);
+    disarming sets the system volume back to `level / 16` (16 = max).
+
+  The `audio` log shows `volume key: up +<gap> ms (<n>/4) → level <l>` for every up press
+  (`first` for a burst's first; `hold`, `absorbed` instead of the level), so the real repeat
+  timing can be read off and the three constants tuned, and `volume key: down → level <l>`,
+  `volume key: talk toggle, level back to <l>`, `volume key: settling, <v> is no key`,
+  `volume key: armed …` / `disarmed …` and `volume key: command up|down → level <l>`. The
+  Ride tab says "Hold volume up: talk" under TALK while connected.
 - **Keep-alive:** a silent AVAudioEngine runs whenever talk is closed, so the locked app is
   never suspended. `UIRequiresPersistentWiFi` stops iOS from powering Wi-Fi down.
 
@@ -351,11 +412,29 @@ them:
   restarted every few seconds for a whole ride? Look for `recognition failed … retrying` in
   the `voice` log, phrases arriving late, or the recogniser refusing a second request while
   one is being cancelled.
-- **Wake-word accuracy** at speed in a helmet: how "Moto party" comes back (the
-  `contextualStrings` bias it; only three spellings count), how often conversation starts
-  with something that sounds like it, and whether 1.2 s of silence splits "Moto party …
-  play …" into two phrases (the 5 s arming window is meant to cover that).
-- Whether the `listen` / `ok` earcons, played by `AVAudioPlayer` outside the voice-processing
-  engine, leak into the mic (and to the rider) during a talk.
+- **The passenger's first-phrase command** in a talk the iPhone opened: whether the
+  recogniser, started at the live earcon, is ready in time to catch the first words (nothing
+  before its first request is heard), whether a command like "play Dark Side of the Moon"
+  arrives as one phrase within the 8 s window (a pause of 1.2 s splits it, and the half that
+  arrives first is spent as conversation), how often a first "can you hear me" is mistaken for
+  a command, and whether stopping the transcriber mid-talk leaves the voice path untouched.
+- Whether the `live` / `ok` earcons, played by `AVAudioPlayer` outside the voice-processing
+  engine, leak into the mic (and so into the first phrase) during a talk.
+- **The app owns the volume** (none of it has run on a phone):
+  - Does the `outputVolume` KVO fire with the phone locked in a pocket, during music and during
+    a talk (HFP call volume)?
+  - Does the slider park work in the background with the screen locked?
+  - Does the system volume HUD flash for each park (on the lock screen, over the Ride tab)?
+  - Does the re-park after the HFP ↔ A2DP switch work, and does the jump land inside the
+    1.5 s settle window (look for a `volume key: up|down` line right after `session →`)?
+  - Does an up press at 15/16 always register? At 16/16 a press makes no reading, so each
+    reset must land before the next key repeat; a hold whose repeats are lost shows gaps of
+    twice the repeat interval and never toggles.
+  - The real key-repeat timing, from the `volume key: up +<gap> ms` lines: the initial delay
+    (under 700 ms?) and the repeat interval (under 200 ms?); how long a hold takes to toggle,
+    and whether fast human taps ever make one.
+  - How loud the +3 dB talk boost is behind the limiter, whether the limiter pumps, and whether
+    arming at the matching level really keeps loudness steady (the iOS volume curve is not
+    exactly 3 dB a step).
 - The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
   the AirPods A2DP ↔ HFP switch time.

@@ -69,63 +69,52 @@ final class CommandFixtureTests: XCTestCase {
     }
 }
 
-final class WakeWordTests: XCTestCase {
+final class FirstPhraseTests: XCTestCase {
     func testEveryFixtureCase() throws {
-        let fixture = try Fixtures.json("wake.json")
+        let fixture = try Fixtures.json("first_phrase.json")
+        XCTAssertEqual(fixture["firstPhraseMs"] as? Double, FirstPhraseGate.firstPhraseMs)
         let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 16)
+        XCTAssertEqual(cases.count, 12)
         for c in cases {
-            let text = try XCTUnwrap(c["text"] as? String)
-            // JSON null arrives as NSNull: "not a command".
-            let expect = c["expect"] as? String
-            XCTAssertEqual(CommandParser.wakeCommand(text), expect, "wake rule on \(text.debugDescription)")
+            let name = try XCTUnwrap(c["name"] as? String)
+            let role = try XCTUnwrap((c["role"] as? String).flatMap(FirstPhraseGate.Role.init(rawValue:)), name)
+            let phrases = try XCTUnwrap(c["phrases"] as? [[String: Any]])
+            let expect = try XCTUnwrap(c["expect"] as? [Any])
+            XCTAssertEqual(phrases.count, expect.count, name)
+            // Any live-earcon time: only the difference counts.
+            let liveAtMs = 123_456.0
+            var gate = FirstPhraseGate(role: role, liveAtMs: liveAtMs)
+            for (phrase, want) in zip(phrases, expect) {
+                let text = try XCTUnwrap(phrase["text"] as? String)
+                let atMs = try XCTUnwrap(phrase["atMs"] as? Double)
+                // JSON null arrives as NSNull: conversation.
+                let expected: HeardPhrase = (want as? String).map(HeardPhrase.command) ?? .conversation
+                XCTAssertEqual(gate.classify(text, nowMs: liveAtMs + atMs), expected, "\(name): \(text.debugDescription)")
+            }
         }
     }
 
+    func testSpent() {
+        var gate = FirstPhraseGate(role: .opener, liveAtMs: 1_000)
+        XCTAssertFalse(gate.isSpent(atMs: 1_000))
+        XCTAssertFalse(gate.isSpent(atMs: 9_000))
+        XCTAssertTrue(gate.isSpent(atMs: 9_001))
+        // An empty phrase spends nothing; the first real one spends it, parsed or not.
+        XCTAssertEqual(gate.classify("…", nowMs: 2_000), .conversation)
+        XCTAssertFalse(gate.isSpent(atMs: 2_000))
+        XCTAssertEqual(gate.classify("hello there", nowMs: 3_000), .conversation)
+        XCTAssertTrue(gate.isSpent(atMs: 3_000))
+
+        XCTAssertTrue(FirstPhraseGate(role: .other, liveAtMs: 0).isSpent(atMs: 0))
+        XCTAssertFalse(FirstPhraseGate(role: .solo, liveAtMs: 0).isSpent(atMs: 60_000))
+    }
+
     func testCommandTextFeedsTheParser() {
-        let text = CommandParser.wakeCommand("Moto party, over")
-        XCTAssertEqual(text, "over")
-        XCTAssertEqual(text.map(CommandParser.parse), .end)
-        XCTAssertEqual(CommandParser.wakeCommand("okay okay motor party louder").map(CommandParser.parse), .volumeUp)
-        // The wake word must come first, as whole words.
-        XCTAssertNil(CommandParser.wakeCommand("next moto party"))
-        XCTAssertNil(CommandParser.wakeCommand("motor parts next"))
-    }
-
-    func testGateNeedsTheWakeWord() {
-        var gate = WakeGate()
-        XCTAssertEqual(gate.classify("play pink floyd", nowMs: 0), .conversation)
-        XCTAssertEqual(gate.classify("Moto party, next", nowMs: 100), .command("next"))
-        XCTAssertEqual(gate.classify("next", nowMs: 200), .conversation)
-    }
-
-    func testBareWakeWordArmsTheNextPhraseOnly() {
-        var gate = WakeGate()
-        XCTAssertEqual(gate.classify("Moto party.", nowMs: 1_000), .armed)
-        XCTAssertTrue(gate.isArmed)
-        XCTAssertEqual(gate.classify("Play Pink Floyd!", nowMs: 5_900), .command("play pink floyd"))
-        XCTAssertFalse(gate.isArmed)
-        XCTAssertEqual(gate.classify("next", nowMs: 6_000), .conversation)
-    }
-
-    func testArmingExpiresAfterFiveSeconds() {
-        var gate = WakeGate()
-        XCTAssertEqual(gate.classify("motoparty", nowMs: 0), .armed)
-        XCTAssertEqual(gate.classify("next", nowMs: 5_001), .conversation)
-        // Exactly at the window's end still counts.
-        XCTAssertEqual(gate.classify("motoparty", nowMs: 10_000), .armed)
-        XCTAssertEqual(gate.classify("next", nowMs: 15_000), .command("next"))
-    }
-
-    func testArmedPhraseMayRepeatTheWakeWord() {
-        var gate = WakeGate()
-        XCTAssertEqual(gate.classify("motoparty", nowMs: 0), .armed)
-        XCTAssertEqual(gate.classify("motoparty", nowMs: 1_000), .armed)
-        XCTAssertEqual(gate.classify("hey moto party skip", nowMs: 2_000), .command("skip"))
-        gate.reset()
-        XCTAssertFalse(gate.isArmed)
-        XCTAssertEqual(gate.classify("motoparty", nowMs: 3_000), .armed)
-        gate.reset()
-        XCTAssertEqual(gate.classify("skip", nowMs: 3_100), .conversation)
+        var gate = FirstPhraseGate(role: .opener, liveAtMs: 0)
+        XCTAssertEqual(gate.classify("Hey, turn it LOUDER please!", nowMs: 500), .conversation)
+        gate = FirstPhraseGate(role: .opener, liveAtMs: 0)
+        let heard = gate.classify("Hey, louder please!", nowMs: 500)
+        XCTAssertEqual(heard, .command("hey louder please"))
+        if case .command(let text) = heard { XCTAssertEqual(CommandParser.parse(text), .volumeUp) }
     }
 }

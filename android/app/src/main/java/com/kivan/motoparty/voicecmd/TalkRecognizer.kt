@@ -19,13 +19,14 @@ import com.kivan.motoparty.audio.VoiceEngine
 /**
  * Speech recognition on the talk's own microphone, for PROTOCOL.md "Commands" (option A,
  * 2026-09-29): while a talk is open, every phrase the rider says is transcribed and handed to
- * [onPhrase]; the host decides whether it is a command (the wake word) or conversation.
+ * [onPhrase]; the host decides whether it is a command (the talk's first phrase) or conversation,
+ * and stops this once no later phrase can be one.
  *
  * The recognizer never opens a microphone. The voice engine's capture loop tees each raw frame
  * into a [PcmTee] ([attach]), whose writer thread writes it into a pipe; the read end goes to
  * Google's recognizer as `EXTRA_AUDIO_SOURCE` with `EXTRA_SEGMENTED_SESSION`, which gives one
  * `onSegmentResults` per phrase for as long as the pipe stays open. Proven on the Pixel 8 by
- * `spikes/recognizer-pfd` (no RECORD_AUDIO needed; the wake word comes back as "Moto party"). The
+ * `spikes/recognizer-pfd` (no RECORD_AUDIO needed). The
  * extras need API 33: below that, talk runs without in-talk commands (logged once).
  *
  * Closing the write end is the end of the session (EOF); the recognizer is destroyed when it says
@@ -68,7 +69,7 @@ class TalkRecognizer(
         begin()
     }
 
-    /** The talk closed: EOF to the recognizer. Safe to call when nothing runs. */
+    /** The talk closed or its first phrase is spent: EOF to the recognizer. Safe to call when nothing runs. */
     fun stop() {
         session = 0
         main.removeCallbacksAndMessages(RETRY)
@@ -244,7 +245,7 @@ class TalkRecognizer(
         /** Token for the pending retry, so [stop] can cancel it. */
         val RETRY = Any()
         val BIASING = arrayListOf(
-            "motoparty", "moto party", "play", "pause", "resume", "next", "previous", "skip",
+            "play", "pause", "resume", "next", "previous", "skip",
             "volume up", "volume down", "over", "end talk", "hang up",
         )
         val FALLBACK_ERRORS = setOf(

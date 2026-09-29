@@ -107,73 +107,76 @@ public enum CommandParser {
         }
         return phrases[words.joined(separator: " ")] ?? .unknown
     }
-
-    /// The wake-word rule (PROTOCOL.md "Commands", Wake word): normalise, drop
-    /// leading "hey"/"ok"/"okay" words, then the phrase must start with
-    /// "motoparty", "moto party" or "motor party" as whole words. Returns nil
-    /// when it does not (conversation), "" for the bare wake word (arms the
-    /// next phrase), else the normalised command text after it.
-    public static func wakeCommand(_ text: String) -> String? {
-        var words = normalize(text)[...]
-        while let first = words.first, wakePrefixes.contains(first) { words.removeFirst() }
-        for wake in wakeWords where words.starts(with: wake) {
-            return words.dropFirst(wake.count).joined(separator: " ")
-        }
-        return nil
-    }
-
-    private static let wakePrefixes: Set<String> = ["hey", "ok", "okay"]
-    private static let wakeWords: [[String]] = [["motoparty"], ["moto", "party"], ["motor", "party"]]
 }
 
-/// What one recognised phrase of a talk is (PROTOCOL.md "Commands", Wake word).
+/// What one recognised phrase of a talk is (PROTOCOL.md "Commands").
 public enum HeardPhrase: Equatable, Sendable {
     /// Talk between the riders: never sent, never acted on.
     case conversation
-    /// The bare wake word: the next phrase within the window is a command.
-    case armed
-    /// Command text (normalised, without the wake word), for `CommandParser`
-    /// and `command.text`.
+    /// Command text (normalised up to and including trim, fillers kept: the
+    /// parser drops them), for `CommandParser` and `command.text`.
     case command(String)
 
     public var label: String {
         switch self {
         case .conversation: "conversation"
-        case .armed: "armed"
         case .command: "command"
         }
     }
 }
 
-/// Classifies the phrases of one talk: the wake-word rule plus the arming
-/// window. The client is never solo, so the wake word is always required.
-public struct WakeGate: Sendable {
-    /// How long a bare wake word keeps the next phrase a command.
-    public static let armWindowMs: Double = 5_000
+/// One phone's view of one talk (PROTOCOL.md "Commands", The first phrase
+/// decides). Pure: every time is passed in, in ms on one monotonic clock.
+public struct FirstPhraseGate: Sendable {
+    public enum Role: String, Sendable {
+        /// This phone opened the talk (the side in the host's `talk.open{by}`).
+        case opener
+        /// The other side opened it: never commands.
+        case other
+        /// The host's talk has no client: every non-empty phrase, no window.
+        /// The iPhone is always the client, so it is never solo.
+        case solo
+    }
 
-    private var armedAtMs: Double?
+    /// `FIRST_PHRASE_MS`: how long after the live earcon the opener's first
+    /// phrase may arrive (inclusive).
+    public static let firstPhraseMs: Double = 8_000
 
-    public init() {}
+    public let role: Role
+    /// When this phone played its live earcon.
+    public let liveAtMs: Double
+    private var used = false
 
-    public var isArmed: Bool { armedAtMs != nil }
+    public init(role: Role, liveAtMs: Double) {
+        self.role = role
+        self.liveAtMs = liveAtMs
+    }
 
-    /// A new talk (or its end) starts unarmed.
-    public mutating func reset() { armedAtMs = nil }
-
-    public mutating func classify(_ phrase: String, nowMs: Double) -> HeardPhrase {
-        let armed = armedAtMs.map { nowMs - $0 <= Self.armWindowMs } ?? false
-        armedAtMs = nil
-        if let text = CommandParser.wakeCommand(phrase) {
-            // A second bare wake word re-arms; "moto party next" after one is
-            // simply the command.
-            if text.isEmpty {
-                armedAtMs = nowMs
-                return .armed
-            }
-            return .command(text)
+    /// Nothing this phone hears from `nowMs` on can be a command, so it may
+    /// stop recognising for the rest of the talk.
+    public func isSpent(atMs nowMs: Double) -> Bool {
+        switch role {
+        case .other: true
+        case .solo: false
+        case .opener: used || nowMs - liveAtMs > Self.firstPhraseMs
         }
-        guard armed else { return .conversation }
+    }
+
+    /// Classifies one phrase whose result arrived at `nowMs`. A phrase that
+    /// is empty after normalisation is conversation and spends nothing.
+    public mutating func classify(_ phrase: String, nowMs: Double) -> HeardPhrase {
         let text = CommandParser.normalize(phrase).joined(separator: " ")
-        return text.isEmpty ? .conversation : .command(text)
+        guard !text.isEmpty else { return .conversation }
+        switch role {
+        case .other:
+            return .conversation
+        case .solo:
+            return .command(text)
+        case .opener:
+            guard !isSpent(atMs: nowMs) else { return .conversation }
+            used = true
+            // An unparsed first phrase is conversation: no "Didn't catch that".
+            return CommandParser.parse(text) == .unknown ? .conversation : .command(text)
+        }
     }
 }

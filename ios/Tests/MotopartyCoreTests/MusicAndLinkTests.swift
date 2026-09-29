@@ -207,6 +207,6 @@ final class LinkMathTests: XCTestCase {
         let wav = EarconSynth.wav(tones: [(440, 0.1)])
         XCTAssertEqual(String(decoding: wav.prefix(4), as: UTF8.self), "RIFF")
         XCTAssertEqual(wav.count, 44 + 2 * 2_205)
-        for name in ["live", "ok", "error", "end", "listen"] { XCTAssertGreaterThan(EarconSynth.wav(for: name).count, 44) }
+        for name in ["live", "ok", "error", "end"] { XCTAssertGreaterThan(EarconSynth.wav(for: name).count, 44) }
     }
 }

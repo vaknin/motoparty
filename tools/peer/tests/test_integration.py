@@ -106,6 +106,12 @@ def start_pair(tmp_path, track, *client_args):
     return host, client, (cp, vp, hp)
 
 
+def _open_talk(client) -> None:
+    client.send("talk")
+    client.msg("<<", "talk.open")
+    assert client.msg("<<", "state")["talk"] is True
+
+
 def test_full_session(tmp_path, track):
     host, client, (cp, vp, hp) = start_pair(tmp_path, track, "--tone")
     try:
@@ -136,7 +142,12 @@ def test_full_session(tmp_path, track):
         assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
         assert client.msg("<<", "state")["talk"] is False
 
-        # command.text -> parser -> announce
+        # command.text outside a talk: ignored and logged, no announce
+        client.send("say pause")
+        host.expect(r"command.text ignored: no talk is open")
+        # in a talk the client opened: the first command.text -> parser -> announce
+        client.send("talk")
+        client.msg("<<", "talk.open")
         client.send("say what's the weather")
         assert client.msg("<<", "announce") == {"t": "announce", "text": "Didn't catch that", "earcon": "error"}
         # volume is local: the client parses first and sends nothing
@@ -144,7 +155,11 @@ def test_full_session(tmp_path, track):
         client.expect(r"local: volumeUp handled here \[earcon ok\]")
         client.send("vol+")
         client.expect(r"local: volumeUp handled here \[earcon ok\]")
-        assert sum('"command.text"' in line for line in client.lines) == 1  # only the weather one
+        assert sum('"command.text"' in line for line in client.lines) == 2  # pause and the weather
+        client.send("talk")
+        client.msg("<<", "talk.close")
+        assert client.msg("<<", "state")["talk"] is False
+        assert sum('"announce"' in line for line in client.lines) == 1  # the ignored pause got none
 
         if track is None:
             pytest.skip("ffmpeg not available: music part skipped")
@@ -249,6 +264,7 @@ def test_volume_utterance_reaching_the_host_is_not_understood(tmp_path):
     host, client, _ = start_pair(tmp_path, None)
     try:
         client.msg("<<", "hello")
+        _open_talk(client)
         client.send('raw {"t":"command.text","text":"volume up","lang":"en-US"}')
         assert client.msg("<<", "announce") == {"t": "announce", "text": "Didn't catch that", "earcon": "error"}
         host.expect("volume is local; the client should not have sent this")
@@ -268,8 +284,8 @@ def test_malformed_messages_are_dropped_and_the_link_survives(tmp_path):
         for case in load_fixture("control/framing.json")["malformed"]:
             client.send("raw " + case["json"])
             host.expect(r"dropped invalid frame ")
-        client.send("say pause")  # the connection is still up and still answers
-        assert client.msg("<<", "announce")["earcon"] == "error"  # nothing is playing
+        client.send("talk")  # the connection is still up and still answers
+        assert client.msg("<<", "talk.open") == {"t": "talk.open", "by": "client"}
         assert "closing" not in host.output()
     finally:
         client.stop()
@@ -337,55 +353,127 @@ def test_host_rejects_oversize_frame_and_survives(tmp_path):
                     break
                 got += chunk
         host.expect(r"protocol error: frame length 65537 exceeds 65536; closing")
-        client.send("say pause")  # the real client is unaffected
-        client.msg("<<", "announce")
+        client.send("talk")  # the real client is unaffected
+        client.msg("<<", "talk.open")
     finally:
         client.stop()
         host.stop()
 
 
-def _open_talk(client) -> None:
-    client.send("talk")
-    client.msg("<<", "talk.open")
-    assert client.msg("<<", "state")["talk"] is True
-
-
 def test_spoken_phrases_in_a_talk(tmp_path):
-    """PROTOCOL.md "Commands": the wake word rule on the client, `end` and `pause` on the host."""
+    """PROTOCOL.md "Commands": the first phrase rule on the client, `end` and `pause` on the host."""
     host, client, _ = start_pair(tmp_path, None)
     try:
         client.msg("<<", "hello")
-        client.send("hear moto party pause")  # outside a talk: nothing is sent
+        client.send("hear pause")  # outside a talk: nothing is sent
         client.expect("hear: no talk open")
         _open_talk(client)
 
-        client.send("hear what a view")  # conversation
-        client.expect(r"hear: 'what a view' is conversation, not sent")
-        client.send("hear moto party louder")  # volume stays local
-        client.expect(r"local: volumeUp handled here \[earcon ok\]")
-
-        # a bare wake word arms the next phrase: it goes without the wake word, the talk stays open
-        client.send("hear Moto party.")
-        client.expect(r"hear: wake word; the next phrase within 5000 ms is a command \[earcon listen\]")
-        client.send("hear pause")
+        # empty phrases do not spend the first phrase; the first real one parses: a command
+        client.send("hear ...")
+        client.expect(r"hear: '\.\.\.' is conversation \(empty\), not sent")
+        client.send("hear Pause!")
         assert client.msg(">>", "command.text") == {"t": "command.text", "text": "pause", "lang": "en-US"}
         assert client.msg("<<", "announce")["text"] == "Nothing is playing"
-        client.send("hear pause")  # disarmed again: conversation
-        client.expect(r"hear: 'pause' is conversation, not sent")
-        assert sum('"command.text"' in line for line in client.lines) == 1
-        assert not any('"talk.close"' in line for line in client.lines)
+        # every later phrase is conversation, even one that parses
+        client.send("hear over")
+        client.expect(r"hear: 'over' is conversation \(the first phrase is spent\), not sent")
+        # a second command.text in the same talk (a misbehaving client) is ignored, no announce
+        client.send("say over")
+        host.expect(r"command.text ignored: not the first command.text of this talk")
+        with pytest.raises(AssertionError):
+            client.expect(r'<< \{"t":"(announce|talk\.close)"', timeout=1)
+        client.send("talk")
+        client.msg("<<", "talk.close")
+
+        # an unparsed first phrase is conversation (no "Didn't catch that") and spends it
+        _open_talk(client)
+        client.send("hear what a view")
+        client.expect(r"hear: 'what a view' is conversation \(the first phrase does not parse\), not sent")
+        client.send("hear pause")
+        client.expect(r"hear: 'pause' is conversation \(the first phrase is spent\), not sent")
+        client.send("talk")
+        client.msg("<<", "talk.close")
+
+        # the first phrase may be a local volume command: handled here, nothing sent
+        _open_talk(client)
+        client.send("hear louder")
+        client.expect(r"local: volumeUp handled here \[earcon ok\]")
+        client.send("talk")
+        client.msg("<<", "talk.close")
 
         # `over` closes the talk, by the client that spoke it, and nothing else happens
-        client.send("hear Hey motoparty, over")
-        assert client.msg(">>", "command.text")["text"] == "over"
+        _open_talk(client)
+        client.send("hear Hey, over")
+        assert client.msg(">>", "command.text")["text"] == "hey over"
         assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
         assert client.msg("<<", "state")["talk"] is False
         with pytest.raises(AssertionError):
             client.expect(r'<< \{"t":"(music\.play|announce)"', timeout=1)
-        client.send("hear moto party over")
+        client.send("hear over")
         client.expect("hear: no talk open")
+        assert sum('"command.text"' in line for line in client.lines if ">>" in line) == 3
     finally:
         client.stop()
+        host.stop()
+
+
+def test_host_opened_talk(tmp_path):
+    """A talk the host opened: the client never commands, the host's own first phrase does."""
+    host, client, _ = start_pair(tmp_path, None)
+    try:
+        client.msg("<<", "hello")
+        host.send("talk")
+        assert client.msg("<<", "talk.open") == {"t": "talk.open", "by": "host"}
+        client.send("hear pause")
+        client.expect(r"hear: 'pause' is conversation \(this phone did not open the talk\), not sent")
+        client.send("say pause")  # the host enforces it too
+        host.expect(r"command.text ignored: the client did not open this talk")
+
+        host.send("hear")
+        host.expect("usage: hear <phrase>")
+        host.send("hear Pause.")
+        host.expect(r"hear: command 'pause'")
+        assert client.msg("<<", "announce") == {"t": "announce", "text": "Nothing is playing", "earcon": "error"}
+        host.send("hear over")
+        host.expect(r"hear: 'over' is conversation \(the first phrase is spent\), not acted on")
+        host.send("talk")
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "host", "reason": "trigger"}
+
+        # the host's first phrase `over` ends the talk by the host
+        host.send("talk")
+        client.msg("<<", "talk.open")
+        host.send("hear over")
+        assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "host", "reason": "trigger"}
+        with pytest.raises(AssertionError):  # `end` has no announce
+            client.msg("<<", "announce", timeout=1)
+        host.send("hear over")
+        host.expect("hear: no talk open")
+    finally:
+        client.stop()
+        host.stop()
+
+
+def test_solo_talk_on_the_host(tmp_path):
+    """No client: every non-empty host phrase is a command, unparsed -> "Didn't catch that"."""
+    cp, vp, hp = free_port(), free_port(socket.SOCK_DGRAM), free_port()
+    host = Proc("host", "--no-mdns", "--bind", "127.0.0.1", "--port", str(cp), "--voice-port", str(vp),
+                "--http-port", str(hp))
+    try:
+        host.expect(r"control tcp/\d+ voice udp/\d+ http tcp/\d+")
+        host.send("talk")
+        host.expect(r"TALK OPEN \(by host\)")
+        host.send("hear what's the weather")
+        host.expect(r'\(no client\) would send \{"t":"announce","text":"Didn\'t catch that","earcon":"error"\}')
+        host.send("hear ")
+        host.expect("usage: hear <phrase>")
+        host.send("hear next")
+        host.expect(r'would send \{"t":"announce","text":"Nothing queued","earcon":"error"\}')
+        host.send("hear quieter")
+        host.expect(r"local: volumeDown handled here \[earcon ok\]")
+        host.send("hear Over.")
+        host.expect(r"TALK CLOSED \(by host, trigger\)")
+    finally:
         host.stop()
 
 
@@ -405,7 +493,7 @@ def test_spoken_resume_ends_the_talk_and_music_follows(tmp_path, track):
         client.msg("<<", "hello")
         load = _load(host, client)
         _open_talk(client)
-        client.send("hear moto party resume")
+        client.send("hear resume")
         assert client.msg(">>", "command.text")["text"] == "resume"
         # the close comes first, then the resume after the usual lead, then the announce
         assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
@@ -430,7 +518,7 @@ def test_spoken_play_and_pause_in_a_talk(tmp_path, track):
 
         # `pause` in the talk cancels the resume after it; the talk stays open
         _open_talk(client)
-        client.send("hear motoparty pause")
+        client.send("hear pause")
         assert client.msg("<<", "announce") == {"t": "announce", "text": "Paused", "earcon": "ok"}
         client.send("talk")
         client.msg("<<", "talk.close")
@@ -440,7 +528,7 @@ def test_spoken_play_and_pause_in_a_talk(tmp_path, track):
 
         # `play …` ends the talk; the track starts once the headset is back in media mode
         _open_talk(client)
-        client.send("hear Moto party, play Bench Tone")
+        client.send("hear Play Bench Tone")
         assert client.msg(">>", "command.text")["text"] == "play bench tone"
         assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
         assert client.msg("<<", "state")["talk"] is False

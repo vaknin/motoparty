@@ -41,7 +41,11 @@ struct ResultList: Equatable {
 /// Everything here runs on the main queue.
 final class AppModel: ObservableObject {
     // MARK: Published UI state
-    @Published private(set) var link: LinkStatus = .idle
+    @Published private(set) var link: LinkStatus = .idle {
+        // The app owns the volume keys only while connected (2026-09-29):
+        // a press is an app volume step, a hold of volume up toggles talk.
+        didSet { volumeKey.isArmed = link.isConnected }
+    }
     @Published private(set) var talkOpen = false
     @Published private(set) var talkRequested = false
     @Published private(set) var hostState: HostState?
@@ -74,6 +78,9 @@ final class AppModel: ObservableObject {
     private let keepAlive = KeepAlive()
     private let earcons = EarconPlayer()
     private let localVolume = LocalVolume()
+    /// The passenger's pocket keys while connected: app volume steps, and a
+    /// hold of volume up toggles talk.
+    private lazy var volumeKey = VolumeKey(localVolume: localVolume)
     private let cache = TrackCache()
     /// The player runs ahead of the host timeline by the output delay it has to
     /// cover: what the audio session measures for the current route plus the
@@ -85,8 +92,11 @@ final class AppModel: ObservableObject {
     private let nowPlayingCenter = NowPlaying()
     /// Speech recognition on the talk's own mic (PROTOCOL.md "Commands").
     private let transcriber = Transcriber()
-    /// Wake word and arming window over this talk's phrases.
-    private var wake = WakeGate()
+    /// The first-phrase gate of a talk this phone opened, from its live
+    /// earcon on; nil otherwise (nothing here is a command).
+    private var firstPhrase: FirstPhraseGate?
+    /// Stops recognition when the first-phrase window has passed unused.
+    private var firstPhraseTimer: Timer?
     private let announcer = Announcer()
 
     // MARK: Link / music bookkeeping
@@ -116,6 +126,9 @@ final class AppModel: ObservableObject {
     private var liveCueOpenedAtMs: Double?
     /// Safety net for the cue: a talk whose capture never delivers still beeps.
     private var liveCueTimer: Timer?
+    /// Who opened the current talk, from the host's `talk.open{by}`. Nil for
+    /// a talk learnt only from `state` (a join mid-talk): not ours, then.
+    private var talkOpener: Role?
     /// Last `music.search` / `music.browse` id; every request takes the next.
     private var lastRequestId = 0
 
@@ -131,6 +144,7 @@ final class AppModel: ObservableObject {
             problem = "Audio session: \(error.localizedDescription)"
         }
         keepAlive.start()
+        volumeKey.start()
         audioRoute = session.outputName
         // Ask for permissions at home, not on the road.
         session.requestRecordPermission { [weak self] granted in
@@ -159,6 +173,8 @@ final class AppModel: ObservableObject {
         session.onInterruptionEnded = { [weak self] shouldResume in self?.interruptionEnded(shouldResume) }
         session.onRouteChange = { [weak self] reason in self?.routeChanged(reason) }
         session.onMediaServicesReset = { [weak self] in self?.mediaServicesReset() }
+        volumeKey.onHold = { [weak self] in self?.talkButton() }
+        volumeKey.onGains = { [weak self] gains in self?.applyGains(gains) }
         session.onMuteGesture = { [weak self] in
             guard let self else { return }
             // The earbuds sit inside the helmet: no gesture starts or ends a talk (2026-09-29).
@@ -179,8 +195,18 @@ final class AppModel: ObservableObject {
         transcriber.onPhrase = { [weak self] phrase in self?.heard(phrase) }
 
         announcer.onSpeakingChanged = { [weak self] speaking in
-            self?.player.volume = speaking ? 0.35 : 1.0
+            self?.player.duck = speaking ? 0.35 : 1.0
         }
+    }
+
+    /// One app volume for everything this phone plays (`AppVolume`): talk
+    /// (with the limiter's boost at the top level), music, earcons and
+    /// announcements.
+    private func applyGains(_ gains: AppVolume.Gains) {
+        voiceEngine.setGain(volume: gains.talkVolume, boostDb: gains.talkBoostDb)
+        player.gain = gains.musicVolume
+        earcons.volume = gains.cueVolume
+        announcer.volume = gains.cueVolume
     }
 
     // MARK: - Link
@@ -225,6 +251,7 @@ final class AppModel: ObservableObject {
         hostAddress = nil
         if talkOpen { closeTalkLocally() }
         talkRequested = false
+        talkOpener = nil
         talkOpenPending = false
         micUnavailable = false
         // An answer can no longer arrive for a request in flight.
@@ -266,9 +293,11 @@ final class AppModel: ObservableObject {
             }
         case .state(let state):
             apply(state)
-        case .talkOpen:
+        case .talkOpen(let open):
+            talkOpener = open.by
             openTalkLocally()
         case .talkClose(let close):
+            talkOpener = nil
             micUnavailable = false
             talkOpenPending = false
             if talkOpen {
@@ -391,6 +420,7 @@ final class AppModel: ObservableObject {
 
     // MARK: - Talk
 
+    /// TALK, and a hold of volume up while connected (`VolumeKey`).
     func talkButton() {
         guard control != nil, link.isConnected else {
             earcons.play("error")
@@ -455,6 +485,7 @@ final class AppModel: ObservableObject {
         announcer.stop()
         player.suspend()
         keepAlive.stop()
+        volumeKey.settle()
         do {
             try session.activate(.talk)
             voice?.beginCapture()
@@ -466,10 +497,6 @@ final class AppModel: ObservableObject {
             )
             session.armMuteGesture()
             armLiveCue()
-            // After the engine: recognition that fails costs the commands,
-            // never the talk.
-            wake.reset()
-            transcriber.start(language: settings.speechLanguage)
         } catch {
             // A call in progress, a route that failed, an engine that would
             // not start: this phone cannot talk.
@@ -504,6 +531,7 @@ final class AppModel: ObservableObject {
         let why = fallback ? "fallback" : "capture up"
         Log.audio.info("live cue: fired +\(ms) ms (\(why, privacy: .public))")
         earcons.play("live")
+        startRecognition()
     }
 
     /// A talk that ended before its microphone was live never gets its beep.
@@ -540,6 +568,7 @@ final class AppModel: ObservableObject {
     /// music.play (resumeLeadMs covers the profile switch).
     private func closeTalkLocally() {
         talkRequested = false
+        talkOpener = nil
         guard talkOpen else { return }
         talkOpen = false
         cancelLiveCue()
@@ -552,6 +581,7 @@ final class AppModel: ObservableObject {
     }
 
     private func restoreMediaRoute() {
+        volumeKey.settle()
         do { try session.activate(.media) } catch {
             Log.audio.error("media route failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -561,23 +591,45 @@ final class AppModel: ObservableObject {
 
     // MARK: - Commands inside talk
 
-    /// One phrase recognised on this phone's mic during a talk. Only a phrase
-    /// that starts with the wake word (or follows a bare one within 5 s) is a
-    /// command; everything else is conversation, never sent or acted on. The
-    /// client is never solo, so the wake word is always required.
+    /// The first phrase decides (PROTOCOL.md "Commands"): only in a talk this
+    /// phone opened, and only its first phrase within `FIRST_PHRASE_MS` of the
+    /// live earcon, which is now. The client is never solo, and in a talk the
+    /// host opened it does not recognise at all.
+    private func startRecognition() {
+        guard talkOpener == .client else { return }
+        let now = MonotonicClock.nowMs()
+        firstPhrase = FirstPhraseGate(role: .opener, liveAtMs: now)
+        firstPhraseTimer?.invalidate()
+        // A phrase still in progress at the deadline would arrive too late
+        // anyway. A little past it, since the window's edge is inclusive.
+        firstPhraseTimer = Timer.scheduledTimer(withTimeInterval: FirstPhraseGate.firstPhraseMs / 1000 + 0.05,
+                                                repeats: false) { [weak self] _ in
+            self?.stopRecognitionIfSpent()
+        }
+        // Recognition that fails costs the command, never the talk.
+        transcriber.start(language: settings.speechLanguage)
+    }
+
+    /// One phrase recognised on this phone's mic during a talk it opened. A
+    /// command only if it is the first phrase, in time, and parses;
+    /// everything else is conversation, never sent or acted on.
     private func heard(_ phrase: String) {
-        guard talkOpen else { return }
-        let kind = wake.classify(phrase, nowMs: MonotonicClock.nowMs())
+        guard talkOpen, var gate = firstPhrase else { return }
+        let kind = gate.classify(phrase, nowMs: MonotonicClock.nowMs())
+        firstPhrase = gate
         Log.voice.info("heard: \"\(phrase, privacy: .public)\" (\(kind.label, privacy: .public))")
-        switch kind {
-        case .conversation:
-            break
-        case .armed:
-            earcons.play("listen")
-        case .command(let text):
+        if case .command(let text) = kind {
             lastHeard = text
             runCommand(text)
         }
+        stopRecognitionIfSpent()
+    }
+
+    /// Nothing more this talk can be a command: stop listening.
+    private func stopRecognitionIfSpent() {
+        guard let gate = firstPhrase, gate.isSpent(atMs: MonotonicClock.nowMs()) else { return }
+        Log.voice.info("first phrase spent: recognition off for this talk")
+        stopRecognition()
     }
 
     /// Volume is local (PROTOCOL.md "Commands"): the same parser the host runs
@@ -587,9 +639,9 @@ final class AppModel: ObservableObject {
     private func runCommand(_ text: String) {
         switch CommandParser.parse(text) {
         case .volumeUp:
-            earcons.play(localVolume.up() ? "ok" : "error")
+            earcons.play(volumeKey.step(up: true) ? "ok" : "error")
         case .volumeDown:
-            earcons.play(localVolume.down() ? "ok" : "error")
+            earcons.play(volumeKey.step(up: false) ? "ok" : "error")
         default:
             send(.commandText(CommandText(text: text, lang: settings.speechLanguage)))
         }
@@ -597,7 +649,9 @@ final class AppModel: ObservableObject {
 
     private func stopRecognition() {
         transcriber.stop()
-        wake.reset()
+        firstPhrase = nil
+        firstPhraseTimer?.invalidate()
+        firstPhraseTimer = nil
     }
 
     // MARK: - Buttons
@@ -730,6 +784,7 @@ final class AppModel: ObservableObject {
 
     private func routeChanged(_ reason: AVAudioSession.RouteChangeReason) {
         audioRoute = session.outputName
+        volumeKey.settle()
         switch reason {
         case .oldDeviceUnavailable:
             // Headset gone: don't blast music out of the speaker.
@@ -743,7 +798,7 @@ final class AppModel: ObservableObject {
 
     private func mediaServicesReset() {
         Log.audio.error("media services were reset; rebuilding audio")
-        transcriber.stop()
+        stopRecognition()
         voiceEngine.stop()
         keepAlive.rebuild()
         if talkOpen {

@@ -16,7 +16,7 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `core/VoicePacket.kt` | done |
 | `core/JitterBuffer.kt` | done per the latest spec: talk-spurt start plays `target` ms after arrival; underrun = packet after its slot, +20 ms at most once per spurt; -20 ms after 10 s; changes apply at next spurt; keepalive seqs never count as loss; seq-contiguous ts jump = silence; FEC/PLC; brief PLC then silence on an empty buffer. A packet that came too late to play also counts as "seen" for the silence-gap test (fixed 2026-09-19 night). Per-talk counters for `talk stats` (layer 2, section 3 item 3) |
 | `core/CommandParser.kt` | done per the latest spec (per code point, U+2019 -> `'`, keep L*/M*/N*); `Command.End` since 2026-09-29 |
-| `core/WakeWord.kt`, `core/CommandEffect.kt` | new 2026-09-29, pure, tested: the wake word + arming + solo rule (`WakeWord`, `PhraseGate`) and "command + talk state → effect" (`CommandEffect`). Section 2, "Commands inside talk" |
+| `core/FirstPhrase.kt`, `core/CommandEffect.kt` | new 2026-09-29, pure, tested: the first-phrase rule — opener / other / solo, the 8 s window from the live earcon, `isSpent` (`FirstPhraseGate`, replaced the wake word the same day) — and "command + talk state → effect" (`CommandEffect`). Section 2, "Commands inside talk" |
 | `link/TalkController.kt` | done (pure state machine: trigger, link loss, `onCommandClose(by)` for a spoken `play`/`resume`/`end`; the 20 s silence close of F6 was removed 2026-09-29) |
 | `link/ControlServer.kt` | done. One writer coroutine per connection (socket writes on main threw NetworkOnMainThreadException), pong answered on the reader thread, second hello replaces client (old one gets `bye`), 6 s liveness watchdog |
 | `link/VoiceSocket.kt` | done. UDP 47801, peer = source of last valid packet from the control client's IP, running 16 kHz `ts` clock from a random start (`currentTs()`), keepalive every 1 s idle carrying current ts, shared seq |
@@ -32,7 +32,7 @@ Paths are relative to `app/src/main/java/com/kivan/motoparty/`.
 | `audio/PcmDump.kt` + `audio/Wav.kt` | done, unit-tested (`PcmDumpTest` 7 + `WavTest` 4). Stage A of the wired-mic plan: the capture loop's own PCM to a WAV file, one per talk, behind the `captureDump` debug setting (off by default). Pre-allocated pool + bounded queue + private daemon writer thread, **drop and count** on overflow — the `voice-capture` thread never blocks on I/O and never allocates on the frame path; `close()` does not join. Capped at 40 MB. Files under `files/captures/`, pullable without root. Line: `capture dump: <name>.wav, N frames, X.X s, N bytes, N dropped` |
 | `audio/DeviceRoster.kt` + `audio/DeviceWatch.kt` | done, unit-tested (`DeviceRosterTest`, 10). Stage A: `getDevices()` + an `AudioDeviceCallback` on their own daemon thread (never Main — both are binder calls into the audio service). `DeviceRoster` is the pure part: sorted, deduped, ids kept (what `setPreferredDevice` will take in Stage C). Lines `audio devices: in … · out …` and `audio devices +:` / `-:` on every plug, each followed by the full roster; short form in the new "Audio devices" UI row |
 | `audio/AudioThread.kt` | done, reviewed, unit-tested (`AudioThreadTest`). The single serial thread every route change and voice start/stop runs on (section 4, "Talk no longer blocks Main"). Not yet run on the device |
-| `audio/Earcons.kt` | done (generated tones: LIVE, CLOSED, OK, ERROR, LISTEN) |
+| `audio/Earcons.kt` | done (generated tones: LIVE, CLOSED, OK, ERROR; LISTEN went with the wake word) |
 | `music/Catalog.kt`, `OkHttpDownloader.kt` | done (NewPipeExtractor v0.26.5; YT Music songs/albums/playlists, artist = top 20 songs; falls back to plain YouTube search; resolves progressive M4A, itag 140 preferred) |
 | `music/TrackCache.kt` | done (1 GiB LRU by mtime, 1 MiB Range chunks, UA chosen by the URL's `c=` client, shared in-flight downloads, prefetch) |
 | `music/TrackServer.kt` | done (hand-rolled HTTP, GET/HEAD `/track/<id>.m4a`, single Range, 404 otherwise) |
@@ -737,10 +737,11 @@ screen locked 2.7 s in, 0 dropped, route stayed `usb_device`.
 ### Commands inside talk, option A (2026-09-29) — one button, commands spoken in the talk
 
 **Why.** The user chose option A (root `HANDOFF.md`, "Decisions in force"): a press toggles talk,
-everywhere, and commands are phrases that start with the wake word, spoken inside the talk. The
-two-zone command path (its own route switch, a fixed `SCO_SETTLE_MS`, the reply spoken across the
-teardown) is gone. Spec: `PROTOCOL.md` "Commands" (*Wake word*, *Effect on the talk*),
-`fixtures/commands.json` (35), `fixtures/wake.json` (16).
+everywhere, and commands are spoken inside the talk. The two-zone command path (its own route
+switch, a fixed `SCO_SETTLE_MS`, the reply spoken across the teardown) is gone. Later the same day
+the "Moto party" wake word and its arming (LISTEN earcon) went too: **the first phrase decides**.
+Spec: `PROTOCOL.md` "Commands" (*The first phrase decides*, *Solo talk*, *Effect on the talk*),
+`fixtures/commands.json` (35), `fixtures/first_phrase.json` (12).
 
 **Removed.** `TriggerKind.MUSIC` (the enum keeps `TALK` only), `LinkHost.listenForCommand` + its
 route switching + `SCO_SETTLE_MS` + `listenJob`, `voicecmd/Transcriber.kt`, `LinkService.ACTION_MUSIC`
@@ -750,9 +751,14 @@ the next save), `LinkStatus.listening`, `Palette.Music`/`Listening`. `UiAction.C
 path, no UI sends it today) and goes through `executeCommand` like everything else.
 
 **Built.**
-- `core/WakeWord.kt`: `WakeWord.commandText(text)` (null = conversation, "" = bare wake word, else
-  the normalised command text) and `PhraseGate` (arming: the next phrase within 5 s is a command; a
-  bare wake word while armed re-arms; solo = every phrase is a command). `core/CommandEffect.kt`:
+- `core/FirstPhrase.kt`: `FirstPhraseGate`, pure and clock-injected. `open(role)` per talk
+  (`OPENER` = the host opened it, `OTHER` = the client did, `SOLO` = no client at the open; fixed for
+  the talk), `live(atMs)` at our live earcon, `onPhrase(text, nowMs)` → the normalised command text
+  or null (conversation). Opener: the first phrase non-empty after normalisation, arriving within
+  `FIRST_PHRASE_MS` = 8000 ms (inclusive) of the live earcon, is a command if `CommandParser` does
+  not say unknown; either way it is used, and every later phrase is conversation. A phrase before
+  the live earcon counts as inside the window. Solo: every non-empty phrase, no window (unknown →
+  "Didn't catch that"). `isSpent(nowMs)`: no later phrase can be a command. `core/CommandEffect.kt`:
   `CommandEffect.of(cmd, talkOpen, fromClient)` → `closeBy` (speaker's role, or null) + `Reply`
   (`MEDIA`, `CALL` = spoken in the talk now, `AFTER_CLOSE`, `NONE`) + `callVolume`.
 - `audio/PcmTee.kt`: the capture loop tees every raw frame (before the encoder, so DTX cannot cut
@@ -765,11 +771,17 @@ path, no UI sends it today) and goes through `executeCommand` like everything el
   restarted (500 ms, given up after 3 quick failures in a row). Talk close → EOF (write end closed),
   destroy on the end callback or after 3 s. API < 33: logged once, talk without commands. Errors are
   logged only (`talk recognizer: …`); they never touch the talk.
-- `LinkHost.onPhrase`: one line per phrase, `heard: "<text>" (command|conversation|armed)`, plus
-  `(after the talk, ignored)` and, in a solo talk only, `(own speech, ignored)` for a phrase within
-  2 s of our own TTS (otherwise "Didn't catch that" could recognise itself forever). Armed → LISTEN
-  earcon on the call route. `command.text` from the client takes the same `executeCommand(…,
-  fromClient = true)`.
+- `LinkHost`: `applyTalk(Open)` sets the gate's role from `action.by` and `control.hasClient()`;
+  `fireLive` hands it the live earcon's time (`clock()` on Main as the beep is posted) and, for the
+  opener, checks again 8001 ms later. The recognizer starts (`startRecognizer`, on capture up) only
+  while the gate is not spent, so never in a client-opened talk; `stopRecognizerIfSpent` stops it
+  (`talk recognizer: first phrase spent, stopping`) after the first phrase is used or the window
+  has passed — never in a solo talk. `onPhrase`: one line per phrase, `heard: "<text>"
+  (command|conversation)`, plus `(after the talk, ignored)` and, in a solo talk only,
+  `(own speech, ignored)` for a phrase within 2 s of our own TTS (otherwise "Didn't catch that"
+  could recognise itself forever). The client's `command.text` goes through `onClientCommand`: acted
+  on (`executeCommand(…, fromClient = true)`) only while a talk is open, the client opened it, and
+  it is that talk's first; anything else is `command: "…" (client) ignored: <why>`, no announce.
 - Effects: `play` drops the resume the talk was holding, sets `MusicController.startNotBefore(close
   + resumeLeadMs)` and closes the talk; after the search *and* the teardown (`talkClosed.join()`) it
   `setQueue`s and announces — on failure the music the talk paused resumes and the error is
@@ -783,24 +795,29 @@ path, no UI sends it today) and goes through `executeCommand` like everything el
 - Solo talk: with no client a press always opens one (`captureDump` only decides the WAV). Log line
   `talk: no client connected, recording solo (WAV|no WAV)` — the bench's substring is intact.
 
-**Tests.** `WakeWordTest` (fixture + parse), `PhraseGateTest` (7), `CommandEffectTest` (5),
+**Tests.** `FirstPhraseGateTest` (5: every `first_phrase.json` case, spent after the first phrase
+or the window, before the live earcon, roles, a new talk), `CommandEffectTest` (5),
 `PcmTeeTest` (5: never blocks and drops when full, a stuck pipe blocks only the writer, LE bytes +
 EOF on close, wrong-size frames, broken pipe), `TalkControllerTest` +1, `CommandParserTest` reads
-`end`; `ScreensTest` +1 (`2b-ride-talking-solo`). 243 tests, 0 fail, 5 skipped; `lintDebug` 0 errors.
+`end`; `ScreensTest` +1 (`2b-ride-talking-solo`). 239 tests, 0 fail, 5 skipped (after the
+first-phrase change; 243 with the wake-word tests); `lintDebug` 0 errors.
 
 **Verify on the device.**
 1. (Dropped 2026-09-29: earbud presses no longer trigger talk — the earbuds sit inside the helmet.)
 2. The recognizer is fed while the phone holds `MODE_IN_COMMUNICATION`: `talk recognizer:
    listening (on-device …)`, `heard:` lines during a talk, `pcm tee: N frames, 0 dropped` at the end,
    and **no change** to `capture: read N frames … (N expected)` or the `live cue:` timing.
-3. Wake word recognition through the AirPods mic at speed and at rest: how often "Moto party" comes
-   back as something else (read the `heard:` lines; add spellings to `WakeWord.forms` if needed).
-4. "Moto party, play …" and "Moto party, resume": the talk closes at once (`talk closed (by host,
-   trigger)`), music starts after A2DP is back (no play into HFP, `media cue` for the announce), and
-   the passenger's copy too.
-5. Bare "Moto party": LISTEN earcon in the call route, then "next" within 5 s works.
-6. Solo talk (no iPhone): a press opens it, "play …" without the wake word works, and our own
-   replies are not recognised as commands (`own speech, ignored`).
+3. Desk check: tap TALK, hear the live beep, say "play Dark Side of the Moon" — the talk closes
+   (`heard: "…" (command)`, `talk closed (by host, trigger)`) and the album plays, after A2DP is
+   back (no play into HFP, `media cue` for the announce), and the passenger's copy too.
+4. First phrase through the AirPods mic at speed and at rest: a conversational first phrase is
+   `(conversation)`, gets no "Didn't catch that", and is followed by `talk recognizer: first phrase
+   spent, stopping`; staying silent past 8 s gives the same line, and a command after that does
+   nothing. Watch whether 8 s is long enough to start speaking on the move.
+5. A talk the iPhone opened: no `talk recognizer: listening` on the Pixel; the passenger's first
+   command works, a second one in the same talk logs `(client) ignored: not the talk's first`.
+6. Solo talk (no iPhone): a press opens it, every phrase is a command ("next", then "pause" long
+   after 8 s), and our own replies are not recognised as commands (`own speech, ignored`).
 
 ## 3. Not done, in priority order
 

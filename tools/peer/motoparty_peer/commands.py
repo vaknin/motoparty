@@ -24,10 +24,10 @@ _EXACT = {
     "hang up": "end",
 }
 
-# Wake word (PROTOCOL.md "Commands"): whole words, after dropping leading hey/ok/okay.
-WAKE_WORDS = (("motoparty",), ("moto", "party"), ("motor", "party"))
-_WAKE_FILLERS = ("hey", "ok", "okay")
-ARM_MS = 5000  # a bare wake word makes the next phrase within this a command
+# The first phrase decides (PROTOCOL.md "Commands"): the opener's first non-empty phrase is a
+# command if its result arrives within this of the phone's live earcon (inclusive) and parses.
+FIRST_PHRASE_MS = 8000
+ROLES = ("opener", "other", "solo")
 
 # Actions that end the talk they are spoken in (PROTOCOL.md "Commands", Effect on the talk).
 TALK_ENDING = ("play", "resume", "end")
@@ -80,13 +80,48 @@ def parse_command(text: str) -> dict[str, str]:
     return {"action": action} if action else {"action": "unknown"}
 
 
-def wake(text: str) -> str | None:
-    """-> the normalised command text after the wake word ("" = the bare wake word, which arms
-    the next phrase), or None when the phrase does not start with it (conversation)."""
-    words = _words(text)
-    while words and words[0] in _WAKE_FILLERS:
-        words.pop(0)
-    for w in WAKE_WORDS:
-        if tuple(words[: len(w)]) == w:
-            return " ".join(words[len(w) :])
-    return None
+def command_text(text: str) -> str:
+    """The normalisation of "Commands" up to and including trim (hey/please kept): the text a
+    phone sends as `command.text`. "" = an empty phrase."""
+    return " ".join(_words(text))
+
+
+class FirstPhraseGate:
+    """One phone's command gate for one talk (PROTOCOL.md "Commands", The first phrase decides).
+
+    role: "opener" (this phone opened the talk), "other" (it did not) or "solo" (the host's talk
+    has no client). `live_ms` is when this phone's live earcon played, on the same clock as the
+    `at_ms` given to `phrase`; the gate reads no clock itself. After a None, `why` says why.
+    """
+
+    def __init__(self, role: str, live_ms: int | float = 0) -> None:
+        if role not in ROLES:
+            raise ValueError(f"role must be one of {ROLES}, not {role!r}")
+        self.role = role
+        self.live_ms = live_ms
+        self.spent = False  # the opener's first phrase has been decided (or its window passed)
+        self.why = ""
+
+    def phrase(self, text: str, at_ms: int | float) -> str | None:
+        """A recognised phrase whose result arrived at `at_ms` -> its command text, or None
+        (conversation: never sent, never acted on, no "Didn't catch that")."""
+        cmd = command_text(text)
+        if not cmd:
+            self.why = "empty"
+            return None
+        if self.role == "solo":
+            return cmd  # every non-empty phrase, no window; unparsed -> "Didn't catch that"
+        if self.role == "other":
+            self.why = "this phone did not open the talk"
+            return None
+        if self.spent:
+            self.why = "the first phrase is spent"
+            return None
+        self.spent = True
+        if at_ms - self.live_ms > FIRST_PHRASE_MS:
+            self.why = f"after the {FIRST_PHRASE_MS} ms window"
+            return None
+        if parse_command(cmd)["action"] == "unknown":
+            self.why = "the first phrase does not parse"
+            return None
+        return cmd

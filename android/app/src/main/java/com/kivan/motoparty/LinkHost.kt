@@ -28,13 +28,13 @@ import com.kivan.motoparty.core.CommandParser
 import com.kivan.motoparty.core.CommandText
 import com.kivan.motoparty.core.Codec
 import com.kivan.motoparty.core.EditOp
+import com.kivan.motoparty.core.FirstPhraseGate
 import com.kivan.motoparty.core.CloseReason
 import com.kivan.motoparty.core.ControlAction
 import com.kivan.motoparty.core.Earcon
 import com.kivan.motoparty.core.Hello
 import com.kivan.motoparty.core.MainLag
 import com.kivan.motoparty.core.PROTO_VERSION
-import com.kivan.motoparty.core.PhraseGate
 import com.kivan.motoparty.core.Message
 import com.kivan.motoparty.core.MusicBrowse
 import com.kivan.motoparty.core.MusicControl
@@ -170,8 +170,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         onPhrase = ::onPhrase,
         log = Hub::log,
     )
-    /** Wake word and arming, per talk. Main only. */
-    private val phrases = PhraseGate()
+    /** Which of our rider's phrases is a command: the first-phrase rule, per talk. Main only. */
+    private val phrases = FirstPhraseGate()
+    /** The client's `command.text` for the current talk has been acted on (it gets one). Main only. */
+    private var clientCommanded = false
     private val music: MusicController = MusicController(
         scope, caches, sync, player, clock,
         send = control::send,
@@ -335,7 +337,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is MusicReady -> music.onClientReady(m.id)
             is MusicError -> music.onClientError(m.id, m.message)
             is MusicControl -> onMusicControl(m.action)
-            is CommandText -> executeCommand(m.text, fromClient = true)
+            is CommandText -> onClientCommand(m.text)
             is MusicSearch -> onClientSearch(m.id) {
                 if (m.kind == SearchKind.SONGS) {
                     catalog.searchSongs(m.query).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs, art = it.art) }
@@ -419,7 +421,16 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 pushState()
                 val session = ++talkSession
                 liveCue.open(session, clock())
-                phrases.reset()
+                // PROTOCOL.md "Commands": only the opener's first phrase can be a command, and
+                // with no client every phrase is one. The window starts at our live earcon.
+                phrases.open(
+                    when {
+                        !control.hasClient() -> FirstPhraseGate.Role.SOLO
+                        action.by == Role.HOST -> FirstPhraseGate.Role.OPENER
+                        else -> FirstPhraseGate.Role.OTHER
+                    },
+                )
+                clientCommanded = false
                 // Switching the headset to HFP blocks for about a second; messages went out first.
                 // A failure here is this phone's "cannot open the microphone" case. enterCall
                 // counts itself before it can throw, so the close that follows balances it.
@@ -486,17 +497,32 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     /**
      * The talk [session]'s microphone is delivering: listen to it for commands. Once per talk
-     * ([TalkRecognizer.start] ignores a second call); a stale session is ignored.
+     * ([TalkRecognizer.start] ignores a second call); a stale session is ignored, and so is a talk
+     * whose first phrase can no longer come from us — one the client opened, or one whose window
+     * already passed (a late capture).
      */
     private fun startRecognizer(session: Int) {
         if (!talk.isOpen || session != talkSession) return
+        if (phrases.isSpent(clock())) return
         recognizer.start(session, settings.value.asrLanguage)
     }
 
     /**
+     * Talk [session]'s first phrase is used or its window has passed: no later phrase can be a
+     * command, so stop recognising for the rest of the talk (PROTOCOL.md allows it; it saves the
+     * recognizer's work). Never in a solo talk, where every phrase counts.
+     */
+    private fun stopRecognizerIfSpent(session: Int) {
+        if (!talk.isOpen || session != talkSession) return
+        if (phrases.role != FirstPhraseGate.Role.OPENER || !phrases.isSpent(clock())) return
+        Hub.log("talk recognizer: first phrase spent, stopping")
+        recognizer.stop()
+    }
+
+    /**
      * One phrase the rider said during talk [session] (on Main, from [TalkRecognizer]). Logged
-     * locally, every one of them, as `heard: "<text>" (command|conversation|armed)` — the ride
-     * tunes the wake word from these lines. Conversation never goes on the wire.
+     * locally, every one of them, as `heard: "<text>" (command|conversation)`. Conversation never
+     * goes on the wire.
      */
     private fun onPhrase(session: Int, text: String) {
         if (!talk.isOpen || session != talkSession) {
@@ -505,22 +531,16 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
         // With no client every phrase is a command, so a reply of ours that the talk microphone
         // hears back ("Next: …" → "Didn't catch that" → …) must not become the next one.
-        val solo = !control.hasClient()
+        val solo = phrases.role == FirstPhraseGate.Role.SOLO
         if (solo && announcer.spokeWithin(ECHO_MS)) {
             Hub.log("heard: \"$text\" (own speech, ignored)")
             return
         }
-        when (val h = phrases.onPhrase(text, solo, clock())) {
-            is PhraseGate.Heard.Command -> {
-                Hub.log("heard: \"$text\" (command)")
-                executeCommand(h.text)
-            }
-            PhraseGate.Heard.Armed -> {
-                Hub.log("heard: \"$text\" (armed)")
-                earcon(Earcons.Kind.LISTEN, call = true)
-            }
-            PhraseGate.Heard.Conversation -> Hub.log("heard: \"$text\" (conversation)")
-        }
+        val command = phrases.onPhrase(text, clock())
+        Hub.log("heard: \"$text\" (${if (command != null) "command" else "conversation"})")
+        // Before the command: a `play` closes the talk, and with it this check's reason to run.
+        stopRecognizerIfSpent(session)
+        if (command != null) executeCommand(command)
     }
 
     /**
@@ -554,6 +574,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         if (!talk.isOpen || fire.session != talkSession) return
         Hub.log(fire.line())
         earcon(Earcons.Kind.LIVE, call = true)
+        // The first phrase's window runs from here; once it has passed, stop listening.
+        phrases.live(clock())
+        if (phrases.role == FirstPhraseGate.Role.OPENER) scope.launch {
+            delay(FirstPhraseGate.FIRST_PHRASE_MS + 1)
+            stopRecognizerIfSpent(fire.session)
+        }
     }
 
     // ---- sounds on the media route (F9b) ----
@@ -699,8 +725,28 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     // ---- commands ----
 
     /**
-     * A command: typed on the Ride screen, the passenger's `command.text` ([fromClient]), or a
-     * phrase our rider said in a talk. What it does to the talk and where its reply is heard is
+     * The passenger's `command.text`. PROTOCOL.md "Commands": the host acts on it only while a
+     * talk is open, the client opened it, and it is that talk's first `command.text`; any other is
+     * logged and dropped, with no `announce`. The window is the client's to keep.
+     */
+    private fun onClientCommand(text: String) {
+        val why = when {
+            !talk.isOpen -> "no talk open"
+            talk.openedBy != Role.CLIENT -> "the host opened the talk"
+            clientCommanded -> "not the talk's first"
+            else -> null
+        }
+        if (why != null) {
+            Hub.log("command: \"$text\" (client) ignored: $why")
+            return
+        }
+        clientCommanded = true
+        executeCommand(text, fromClient = true)
+    }
+
+    /**
+     * A command: typed on the Ride screen, the passenger's `command.text` ([fromClient], already
+     * let through by [onClientCommand]), or our rider's first phrase in a talk (any phrase, solo). What it does to the talk and where its reply is heard is
      * [CommandEffect]'s decision (PROTOCOL.md "Commands", *Effect on the talk*); this carries it out.
      */
     private fun executeCommand(text: String, fromClient: Boolean = false) {

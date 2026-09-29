@@ -11,7 +11,8 @@ import Speech
 /// Recognition runs as a chain of short requests, one per phrase: when a
 /// result is final, or no new partial text has arrived for
 /// `endOfPhraseSeconds`, that request ends, its text goes to `onPhrase`, and
-/// the next request starts at once, for as long as the talk is open.
+/// the next request starts at once, until `stop` (the talk closed, or its
+/// first phrase is spent: PROTOCOL.md "Commands", The first phrase decides).
 ///
 /// Recognition failing must never touch the talk: every error is logged and
 /// the chain restarts (backing off while it keeps failing). Main-queue API,
@@ -75,7 +76,8 @@ final class Transcriber {
         beginSegment()
     }
 
-    /// The talk closed: drop whatever phrase is in progress.
+    /// The talk closed or its first phrase is spent: drop whatever phrase is
+    /// in progress.
     func stop() {
         guard recognizer != nil else { return }
         recognizer = nil
@@ -109,8 +111,6 @@ final class Transcriber {
         request.shouldReportPartialResults = true
         request.taskHint = .search
         request.addsPunctuation = false
-        // Biases the wake word, which the parser needs spelled one of three ways.
-        request.contextualStrings = ["Moto party", "motoparty"]
         if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
 
         segment += 1

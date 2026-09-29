@@ -2,8 +2,8 @@
 import SwiftUI
 
 /// The riding screen: link pill, now playing with transport controls, and the
-/// one big glove-friendly TALK button (commands are spoken inside a talk,
-/// after “Moto party”). Settings in a sheet.
+/// one big glove-friendly TALK button (a command is the first phrase of a talk
+/// this phone opened). Settings in a sheet.
 struct RideView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showSettings = false
@@ -22,6 +22,11 @@ struct RideView: View {
                 Spacer(minLength: 0)
                 BigButton(title: talkTitle, systemImage: "mic.fill", color: talkColor) {
                     model.talkButton()
+                }
+                if model.link.isConnected {
+                    Text("Hold volume up: talk")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 StatusLines()
             }
@@ -95,7 +100,7 @@ private struct NowPlayingCard: View {
                         Text(track.artist).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                     } else {
                         Text("Nothing playing").font(.headline).foregroundStyle(.secondary)
-                        Text("Search, or in a talk say “Moto party, play album …”")
+                        Text("Search, or press TALK and say “play album …”")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 }

@@ -11,7 +11,7 @@ from pathlib import Path
 from . import discovery
 from .audio import Mic, Speaker, Tone
 from .clock import ClockEstimator
-from .commands import ARM_MS, VOLUME_ACTIONS, parse_command, wake
+from .commands import VOLUME_ACTIONS, FirstPhraseGate, parse_command
 from .music import LocalPlayer, cache_path, check_decodable, download
 from .protocol import (
     CONTROL_PORT,
@@ -29,7 +29,7 @@ from .protocol import (
 from .util import js, log, stdin_lines
 from .voice import Pacer, VoiceProtocol, VoiceReceiver, VoiceSender
 
-HELP = """commands: talk | hear <phrase> (recognised in the talk: wake word rule) |
+HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase rule) |
           say <text> (command.text as is) | pause | resume | next | previous | vol+ | vol- (local) |
           unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
           browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit clear |
@@ -49,7 +49,7 @@ class Client:
         self.clock = ClockEstimator()
         self.conn: discovery.Connection | None = None
         self.talk = False
-        self.armed_until = 0  # a bare wake word makes the next phrase a command until then
+        self.gate: FirstPhraseGate | None = None  # this talk's first-phrase gate
         self.ping_id = 0
         self.last_rx = 0
         self.sender: VoiceSender | None = None
@@ -255,7 +255,7 @@ class Client:
                 log("   MIC UNAVAILABLE: refusing talk (the host asked, so it plays the error earcon)")
                 self.send({"t": "talk.close", "by": "client", "reason": "unavailable"})
             else:
-                self._set_talk(True)
+                self._set_talk(True, by=msg["by"])
         elif t == "talk.close":
             if msg["reason"] == "unavailable" and not self.talk:
                 log(f"   TALK REFUSED by {msg['by']}: microphone unavailable "
@@ -280,13 +280,16 @@ class Client:
 
     # ------------------------------------------------------------------ talk / voice
 
-    def _set_talk(self, open_: bool, quiet: bool = False) -> None:
+    def _set_talk(self, open_: bool, quiet: bool = False, by: str | None = None) -> None:
         if open_ and self.mic_unavailable:
             return  # we refused; never open the mic, whatever state the host broadcasts
         if open_ == self.talk:
             return
         self.talk = open_
         if open_:
+            # The live earcon plays now (the peer has none). A talk seen only through `state`
+            # (joined mid-talk) has no known opener, so this phone is not it.
+            self.gate = FirstPhraseGate("opener" if by == "client" else "other", now_ms())
             self.player.stop()  # both sides pause music locally during talk
             if self.sender:
                 self.sender.begin_session()
@@ -294,25 +297,20 @@ class Client:
             log(f"TALK OPEN - sending {what}")
         else:
             self._stop_source()
-            self.armed_until = 0
+            self.gate = None
             if not quiet:
                 log("TALK CLOSED")
 
     def _hear(self, phrase: str) -> None:
         """A phrase the on-device ASR recognised on the talk microphone (PROTOCOL.md "Commands"):
-        only one that starts with the wake word, or follows a bare one within 5 s, is a command."""
-        if not self.talk:
+        only the first non-empty one in a talk this client opened, within 8 s of the live
+        earcon, is a command, and only if it parses."""
+        if not self.talk or self.gate is None:
             log("hear: no talk open; commands are spoken inside a talk, nothing sent")
             return
-        text = wake(phrase)
-        if text is None and now_ms() < self.armed_until:
-            text = phrase.strip()
-        self.armed_until = 0
+        text = self.gate.phrase(phrase, now_ms())
         if text is None:
-            log(f"hear: {phrase!r} is conversation, not sent")
-        elif text == "":
-            self.armed_until = now_ms() + ARM_MS
-            log(f"hear: wake word; the next phrase within {ARM_MS} ms is a command [earcon listen]")
+            log(f"hear: {phrase!r} is conversation ({self.gate.why}), not sent")
         elif parse_command(text)["action"] in VOLUME_ACTIONS:
             log(f"local: {parse_command(text)['action']} handled here [earcon ok]; "
                 f"no command.text sent (the peer has no real volume)")

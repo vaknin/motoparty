@@ -144,8 +144,20 @@ framework what devices the phone has.
    option A" and `ios/README.md` "What only a real iPhone can answer". Press-only talk is done too.
    Earbud presses no longer touch a talk on either phone (user, 2026-09-29: the earbuds sit
    inside the helmet); media keys control the music only. Talk is the Pixel overlay /
-   notification / Ride tab and the iPhone's TALK button. The wake word is under review: the user
-   asked to brainstorm alternatives (2026-09-29).
+   notification / Ride tab and the iPhone's TALK button. The wake word was replaced the same day by
+   **"the first phrase decides"** (built offline in all three, device-unverified; coordinator-run
+   2026-09-29: android 239 tests / 0 fail / 5 skipped, iOS `swift test` 75 + `xtool dev build -c
+   release` clean, peer 210 pass; `tools/bench/hotspot_test.sh` now opens a talk before its `say`). **Passenger pocket
+   trigger (user, 2026-09-29):** the iPhone rides locked in a jacket pocket, so **holding volume
+   up toggles talk** while the link is up, built as **"the app owns the volume"** (offline,
+   device-unverified; coordinator-run 2026-09-29: `swift test` 101 pass, `xtool dev build -c
+   release` clean): while linked the system volume is parked at 15/16 and every press is reset
+   to it; single presses step an app level 0–16 (3 dB steps, 15 = 0 dB, 16 = +3 dB via an
+   AUPeakLimiter on talk; music and earcons cap at 1.0); a hold (4 steps, first gap ≤ 700 ms, then
+   ≤ 200 ms, all guesses to tune from the `volume key: up +<gap> ms` log lines) toggles talk and
+   takes its steps back; re-park after route changes and talk open/close. Details and the device
+   checklist: `ios/README.md`. A $1–3 BLE "iTag" button read over CoreBluetooth is the fallback if
+   the device run disappoints. The passenger wears Redmi Buds 6 Pro, not AirPods.
 4. **Only if the ride says buy:** the staged plan in `~/.claude/plans/dynamic-bubbling-lemon.md`
    (Stage B the bench hour, C the routing code, D the music setting, E the A/B ride) still stands
    as written, with `research/MIC.md` overriding its Hardware table on what to buy.
@@ -155,7 +167,7 @@ framework what devices the phone has.
 | Component | State |
 |---|---|
 | `android/` | The host. 243 tests, 0 fail, 5 skipped (2026-09-29, after option A; incl. 9 screenshot tests; the 5 skipped are the live YouTube tests, which pass with `-Pnetwork`). Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
-| `ios/` | The passenger. `swift test`: 80 pass on Linux (2026-09-29, after option A; release build clean); `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. 2026-09-29: release build clean (xtool auth valid to 2027-09), audit items fixed; next is `xtool dev -c release` with the iPhone 15 on USB-C. |
+| `ios/` | The passenger. `swift test`: 101 pass on Linux (2026-09-29, after "the app owns the volume"; release build clean); `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. 2026-09-29: release build clean (xtool auth valid to 2027-09), audit items fixed; next is `xtool dev -c release` with the iPhone 15 on USB-C. |
 | `tools/peer` | Python/uv fake host + client. `.venv/bin/python -m pytest -q`: 213 pass (2026-09-29, after option A; `hear <phrase>` simulates an in-talk phrase, `say` is unchanged; `uv run pytest` fails until `.venv` is recreated, its pytest script points at an old path). |
 | `tools/bench` | `talk_cycles.sh`, `music_sync.sh`, `unavailable.sh`, `overlay_rotation.sh`, `beeps.sh`, shared `lib.sh`, summaries in `bench.py` (`summary.txt`, last line `VERDICT:`). All adb paths are proven on the device (`beeps.sh`'s silence step is gone with the silence close; it now expects 3 beeps). `HOST_IP` is overridable. `results/*/logcat_all.txt` (whole-phone dumps) are gitignored; the filtered `logcat.txt` is committed. |
 | `spikes/recognizer-pfd/` | Throwaway app, its question answered (see "Recognizer" below). Still installed on the Pixel. |
@@ -237,11 +249,15 @@ on Android has still never produced a positive log line either.
   (`--silence-ms` gone; `is_voice_activity` stays for its stats line). `"silence"` is no longer a
   valid `talk.close` reason, so it is dropped like any unknown enum value.
 - **Talk/command control: option A, "commands inside talk"** (user, 2026-09-29; built offline the
-  same day, spec in `PROTOCOL.md` "Commands", vectors `fixtures/wake.json`; chosen over tap/hold on
+  same day, spec in `PROTOCOL.md` "Commands", vectors `fixtures/first_phrase.json`; chosen over tap/hold on
   one button, handlebar-only, and hands-free). A press with no client connected always opens a solo
   talk now (commands alone; `captureDump` only decides the WAV). One action everywhere: a press toggles talk. While
-  a talk is open, each phone also runs speech recognition on the mic that is already live; a phrase
-  that starts with "Moto party" is a command, anything else is conversation. A music command
+  a talk is open, the phone that opened it runs speech recognition on the mic that is already live.
+  **The first phrase decides** (user, 2026-09-29, replacing the "Moto party" wake word the same
+  day; "I'm fine with" losing it): the opener's first phrase within 8 s of its live beep is a
+  command if it parses, anything else — and every later phrase, and anything from the other
+  phone — is conversation. A solo talk still treats every phrase as a command. The host only
+  accepts a client's `command.text` in a talk the client opened, once. A music command
   (`play …`, `resume`) also ends the talk. The separate command mode, its route switch and the
   overlay's MUSIC zone go; the overlay becomes one big button. The handlebar box (Honda node) is later one physical button for the same action;
   hands-free (wake word, open-on-voice) is parked until the mic direction is known — it needs a mic

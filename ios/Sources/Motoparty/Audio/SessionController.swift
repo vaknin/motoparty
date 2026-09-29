@@ -7,7 +7,8 @@ enum AudioRoute: String {
     /// `.playback`: AirPods on A2DP (stereo, full quality). Mic closed.
     case media
     /// `.playAndRecord` + `.voiceChat` + Bluetooth HFP: talk (voice processing),
-    /// and the speech recognition of commands, which listens to the talk's mic.
+    /// and, in a talk this phone opened, the speech recognition of its first
+    /// phrase, which listens to the talk's mic.
     case talk
 }
 

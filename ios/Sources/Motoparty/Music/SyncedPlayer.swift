@@ -46,9 +46,14 @@ final class SyncedPlayer {
         let t = player.currentTime()
         return t.isNumeric ? t.seconds * 1000 : 0
     }
-    var volume: Float {
-        get { player.volume }
-        set { player.volume = newValue }
+    /// The app volume (`AppVolume.Gains.musicVolume`, 0...1). AVPlayer cannot
+    /// boost above 1, so the top app level plays music at unity.
+    var gain: Float = 1 { didSet { applyVolume() } }
+    /// The announcer ducks music while it speaks (0...1).
+    var duck: Float = 1 { didSet { applyVolume() } }
+
+    private func applyVolume() {
+        player.volume = min(1, max(0, gain * duck))
     }
 
     /// Makes `id` the current item (no-op if it already is).

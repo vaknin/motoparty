@@ -61,7 +61,7 @@ type (it cannot be claimed from the background).
 
 | Package / file | What |
 |---|---|
-| `core/` | Pure Kotlin, JVM-tested: `Messages`/`Codec` (JSON + u32 framing), `ClockEstimator`, `VoicePacket`, `JitterBuffer`, `CommandParser`, `WakeWord` + `PhraseGate` (wake word, arming, solo talk), `CommandEffect` (command + talk state → close the talk? where the reply goes) |
+| `core/` | Pure Kotlin, JVM-tested: `Messages`/`Codec` (JSON + u32 framing), `ClockEstimator`, `VoicePacket`, `JitterBuffer`, `CommandParser`, `FirstPhraseGate` (which phrase of a talk is a command: the opener's first, or every one solo), `CommandEffect` (command + talk state → close the talk? where the reply goes) |
 | `LinkService` | Foreground service (`microphone\|mediaPlayback\|connectedDevice`), wake + Wi-Fi low-latency locks, notification with Talk/Stop (plus "Show buttons" while the overlay is off) |
 | `LinkHost` | Wires everything; the one place protocol decisions are made (main thread) |
 | `link/` | `Discovery` (NSD `_motoparty._tcp`, TXT proto/voice/http), `ControlServer` (TCP 47800), `VoiceSocket` (UDP 47801), `TalkController` (talk authority; ends on a trigger or link loss) |
@@ -73,18 +73,20 @@ type (it cannot be claimed from the background).
 | `ui/` | `MainScreen` (tabs, stateless `Motoparty(...)`), `RideTab`, `SearchTab`, `QueueTab`, `SettingsTab` (Diagnostics: link numbers, debug tools, log), `Theme`, `Icons` (path data, no icon library), `Common` (Coil cover art, rows) |
 
 **One action everywhere** (option A, 2026-09-29): the overlay button, the Ride tab's TALK, the
-notification's Talk and the headset's play/pause all toggle talk. There is no command mode.
-Commands are spoken **inside a talk** (PROTOCOL.md "Commands"): "Moto party, play album …",
-"… next", "… pause", "… over"; a bare "Moto party" arms the next phrase for 5 s (LISTEN earcon);
-with no passenger connected a press opens a **solo talk** where every phrase is a command
-(`captureDump` only decides whether its WAV is written). `play`/`resume` close the talk and the
-music starts after the headset is back on A2DP; `over`/`end talk`/`hang up` close it like a press.
-Every phrase is logged locally as `heard: "<text>" (command|conversation|armed)`; nothing about
-conversation goes on the wire.
+notification's Talk all toggle talk; earbud presses never do (2026-09-29: the earbuds sit inside the helmet). There is no command mode.
+Commands are spoken **inside a talk** (PROTOCOL.md "Commands", *The first phrase decides*): the
+phone that opened the talk takes its first phrase, if it arrives within 8 s of the live beep, as a
+command when it parses ("play album …", "next", "pause", "over"), otherwise as conversation; every
+later phrase is conversation, and the Pixel stops recognising once that first phrase is spent. In a
+talk the passenger opened the Pixel does not recognise at all, and acts only on the first
+`command.text` of that talk. With no passenger connected a press opens a **solo talk** where every
+phrase is a command, with no window (`captureDump` only decides whether its WAV is written).
+`play`/`resume` close the talk and the music starts after the headset is back on A2DP;
+`over`/`end talk`/`hang up` close it like a press. Every phrase is logged locally as
+`heard: "<text>" (command|conversation)`; nothing about conversation goes on the wire.
 
-Headset buttons (via the MediaSession): play/pause → talk toggle (setting: or music
-play/pause); next → next track; previous → previous track. Transport controls from outside controllers (KDE Connect, lock screen, watch)
-are not headset buttons: play/pause/next/previous always act on the music, for both phones.
+Headset buttons and outside controllers (KDE Connect, lock screen, watch), via the MediaSession:
+play/pause/next/previous always act on the music, for both phones; none of them touches a talk.
 
 ## Bumping NewPipeExtractor
 

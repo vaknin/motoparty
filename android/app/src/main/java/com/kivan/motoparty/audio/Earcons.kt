@@ -18,7 +18,6 @@ object Earcons {
         CLOSED(listOf(1320 to 90, 880 to 110)),
         OK(listOf(660 to 80, 990 to 120)),
         ERROR(listOf(330 to 160, 0 to 60, 330 to 160)),
-        LISTEN(listOf(1175 to 120)),
     }
 
     private const val RATE = 16_000

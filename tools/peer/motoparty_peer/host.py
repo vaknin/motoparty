@@ -2,7 +2,9 @@
 
 Advertises over Bonjour, serves control/voice/HTTP, is the talk authority (talk ends on a
 trigger or a talk-ending command, never on silence), echoes voice back to the client, serves its
---track files, parses command.text (with its effect on an open talk) and answers the Browsing messages (search, browse, enqueue, edit) from those files.
+--track files, parses command.text (only the first of a talk the client opened, with its effect
+on the talk) and stdin `hear` phrases (the host's own first phrase, or solo talk), and answers the
+Browsing messages (search, browse, enqueue, edit) from those files.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import discovery
-from .commands import TALK_ENDING, UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, parse_command
+from .commands import TALK_ENDING, UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, FirstPhraseGate, parse_command
 from .music import VALID_ID, TrackInfo, browse, load_library, search
 from .opus import is_voice_activity
 from .protocol import (
@@ -45,6 +47,7 @@ from .util import js, log, stdin_lines
 from .voice import VoiceProtocol
 
 HELP = """commands: load | play | pause | stop | talk | mic on|off (refuse talk as unavailable) |
+          hear <phrase> (recognised in the talk: first phrase rule, or every phrase solo) |
           announce <text> | state | stats | raw <json> (send unvalidated) | quit"""
 
 C2H_ONLY = {"ping", "music.ready", "music.error", "music.control", "command.text",
@@ -83,6 +86,11 @@ class Host:
         self.talk = False
         self.mic_available = True  # `mic off`: refuse talk.open with reason "unavailable"
         self.talk_opened = 0
+        # PROTOCOL.md "Commands", The first phrase decides: who opened this talk, whether the
+        # client's one command.text of it has arrived, and the host's own first-phrase gate.
+        self.talk_by: str | None = None
+        self.client_command_seen = False
+        self.gate: FirstPhraseGate | None = None
         self.last_activity = 0
         self.resume_after_talk = False
         # A spoken `pause` in the talk cancels the resume after it, including one that a
@@ -297,7 +305,7 @@ class Host:
         elif t == "music.control":
             self._music_control(msg["action"])
         elif t == "command.text":
-            self._command(msg["text"])
+            self._client_command(msg["text"])
         elif t in ("music.search", "music.browse"):
             self._browse(msg)
         elif t == "music.enqueue":
@@ -314,6 +322,11 @@ class Host:
         now = now_ms()
         self.talk = True
         self.talk_opened = now
+        self.talk_by = by
+        self.client_command_seen = False
+        # The host's live earcon plays now; a talk with no client is solo.
+        role = "solo" if self.current is None else "opener" if by == "host" else "other"
+        self.gate = FirstPhraseGate(role, now)
         self.no_resume = False
         if self.music and self.music["playing"]:
             self._freeze_music(now)
@@ -324,6 +337,8 @@ class Host:
 
     def _close_talk(self, by: str, reason: str) -> None:
         self.talk = False
+        self.talk_by = None
+        self.gate = None
         log(f"TALK CLOSED (by {by}, {reason})")
         self.send({"t": "talk.close", "by": by, "reason": reason}, quiet=self.current is None)
         # A track still loading (a `next` in the talk) starts by itself once ready, so the old
@@ -551,11 +566,44 @@ class Host:
             self._start(track)
         self.send_state()
 
-    def _command(self, text: str) -> None:
-        """command.text from the client. Inside a talk it has an effect on the talk
-        (PROTOCOL.md "Commands", Effect on the talk): play/resume/end close it (by the client,
-        which spoke) as soon as the command parses, and their announce goes after that close;
-        pause/next/previous leave it open and choose what happens after it."""
+    def _client_command(self, text: str) -> None:
+        """command.text from the client. The host enforces the first-phrase rule (PROTOCOL.md
+        "Commands"): it acts only while a talk is open, the client opened it, and this is the
+        first command.text of that talk. Any other is ignored and logged, with no announce."""
+        if not self.talk:
+            why = "no talk is open"
+        elif self.talk_by != "client":
+            why = "the client did not open this talk"
+        elif self.client_command_seen:
+            why = "not the first command.text of this talk"
+        else:
+            self.client_command_seen = True
+            self._command(text, "client")
+            return
+        log(f"   command.text ignored: {why}")
+
+    def _hear(self, phrase: str) -> None:
+        """A phrase the host's own ASR recognised on its talk microphone (stdin `hear`): its
+        first phrase in a talk it opened, or every non-empty phrase in a solo talk."""
+        if not self.talk or self.gate is None:
+            log("hear: no talk open; commands are spoken inside a talk")
+            return
+        text = self.gate.phrase(phrase, now_ms())
+        if text is None:
+            log(f"hear: {phrase!r} is conversation ({self.gate.why}), not acted on")
+        elif parse_command(text)["action"] in VOLUME_ACTIONS:
+            log(f"local: {parse_command(text)['action']} handled here [earcon ok] "
+                f"(the peer has no real volume)")
+        else:
+            log(f"hear: command {text!r}")
+            self._command(text, "host")
+
+    def _command(self, text: str, by: str) -> None:
+        """A command spoken in a talk by `by` (the client's command.text, or the host's own
+        phrase). It has an effect on the talk (PROTOCOL.md "Commands", Effect on the talk):
+        play/resume/end close it (by the side that spoke) as soon as the command parses, and
+        their announce goes after that close; pause/next/previous leave it open and choose
+        what happens after it. The announce goes to the client and the host speaks it too."""
         cmd = parse_command(text)
         log(f"   parsed: {cmd}")
         a = cmd["action"]
@@ -564,7 +612,7 @@ class Host:
             if a == "play" and self.track is not None:
                 self.resume_after_talk = False  # the new track starts instead of the old one
             log(f"   {a!r} ends the talk")
-            self._close_talk("client", "trigger")
+            self._close_talk(by, "trigger")
             self.media_at = now_ms() + RESUME_LEAD_MS
             if a == "resume":
                 self.send({"t": "announce", "text": "Resuming" if ok else "Nothing to resume",
@@ -659,6 +707,11 @@ class Host:
                 log("mic UNAVAILABLE: a client talk.open is answered with "
                     "talk.close{by:'host',reason:'unavailable'}" if not self.mic_available
                     else "mic available again: a client talk.open opens talk")
+            elif cmd == "hear":
+                if rest.strip():
+                    self._hear(rest)
+                else:
+                    log("usage: hear <phrase>")
             elif cmd == "announce":
                 self.send({"t": "announce", "text": rest.strip() or "Test announcement", "earcon": "ok"})
             elif cmd == "state":

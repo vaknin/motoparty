@@ -66,7 +66,8 @@ TOTAL=$((ON_S + OFF_S + MUSIC_S + TALK_S + 90))
   $ADB shell input keyevent KEYCODE_SLEEP >/dev/null 2>&1
   if [ "$OFF_S" -gt 0 ]; then phase screen-off; sleep "$OFF_S"; echo stats; fi
   if [ -n "$MUSIC_CMD" ] && [ "$MUSIC_S" -gt 0 ]; then
-    phase music-load; echo "say $MUSIC_CMD"; sleep 20      # resolve + download over the hotspot
+    # Commands are the first phrase of a talk the client opened (PROTOCOL.md "Commands"); play closes it.
+    phase music-load; echo talk; sleep 3; echo "say $MUSIC_CMD"; sleep 20      # resolve + download over the hotspot
     phase music; sleep "$MUSIC_S"; echo stats
   fi
   if [ "$TALK_S" -gt 0 ]; then

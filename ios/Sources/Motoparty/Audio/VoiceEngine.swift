@@ -13,7 +13,10 @@ import os
 /// 16 kHz buffer also goes to `tee` (speech recognition inside the talk)
 /// before the encoder, so DTX never cuts what the recogniser hears.
 /// Playback: AVAudioSourceNode (16 kHz mono) pulls 20 ms frames from the
-/// JitterBuffer and decodes them with Opus in the render callback.
+/// JitterBuffer and decodes them with Opus in the render callback, then
+/// Apple's peak limiter (AUPeakLimiter) → main mixer. The app volume
+/// (`AppVolume`, see `setGain`) is the mixer's output volume below unity and
+/// the limiter's pre-gain above it, so the top level's boost never clips.
 ///
 /// A new AVAudioEngine is built for every talk so voice-processing state never
 /// leaks into music mode. Call `start` after SessionController.activate(.talk).
@@ -33,6 +36,10 @@ final class VoiceEngine {
     private var sendAudio: ((Data) -> Void)?
     private var skipFrame: (() -> Void)?
     private var tee: ((AVAudioPCMBuffer) -> Void)?
+    private var limiter: AVAudioUnitEffect?
+    /// The app volume's talk gains; kept across restarts (main queue).
+    private var outputVolume: Float = 1
+    private var boostDb: Float = 0
 
     private let format16k = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000,
                                           channels: 1, interleaved: false)!
@@ -116,7 +123,14 @@ final class VoiceEngine {
             return noErr
         }
         engine.attach(source)
-        engine.connect(source, to: engine.mainMixerNode, format: format16k)
+        let limiter = AVAudioUnitEffect(audioComponentDescription: AudioComponentDescription(
+            componentType: kAudioUnitType_Effect, componentSubType: kAudioUnitSubType_PeakLimiter,
+            componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0))
+        engine.attach(limiter)
+        engine.connect(source, to: limiter, format: format16k)
+        engine.connect(limiter, to: engine.mainMixerNode, format: format16k)
+        self.limiter = limiter
+        applyGain(engine: engine)
 
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
@@ -137,7 +151,26 @@ final class VoiceEngine {
             try? engine.inputNode.setVoiceProcessingEnabled(false)
         }
         engine = nil
+        limiter = nil
         captureQueue.async { self.fifo.removeAll(); self.captureTee = nil }
+    }
+
+    /// The app volume for talk playback (`AppVolume.Gains`): `volume` 0...1 on
+    /// the main mixer, `boostDb` >= 0 as the limiter's pre-gain. Kept for the
+    /// next `start` too. Main queue.
+    func setGain(volume: Float, boostDb: Float) {
+        outputVolume = min(1, max(0, volume))
+        self.boostDb = max(0, boostDb)
+        if let engine { applyGain(engine: engine) }
+    }
+
+    private func applyGain(engine: AVAudioEngine) {
+        engine.mainMixerNode.outputVolume = outputVolume
+        guard let limiter else { return }
+        // Parameters are safe to set while the unit renders.
+        let status = AudioUnitSetParameter(limiter.audioUnit, kLimiterParam_PreGain, kAudioUnitScope_Global,
+                                           0, boostDb, 0)
+        if status != noErr { Log.audio.error("limiter pre-gain: \(status)") }
     }
 
     /// Network queue → jitter buffer.

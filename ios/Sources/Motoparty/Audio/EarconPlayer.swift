@@ -3,9 +3,12 @@ import AVFoundation
 import MotopartyCore
 
 /// Short synthesized cues ("live", "end", "ok", "error") played through the
-/// current audio session route.
+/// current audio session route, at the app volume (`volume`, 0...1:
+/// AVAudioPlayer cannot boost, so the top app level plays at 1).
 final class EarconPlayer {
     private var players: [String: AVAudioPlayer] = [:]
+    /// `AppVolume.Gains.cueVolume`, applied to the next `play`.
+    var volume: Float = 1
 
     func play(_ name: String) {
         let player: AVAudioPlayer
@@ -21,6 +24,7 @@ final class EarconPlayer {
             players[name] = player
         }
         player.currentTime = 0
+        player.volume = volume
         player.prepareToPlay()
         player.play()
     }

@@ -53,8 +53,8 @@ Stdin commands:
 | Command | Sends |
 |---|---|
 | `talk` | `talk.open{by:"client"}`, or `talk.close{by:"client",reason:"trigger"}` if talk is open |
-| `hear <phrase>` | a phrase the phone's ASR recognised **in a talk** (PROTOCOL.md "Commands"). Only a phrase that starts with the wake word (`motoparty`, `moto party`, `motor party`, after optional `hey`/`ok`/`okay`) is a command, and it sends `command.text` with the (normalised) text after the wake word. A bare wake word logs `[earcon listen]` and makes the next phrase within 5 s a command without it. Anything else logs `conversation, not sent`; a volume command is handled locally like `vol+`. Outside a talk it sends nothing (`hear: no talk open`) |
-| `say <text>` | `command.text{text, lang}` as is, talk or not, no wake word (the bench's `hotspot_test.sh` uses it) — but the parser runs locally first, and a volume phrase (`louder`, `volume down`, …) is handled here and **not** sent |
+| `hear <phrase>` | a phrase the phone's ASR recognised **in a talk** (PROTOCOL.md "Commands", The first phrase decides). Only in a talk this client opened (`talk.open{by:"client"}`), only its first phrase that is not empty after normalisation, and only if it arrives within 8 s of the talk opening (the peer's stand-in for the live earcon) and parses: then it sends `command.text` with the normalised text (`hey`/`please` kept). Anything else logs `conversation (<why>), not sent`, with no "Didn't catch that"; a volume command is handled locally like `vol+`. Outside a talk it sends nothing (`hear: no talk open`) |
+| `say <text>` | `command.text{text, lang}` as is, no first-phrase gate (the bench's `hotspot_test.sh` uses it) — but the parser runs locally first, and a volume phrase (`louder`, `volume down`, …) is handled here and **not** sent. The host only acts on it as the first `command.text` of a talk the client opened |
 | `pause` `resume` `next` `previous` | `music.control{action}` |
 | `vol+` `vol-` | nothing: volume is local (the peer has no real volume, so it just logs it) |
 | `unavailable` | toggles "my mic is dead": while on, the host's `talk.open` is answered with `talk.close{by:"client",reason:"unavailable"}` and talk never opens locally; `talk` will not ask for talk either |
@@ -111,30 +111,37 @@ port; `--bind`; `--no-mdns`). The hello carries the real ports.
 - HTTP: `GET`/`HEAD /track/<id>.m4a` for each `--track` file, `Content-Type: audio/mp4`, single
   `Range` → 206, unsatisfiable → 416, anything else → 404. `<id>` is 11 URL-safe characters
   derived from the file's SHA-1.
-- `command.text` goes through the grammar parser and is answered with `announce`.
+- Commands (PROTOCOL.md "Commands", The first phrase decides). The host acts on a client's
+  `command.text` only while a talk is open, the client opened it, and it is the first
+  `command.text` of that talk; any other is ignored and logged (`command.text ignored: <why>`)
+  with no `announce`. The stdin `hear <phrase>` is the host's own ASR: in a talk the host opened
+  with a client connected, only its first non-empty phrase within 8 s of the talk opening is a
+  command, and only if it parses (else `conversation (<why>), not acted on`); in a **solo** talk
+  (host `talk` with no client connected when it opened) every non-empty phrase is a command, with
+  no window. A volume phrase is handled locally (logged). A command goes through the grammar
+  parser and is answered with `announce` (sent to the client, or logged as `would send` solo).
   `play …` announces "Playing <title> by <artist>" and loads/plays the track; `next`/`previous`
-  walk the queue ("Next: <title>" / "Back to: <title>", or an error announce at either end);
-  `end` answers nothing when no talk is open. Inside a talk (PROTOCOL.md "Commands", Effect on
-  the talk):
-  - `play …`, `resume` and `end` close it first: `talk.close{by:"client",reason:"trigger"}` +
-    `state`, then the `announce` (none for `end`). After `resume` or `end` the music that was
-    playing resumes as after any talk (`music.play` at `now + 1500 ms`); after `play …` the
-    new track replaces it and its `music.play` is never sooner than 1500 ms after the close.
+  walk the queue ("Next: <title>" / "Back to: <title>", or an error announce at either end).
+  Effect on the talk:
+  - `play …`, `resume` and `end` close it first: `talk.close{by:<the side that spoke>,
+    reason:"trigger"}` + `state`, then the `announce` (none for `end`). After `resume` or `end`
+    the music that was playing resumes as after any talk (`music.play` at `now + 1500 ms`);
+    after `play …` the new track replaces it and its `music.play` is never sooner than 1500 ms
+    after the close.
   - `pause` keeps the talk open and cancels the resume after it ("Paused", or "Nothing is
     playing" when nothing would have resumed). It also covers a `next`/`previous` still loading.
   - `next`/`previous` keep it open: the track loads (`music.load`) but stays paused until the
     talk closes, then starts in place of the old one.
-  - The fake host has no ASR of its own, so the solo-talk rule (every host phrase is a
-    command) does not apply to it. Unmatched text
-  gets `{"text":"Didn't catch that","earcon":"error"}`, and so does a volume utterance:
-  volume is local and should never arrive here.
+  - Unmatched text gets `{"text":"Didn't catch that","earcon":"error"}` (a client's first
+    `command.text`, or a solo phrase), and so does a volume utterance in `command.text`:
+    volume is local and should never arrive here.
 - A `music.control` with a volume action is not a valid message any more; it is dropped as
   malformed (logged as `dropped invalid frame`) and the connection stays up.
 
 Stdin commands: `load` (sends `music.load`, then `music.play` 300 ms ahead once
 `music.ready` arrives, or after 8 s / on `music.error`), `play`, `pause`, `stop`, `talk`,
 `mic on|off` (bare `mic` toggles; `off` refuses the client's `talk.open` as `unavailable`),
-`announce <text>`, `state`, `stats`, `raw <json>`, `quit`.
+`hear <phrase>` (the host's own ASR, see Commands above), `announce <text>`, `state`, `stats`, `raw <json>`, `quit`.
 
 ## Bench recipes
 
@@ -152,14 +159,18 @@ uv run motoparty-peer client --host 192.168.1.100 --no-audio --tone
 #    > talk        -> expect << talk.open{by:"client"} + state{talk:true}, then "voice rx:" lines
 #                    Opus from the Pixel shows up as rx/played; the Pixel should hear beeps
 #    > talk        -> << talk.close{by:"client",reason:"trigger"}
-#    > say play album abbey road   -> << announce{…}
-#    > say what's the weather      -> << announce{"text":"Didn't catch that","earcon":"error"}
+#    > say pause (no talk open)    -> the Pixel ignores it: no announce
 #    > say louder                  -> handled locally, nothing sent (volume is local)
-#    > talk, then > hear moto party resume
+#    > talk, then > say what's the weather
+#                                  -> << announce{"text":"Didn't catch that","earcon":"error"};
+#                                     a second > say pause in the same talk is ignored
+#    > talk, then > hear resume (within 8 s)
 #                                  -> >> command.text{"text":"resume"}, << talk.close{by:"client",
 #                                     reason:"trigger"} (+ music.play if music was playing)
-#    > talk, then > hear what a view -> "conversation, not sent"
-#    > hear moto party, then > hear pause (within 5 s) -> >> command.text{"text":"pause"}, talk stays open
+#    > talk, then > hear what a view -> "conversation (the first phrase does not parse)";
+#                                     a later > hear pause is conversation too
+#    > talk, then > hear pause (within 8 s) -> >> command.text{"text":"pause"}, talk stays open
+#    Pixel-triggered talk, then > hear pause -> "conversation (this phone did not open the talk)"
 #    Start a song on the Pixel     -> << music.load, >> music.ready, << music.play (local time logged)
 # 2. Real audio: laptop mic <-> Pixel, music through mpv at the scheduled time
 uv run motoparty-peer client --host 192.168.1.100 --play
@@ -182,7 +193,7 @@ Volume is local, and talk can be refused. Two more things to bench on the Pixel:
 # 4. The host must drop a volume music.control and keep the connection (it is malformed now)
 #    > raw {"t":"music.control","action":"volumeUp"}   -> the Pixel must NOT change volume,
 #      must NOT disconnect; > pause right after must still work
-#    > raw {"t":"command.text","text":"volume up","lang":"en-US"}
+#    > talk, then > raw {"t":"command.text","text":"volume up","lang":"en-US"}
 #                                                     -> << announce{"Didn't catch that","error"}
 # 5. The Pixel's handling of a client whose mic is dead
 uv run motoparty-peer client --host 192.168.1.100 --no-audio --mic-unavailable
@@ -302,6 +313,10 @@ CELT-only and other packets count as activity. Why:
   to a `talk.open` it cannot honour. Music is not touched on either side. A client
   `talk.close{reason:"unavailable"}` while talk is open is treated like any other close
   request (close + broadcast + the usual resume).
+- First phrase: the peer has no earcons, so the 8 s window runs from when the talk opened
+  locally (the client on the host's `talk.open`). A client that sees a talk only through
+  `state{talk:true}` (it joined mid-talk) is not its opener. A phrase after the window spends
+  the first phrase. The fake host's talk is solo when no client was connected as it opened.
 - Volume: the client parses `say <text>` and `hear <phrase>` itself and swallows a volume result; `vol+`/`vol-`
   send nothing. The fake host answers a volume utterance that still arrives in `command.text`
   with "Didn't catch that", and drops a volume `music.control` as malformed.

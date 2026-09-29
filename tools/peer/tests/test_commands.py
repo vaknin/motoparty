@@ -1,10 +1,16 @@
 import pytest
 
 from conftest import load_fixture
-from motoparty_peer.commands import normalise, parse_command, wake
+from motoparty_peer.commands import (
+    FIRST_PHRASE_MS,
+    FirstPhraseGate,
+    command_text,
+    normalise,
+    parse_command,
+)
 
 CASES = load_fixture("commands.json")["cases"]
-WAKE_CASES = load_fixture("wake.json")["cases"]
+FIRST_PHRASE = load_fixture("first_phrase.json")
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: repr(c["text"]))
@@ -12,27 +18,38 @@ def test_fixture(case):
     assert parse_command(case["text"]) == case["expect"]
 
 
-@pytest.mark.parametrize("case", WAKE_CASES, ids=lambda c: repr(c["text"]))
-def test_wake_fixture(case):
-    assert wake(case["text"]) == case["expect"]
+@pytest.mark.parametrize("case", FIRST_PHRASE["cases"], ids=lambda c: c["name"])
+def test_first_phrase_fixture(case):
+    gate = FirstPhraseGate(case["role"], live_ms=100_000)  # any earcon time: only the offset counts
+    got = [gate.phrase(p["text"], 100_000 + p["atMs"]) for p in case["phrases"]]
+    assert got == case["expect"]
 
 
-@pytest.mark.parametrize(
-    "text, expect",
-    [
-        ("okay moto party hang up", "hang up"),
-        ("Moto party… volume up", "volume up"),
-        ("please motoparty pause", None),  # only hey/ok/okay precede the wake word
-        ("motor", None),
-        ("party", None),
-    ],
-)
-def test_wake_extra(text, expect):
-    assert wake(text) == expect
+def test_first_phrase_window_matches_fixture():
+    assert FIRST_PHRASE["firstPhraseMs"] == FIRST_PHRASE_MS
 
 
-def test_wake_then_parse():
-    assert parse_command(wake("Hey Moto Party, end talk please")) == {"action": "end"}
+def test_first_phrase_window_spends_the_first_phrase():
+    # a phrase after the window spends it even though it parses; nothing later is a command
+    gate = FirstPhraseGate("opener", live_ms=0)
+    assert gate.phrase("next", FIRST_PHRASE_MS + 1) is None
+    assert gate.why == f"after the {FIRST_PHRASE_MS} ms window"
+    assert gate.phrase("next", 1) is None and gate.why == "the first phrase is spent"
+
+
+def test_first_phrase_command_text_keeps_the_quote_mapping():
+    gate = FirstPhraseGate("opener", live_ms=0)
+    assert gate.phrase("Play Don\u2019t Stop Me Now!", 1000) == "play don't stop me now"
+
+
+def test_first_phrase_rejects_unknown_role():
+    with pytest.raises(ValueError):
+        FirstPhraseGate("host")
+
+
+def test_command_text():
+    assert command_text("  Hey, PLAY   Abbey-Road please. ") == "hey play abbey road please"
+    assert command_text("...") == ""
 
 
 @pytest.mark.parametrize(

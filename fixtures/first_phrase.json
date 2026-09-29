@@ -1,0 +1,217 @@
+{
+ "_doc": "First-phrase gate vectors, one phone per case. See PROTOCOL.md 'Commands', The first phrase decides. role: opener = this phone opened the talk; other = it did not; solo = the host's talk has no client. atMs = when the phrase's result arrives, after this phone's live earcon; FIRST_PHRASE_MS = 8000, inclusive. expect[i] = the command text for phrases[i] (the normalisation of 'Commands' up to and including trim, before the hey/please drop), or null = conversation.",
+ "firstPhraseMs": 8000,
+ "cases": [
+  {
+   "name": "opener, first phrase parses",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "Play Dark Side of the Moon",
+     "atMs": 3000
+    },
+    {
+     "text": "next",
+     "atMs": 6000
+    }
+   ],
+   "expect": [
+    "play dark side of the moon",
+    null
+   ]
+  },
+  {
+   "name": "opener, first phrase is conversation, later command ignored",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "can you hear me",
+     "atMs": 2500
+    },
+    {
+     "text": "pause",
+     "atMs": 4000
+    }
+   ],
+   "expect": [
+    null,
+    null
+   ]
+  },
+  {
+   "name": "opener, empty phrases do not spend the first phrase",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "",
+     "atMs": 1000
+    },
+    {
+     "text": "...",
+     "atMs": 1500
+    },
+    {
+     "text": "Skip!",
+     "atMs": 3000
+    }
+   ],
+   "expect": [
+    null,
+    null,
+    "skip"
+   ]
+  },
+  {
+   "name": "opener, fillers kept in the text, parser drops them",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "hey play album Abbey Road please",
+     "atMs": 4000
+    }
+   ],
+   "expect": [
+    "hey play album abbey road please"
+   ]
+  },
+  {
+   "name": "opener, volume parses (handled locally)",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "Louder!",
+     "atMs": 2000
+    }
+   ],
+   "expect": [
+    "louder"
+   ]
+  },
+  {
+   "name": "opener, keep-open command then another",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "pause",
+     "atMs": 2000
+    },
+    {
+     "text": "next",
+     "atMs": 5000
+    }
+   ],
+   "expect": [
+    "pause",
+    null
+   ]
+  },
+  {
+   "name": "opener, empty play query does not parse",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "play",
+     "atMs": 2000
+    },
+    {
+     "text": "play queen",
+     "atMs": 4000
+    }
+   ],
+   "expect": [
+    null,
+    null
+   ]
+  },
+  {
+   "name": "opener, window edge inclusive",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "over",
+     "atMs": 8000
+    }
+   ],
+   "expect": [
+    "over"
+   ]
+  },
+  {
+   "name": "opener, after the window",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "over",
+     "atMs": 8001
+    }
+   ],
+   "expect": [
+    null
+   ]
+  },
+  {
+   "name": "opener, empty phrase then window passes",
+   "role": "opener",
+   "phrases": [
+    {
+     "text": "",
+     "atMs": 2000
+    },
+    {
+     "text": "next",
+     "atMs": 9000
+    }
+   ],
+   "expect": [
+    null,
+    null
+   ]
+  },
+  {
+   "name": "non-opener never commands",
+   "role": "other",
+   "phrases": [
+    {
+     "text": "play pink floyd",
+     "atMs": 2000
+    },
+    {
+     "text": "next",
+     "atMs": 3000
+    }
+   ],
+   "expect": [
+    null,
+    null
+   ]
+  },
+  {
+   "name": "solo, every non-empty phrase, no window",
+   "role": "solo",
+   "phrases": [
+    {
+     "text": "next",
+     "atMs": 2000
+    },
+    {
+     "text": "what's the weather",
+     "atMs": 5000
+    },
+    {
+     "text": "",
+     "atMs": 6000
+    },
+    {
+     "text": "Over.",
+     "atMs": 30000
+    }
+   ],
+   "expect": [
+    "next",
+    "what's the weather",
+    null,
+    "over"
+   ]
+  }
+ ]
+}
