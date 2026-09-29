@@ -140,9 +140,10 @@ framework what devices the phone has.
      hook-and-loop cut to the TX back (`research/MIC.md` §"Status").
    - **In between** → the honest case for the whole `research/` plan, and the one where the user's
      ears, not this file, decide.
-3. **The silence-close decision** (see "Decisions in force") is owed either way and blocks nothing
-   else. On the AirPods mic Opus never goes DTX, so the 20 s close as specified cannot fire; solo
-   talk sidesteps it by skipping the timer, which is a debug path, not an answer.
+3. **Silence close: decided 2026-09-29, option B (for now)** — talk ends on a press only. Not yet
+   implemented: remove the 20 s silence close from `PROTOCOL.md` and the host, and fix `beeps.sh`'s
+   silence step. See "Decisions in force". The user also asked for a rethink of the whole talk /
+   command control (next item).
 4. **Only if the ride says buy:** the staged plan in `~/.claude/plans/dynamic-bubbling-lemon.md`
    (Stage B the bench hour, C the routing code, D the music setting, E the A/B ride) still stands
    as written, with `research/MIC.md` overriding its Hardware table on what to buy.
@@ -151,14 +152,14 @@ framework what devices the phone has.
 
 | Component | State |
 |---|---|
-| `android/` | The host. 216 tests, 0 fail, 2 skipped (2026-09-29, incl. 8 screenshot tests). Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
+| `android/` | The host. 223 tests, 0 fail, 5 skipped (2026-09-29, incl. 8 screenshot tests; the 5 skipped are the live YouTube tests, which pass with `-Pnetwork`). Everything through F9b + Stage A + solo talk is written and coordinator-verified offline, and **installed on the Pixel on 2026-09-22 01:42 — but never run there**, so F9a, F9b, Stage A and solo talk are all device-unverified. Per-file state and every F-section: `android/HANDOFF.md`. |
 | `ios/` | The passenger. `swift test`: 71 pass on Linux (2026-09-29); `cd ios && xtool dev build` compiles clean for arm64-apple-ios (unsigned, no phone needed). Jitter backlog capped at 400 ms and the LIVE earcon gated on the first capture buffer (`c7d7d76`, 69 tests). **Never run on a device.** `SessionController.swift:122-125` matches `.bluetoothHFP` only and has no wired branch — a later job, rider first. `ios/README.md` lists what only a real iPhone can answer. 2026-09-29: release build clean (xtool auth valid to 2027-09), audit items fixed; next is `xtool dev -c release` with the iPhone 15 on USB-C. |
 | `tools/peer` | Python/uv fake host + client. `.venv/bin/python -m pytest -q`: 184 pass (2026-09-29; `uv run pytest` fails until `.venv` is recreated, its pytest script points at an old path). |
 | `tools/bench` | `talk_cycles.sh`, `music_sync.sh`, `unavailable.sh`, `overlay_rotation.sh`, `beeps.sh`, shared `lib.sh`, summaries in `bench.py` (`summary.txt`, last line `VERDICT:`). All adb paths are proven on the device except `beeps.sh`'s silence step. `HOST_IP` is overridable. `results/*/logcat_all.txt` (whole-phone dumps) are gitignored; the filtered `logcat.txt` is committed. |
 | `spikes/recognizer-pfd/` | Throwaway app, its question answered (see "Recognizer" below). Still installed on the Pixel. |
 | git | Remote `origin` = https://github.com/vaknin/motoparty (**public**: nothing personal in commits). **Commit only when the user asks.** |
 
-**UI/UX pass and touch browsing (2026-09-29, uncommitted, device-unverified).** The user found
+**UI/UX pass and touch browsing (2026-09-29, committed `47ce8bf`, device-unverified).** The user found
 both apps ugly and choosing music clunky, and chose: the passenger can search and queue from the
 iPhone (a protocol addition), cover art, and screenshot tests. `PROTOCOL.md` gained a "Browsing"
 section and five messages (`music.search`, `music.browse`, `music.results`, `music.enqueue`,
@@ -172,6 +173,12 @@ Linux: `./gradlew testDebugUnitTest -Pscreenshots --tests '*ScreensTest*'` →
 `android/app/build/outputs/roborazzi/*.png`. To check on the devices: cover images loading over
 the hotspot, the ⋮ menu in iPhone list rows, and whether the iPhone Ride tab fits without
 scrolling.
+Live YouTube check of the browsing code passed (2026-09-29, `CatalogNetworkTest` with
+`-Pnetwork`): album search returns `OLAK5uy_…` ids with 544 px square covers, playlist search
+returns `PL…` ids (no track counts: YouTube leaves `streamCount` empty, so the UI shows none),
+`browse` gives Dark Side of the Moon's 10 tracks in order with the album's 640 px cover. Song
+results list only 60/120 px art, so `Catalog.bestImage` rewrites resizable googleusercontent
+URLs to `=w544-h544` (verified to return a real 544×544 JPEG).
 
 **The 2026-09-19 audit's `ios/` items are fixed (2026-09-29, uncommitted, still device-unverified):**
 a call interruption or media-services reset mid-talk now closes with `"unavailable"` (PROTOCOL.md
@@ -221,11 +228,11 @@ on Android has still never produced a positive log line either.
 - **`duckDuringTalk` stays off**, and the Stage D "setting flippable on the road, defaulting per
   mode" is **on hold with Stage D** — it only ever made sense on a route that does not switch. On
   the AirPods route music cannot play through a talk at all, and the user does not want it to.
-- **Silence close is 20 s** in `PROTOCOL.md` — but see "the AirPods mic is never DTX" below: as
-  specified it cannot work, and **a decision is owed**. Proposal: the host judges activity by level
-  over a running noise floor, on its own captured PCM and on the *decoded* received PCM (no wire
-  change, nothing for iOS or the peer to do; thresholds need a ride). Alternative: drop it and end
-  talk on a press only. Then `beeps.sh` must fail its step when no `reason:"silence"` close arrives.
+- **Talk ends on a press only** (user, 2026-09-29, "option B for now"). The 20 s silence close in
+  `PROTOCOL.md` cannot fire on the AirPods mic (never DTX, below) and is to be removed; a
+  level-over-noise-floor detector was the rejected alternative. "For now": the user finds the
+  current talk/command control clunky (two buttons) and wants a better UX designed — a redesign
+  may replace this.
 - **Wire format:** 16 kHz Opus, 20 ms frames, 24 kbps VOIP. A sample-rate change is out of scope —
   8 hard-coded constants across three implementations, ~40 test assertions, and the Python peer's
   silence detector reads the SILK VAD bit and stops working above 16 kHz. There is no negotiation
@@ -296,7 +303,11 @@ Pixel 8 / Android 17 / AirPods Pro, 2026-09-19 and 2026-09-20.
 
 ## Parked, not lost
 
-- The **silence-close decision** (above) — the user's call.
+- **Rethink talk and command control** (user, 2026-09-29): "the current method is clunky, perhaps
+  instead of two buttons we can do something else, with a better UX". Open design question;
+  propose options to the user before building. Constraints: gloves, 110 km/h wind, AirPods
+  squeeze/Redmi gestures, the wired handlebar switch box agreed with the Honda telemetry project,
+  talk is never declinable, music and talk never at once.
 - The **single button** — worth building for gloves; replan on a non-switching route.
 - The **SCO flap**, and the pointless SCO bounce on a refused talk (the host enters the call route
   for a talk the client refuses and leaves it 1.5 s later).

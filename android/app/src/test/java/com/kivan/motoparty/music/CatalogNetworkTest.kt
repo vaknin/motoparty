@@ -75,4 +75,42 @@ class CatalogNetworkTest {
             assertTrue(r.tracks.isNotEmpty())
         }
     }
+
+    @Test
+    fun searchAlbumsAndBrowseOne(): Unit = runBlocking {
+        val catalog = Catalog(http)
+        val albums = catalog.searchCollections(albums = true, "dark side of the moon")
+        albums.take(5).forEach { println("album $it") }
+        assertTrue(albums.isNotEmpty())
+        for (a in albums) {
+            assertTrue(isValidTrackId(a.id))
+            assertTrue(a.title.isNotBlank())
+            assertTrue("art for ${a.id}", a.art?.startsWith("https://") == true)
+        }
+        val tracks = catalog.browse(albums.first().id)
+        tracks.forEach { println("  track $it") }
+        assertTrue(tracks.size >= 5)
+        assertTrue(tracks.all { isValidTrackId(it.id) && it.title.isNotBlank() })
+        assertTrue(tracks.all { it.art?.startsWith("https://") == true })
+        // In order: the album opens with "Speak to Me", then "Breathe".
+        assertTrue(tracks[0].title, tracks[0].title.contains("Speak to Me", ignoreCase = true))
+        assertTrue(tracks[1].title, tracks[1].title.contains("Breathe", ignoreCase = true))
+    }
+
+    @Test
+    fun searchPlaylists(): Unit = runBlocking {
+        val lists = Catalog(http).searchCollections(albums = false, "road trip")
+        lists.take(5).forEach { println("playlist $it") }
+        assertTrue(lists.isNotEmpty())
+        assertTrue(lists.all { isValidTrackId(it.id) && it.title.isNotBlank() && it.art?.startsWith("https://") == true })
+    }
+
+    @Test
+    fun songsCarryArt(): Unit = runBlocking {
+        val songs = Catalog(http).searchSongs("bohemian rhapsody", limit = 5)
+        songs.forEach { println("song $it") }
+        assertTrue(songs.isNotEmpty())
+        assertTrue(songs.all { it.art?.startsWith("https://") == true })
+        assertTrue(songs.first().art!!, songs.first().art!!.contains("=w544-h544"))
+    }
 }

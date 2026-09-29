@@ -182,16 +182,22 @@ class Catalog(private val http: OkHttpClient) {
 
         /**
          * The smallest image at least [ART_PX] wide, else the largest: enough for a phone
-         * screen, and the URL is what goes on the wire.
+         * screen, and the URL is what goes on the wire. Song results list only 60 and 120 px,
+         * but their googleusercontent URLs take the size as a parameter, so those get asked
+         * for [RESIZED_PX].
          */
         fun bestImage(images: List<Image>): String? {
             val known = images.filter { it.width > 0 }
-            return (known.filter { it.width >= ART_PX }.minByOrNull { it.width }
-                ?: known.maxByOrNull { it.width }
-                ?: images.lastOrNull())?.url
+            val big = known.filter { it.width >= ART_PX }.minByOrNull { it.width }
+            if (big != null) return big.url
+            val url = (known.maxByOrNull { it.width } ?: images.lastOrNull())?.url ?: return null
+            return if (RESIZABLE.containsMatchIn(url)) url.replace(SIZE, "=w$RESIZED_PX-h$RESIZED_PX") else url
         }
 
         private const val ART_PX = 300
+        private const val RESIZED_PX = 544
+        private val RESIZABLE = Regex("""^https://(yt3|lh3)\.(googleusercontent|ggpht)\.com/[^?]*=w\d+-h\d+""")
+        private val SIZE = Regex("""=w\d+-h\d+""")
 
         fun cleanAlbum(name: String): String = name.removePrefix("Album – ").removePrefix("Album - ")
 
