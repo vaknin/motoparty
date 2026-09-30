@@ -14,12 +14,18 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /**
@@ -35,7 +41,12 @@ class CloudGemini(
     private val clock: () -> Long,
     private val guard: RateGuard = RateGuard(),
 ) : Interpreter {
-    private val http = http.newBuilder().callTimeout(Interpretation.INTERPRET_TIMEOUT_MS, TimeUnit.MILLISECONDS).build()
+    /** The phases of the call in flight (calls are one at a time), for the log line of a timeout. */
+    @Volatile private var phases: Phases? = null
+    private val http = http.newBuilder()
+        .callTimeout(Interpretation.INTERPRET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .eventListenerFactory { Phases().also { phases = it } }
+        .build()
     private val schema = Json.parseToJsonElement(schema)
 
     override suspend fun interpret(phrase: String, lang: String, playing: String?, album: String?, upNext: List<String>, asked: Interpreter.Asked?): Interpreter.Answer {
@@ -50,17 +61,44 @@ class CloudGemini(
                     .build()
                 http.newCall(request).execute().use { response ->
                     val text = response.body.string()
-                    if (response.code == 429) guard.hold(clock(), holdMs(text))
+                    if (response.code == 429) {
+                        val hold = holdMs(text)
+                        guard.hold(clock(), hold)
+                        return@runInterruptible Interpreter.Failed("HTTP 429, holding ${hold / 1000} s")
+                    }
                     if (response.code != 200) Interpreter.Failed("HTTP ${response.code}")
                     else answerText(text)?.let(Interpreter::Text) ?: Interpreter.Failed("unreadable answer")
                 }
             }
         } catch (_: InterruptedIOException) {
-            // OkHttp's call timeout (and its socket timeouts).
-            Interpreter.Failed("timeout")
+            // OkHttp's call timeout (and its socket timeouts). Where the time went, for the log.
+            Interpreter.Failed("timeout" + (phases?.summary()?.let { " ($it)" } ?: ""))
         } catch (e: IOException) {
             Interpreter.Failed("no network (${e.javaClass.simpleName})")
         }
+    }
+
+    /**
+     * Milliseconds from the call's start to each step it reached, e.g. `dns 40 [ipv4], connected 90,
+     * tls 160, sent 170, no answer`: a slow DNS or connect is the phone's network, a long wait after
+     * `sent` is Gemini.
+     */
+    private class Phases : EventListener() {
+        private val start = System.nanoTime()
+        private val steps = java.util.Collections.synchronizedList(mutableListOf<String>())
+        private fun mark(what: String) { steps += "$what ${(System.nanoTime() - start) / 1_000_000}" }
+        override fun dnsEnd(call: Call, domainName: String, inetAddressList: List<InetAddress>) {
+            val kinds = inetAddressList.map { if (it.address.size == 4) "ipv4" else "ipv6" }.distinct()
+            mark("dns"); steps[steps.lastIndex] += " [${kinds.joinToString("+")}]"
+        }
+        override fun connectionAcquired(call: Call, connection: okhttp3.Connection) = mark("connection")
+        override fun connectFailed(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy, protocol: okhttp3.Protocol?, ioe: IOException) =
+            mark("connect to ${inetSocketAddress.address?.hostAddress} failed")
+        override fun secureConnectEnd(call: Call, handshake: okhttp3.Handshake?) = mark("tls")
+        override fun requestBodyEnd(call: Call, byteCount: Long) = mark("sent")
+        override fun responseHeadersStart(call: Call) = mark("answer")
+        override fun responseHeadersEnd(call: Call, response: Response) = Unit
+        fun summary(): String = synchronized(steps) { steps.joinToString(", ") }.ifEmpty { "nothing" }
     }
 
     companion object {
@@ -126,7 +164,18 @@ class CloudGemini(
         }
 
         /** How long to stop asking after a 429 with [body]: its text names the window that ran out. */
-        fun holdMs(body: String): Long = if (body.contains("per day", ignoreCase = true)) DAY_HOLD_MS else MINUTE_HOLD_MS
+        /**
+         * How long to stop asking after a 429 with [body]. Google's own retry time (`retryDelay`, or "retry in 32s" in the message) wins
+         * when it is there (the daily limit is a rolling window, so it too can end in seconds); else a body that
+         * names a daily limit holds an hour and anything else a minute.
+         */
+        fun holdMs(body: String): Long {
+            RETRY_DELAY.find(body)?.let { return ((it.groupValues[1].toDouble() + 1) * 1000).toLong().coerceIn(1_000L, DAY_HOLD_MS) }
+            return if (body.contains("per day", ignoreCase = true)) DAY_HOLD_MS else MINUTE_HOLD_MS
+        }
+
+        /** `"retryDelay": "43s"` (RetryInfo) or the message's "Please retry in 32s" (seen 2026-09-30). */
+        private val RETRY_DELAY = Regex("(?:\"retryDelay\"\\s*:\\s*\"|retry in )(\\d+(?:\\.\\d+)?)s\\b")
 
         private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
     }

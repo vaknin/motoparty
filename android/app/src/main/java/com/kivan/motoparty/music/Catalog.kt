@@ -90,6 +90,28 @@ class Catalog(private val http: OkHttpClient) {
         emptyList()
     }
 
+    /**
+     * The album that holds [track]: the artist's albums found for "<artist> <title>" and then for
+     * "<artist>", at most [ALBUM_PROBES] of them browsed, the first whose track list has the track
+     * (same id or same title). Null when none does. For "the rest of this album" when the album
+     * the interpreter named does not hold the playing track (it guessed from its own knowledge).
+     */
+    suspend fun albumContaining(track: Track): Result? = withContext(Dispatchers.IO) {
+        val artist = CommandParser.normalize(cleanArtist(track.artist))
+        val seen = mutableSetOf<String>()
+        var probes = 0
+        for (query in listOf("${track.artist} ${track.title}", track.artist)) {
+            val albums = searchCollections(albums = true, query)
+                .filter { CommandParser.normalize(cleanArtist(it.artist)) == artist && seen.add(it.id) }
+            for (album in albums) {
+                if (probes++ >= ALBUM_PROBES) return@withContext null
+                val tracks = tracksOf(album.id).second
+                if (VoiceQueue.holds(tracks, track)) return@withContext Result(tracks, "album ${album.title} by ${album.artist}")
+            }
+        }
+        null
+    }
+
     private fun songs(query: String): List<Track> {
         val items = runSearch(query, Q.MUSIC_SONGS).filterIsInstance<StreamInfoItem>()
         val fromMusic = items.mapNotNull { it.toTrack(album = null, art = null) }
@@ -233,6 +255,9 @@ class Catalog(private val http: OkHttpClient) {
         }
 
         const val ANY_ALBUM_TOP = 5
+
+        /** Albums browsed at most by [albumContaining]: each is one request (about 0.5 s). */
+        const val ALBUM_PROBES = 4
 
         fun cleanAlbum(name: String): String = name.removePrefix("Album – ").removePrefix("Album - ")
 

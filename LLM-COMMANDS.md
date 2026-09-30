@@ -282,3 +282,20 @@ Also that evening (user request): the "live" beep at talk start is now a setting
 (`Settings.liveBeep`, "Beep when the mic is live"). The wait before a talk is live is the
 microphone / headset call route coming up (0.5–1.9 s measured with no headset) and is unchanged.
 
+### Later that evening: queueing verified on the Pixel (with a temporary 20 s limit)
+
+- A timed-out call now logs its steps (`timeout (dns 194 [ipv4], tls 409, connection 418, sent
+  424)`): the phone's network was fine, Gemini simply answered late (5–13 s from the phone and
+  from the laptop alike; not the phone being in a pocket, the screen was on).
+- With `INTERPRET_TIMEOUT_MS` at 20 s in a test build: "as the next song play natural blues" →
+  `Next: Natural Blues by Moby`; "add the rest of this album" → Gemini said album "play 18
+  moby" (wrong: Porcelain is on *Play*). Fixed: a queued album that does not hold the playing
+  track, when the query names that track's artist, is replaced by the artist's album that does
+  (`Catalog.albumContaining`, `VoiceQueue.wantsCurrentAlbum`, PROTOCOL.md "Queueing by voice").
+  On the Pixel: `queue: using album Play by Moby` → the 15 tracks after Porcelain. The limit is
+  back at 3 s in the committed build.
+- The daily quota (500, shared with capture) ran out; Google's 429 says "Please retry in 32s"
+  (a rolling window). The app now holds for Google's retry time instead of an hour.
+- Not seen on the device yet: "for the next three songs …" and "choose similar music …" (quota).
+  Open for the user: keep the 3 s limit (Gemini can be much slower on some evenings)?
+

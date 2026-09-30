@@ -81,6 +81,11 @@ class CloudGeminiTest {
     fun holdIsLongerWhenTheDayRanOut() {
         assertEquals(60_000L, CloudGemini.holdMs("limit: 15 requests per minute on Free Tier"))
         assertEquals(3_600_000L, CloudGemini.holdMs("limit: 500 requests per day on Free Tier"))
+        // Google's RetryInfo wins, plus a second of margin, even next to a daily limit's name.
+        assertEquals(44_000L, CloudGemini.holdMs("""{"error": {"details": [{"retryDelay": "43s"}], "message": "… per day …"}}"""))
+        assertEquals(13_500L, CloudGemini.holdMs("""{"retryDelay":"12.5s"}"""))
+        // The daily limit's own words (2026-09-30): a rolling window, retry in seconds.
+        assertEquals(33_000L, CloudGemini.holdMs("Rate limit exceeded for model gemini-3.5-flash-lite (limit: 500 requests per day on Free Tier). Please retry in 32s or upgrade your tier"))
     }
 
     @Test

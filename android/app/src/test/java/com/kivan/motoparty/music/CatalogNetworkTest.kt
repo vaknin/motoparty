@@ -33,6 +33,15 @@ class CatalogNetworkTest {
     }
 
     @Test
+    fun theAlbumThatHoldsATrackIsFound(): Unit = runBlocking {
+        val catalog = Catalog(http)
+        val track = catalog.search(Command.Kind.SONG, "porcelain moby").tracks.first()
+        val album = catalog.albumContaining(track)
+        println("album of ${track.title} – ${track.artist} -> ${album?.label}: ${album?.tracks?.map { it.title }}")
+        assertTrue(album != null && VoiceQueue.holds(album.tracks, track))
+    }
+
+    @Test
     fun searchResolveAndDownloadASong(): Unit = runBlocking {
         val catalog = Catalog(http)
         val result = catalog.search(Command.Kind.SONG, "bohemian rhapsody queen")

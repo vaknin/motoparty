@@ -32,6 +32,24 @@ object VoiceQueue {
         return list.filter { it.id !in have }.distinctBy { it.id }.take(limit)
     }
 
+    /** Whether [tracks] (an album) holds [track]: the same id, or the same title. */
+    fun holds(tracks: List<Track>, track: Track): Boolean {
+        val title = CommandParser.normalize(track.title)
+        return tracks.any { it.id == track.id || CommandParser.normalize(it.title) == title }
+    }
+
+    /**
+     * Whether a `queue album <query>` whose album [found] does not hold [current] should be
+     * replaced by the album that does: when the query names the current artist, it was most
+     * likely "the rest of this album" with an album the interpreter guessed wrong. The cost: a
+     * rider who asks for another album of the artist playing gets the current one instead.
+     */
+    fun wantsCurrentAlbum(cmd: Command.Queue, found: List<Track>, current: Track?): Boolean {
+        if (cmd.kind != Command.Kind.ALBUM || current == null || holds(found, current)) return false
+        val artist = CommandParser.normalize(Catalog.cleanArtist(current.artist))
+        return artist.isNotEmpty() && " ${CommandParser.normalize(cmd.query)} ".contains(" $artist ")
+    }
+
     /** The spoken reply for [added] (not empty) tracks. */
     fun reply(where: Command.Where, added: List<Track>): String {
         val what = added.singleOrNull()?.let(MusicController::nowPlayingLine) ?: "${added.size} songs"

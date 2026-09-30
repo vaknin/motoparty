@@ -1274,7 +1274,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 Hub.status.update { it.copy(busy = "Searching $what") }
                 val found = try {
                     when {
-                        cmd.kind != null -> catalog.search(cmd.kind, cmd.query).tracks
+                        cmd.kind != null -> catalog.search(cmd.kind, cmd.query).tracks.let { tracks ->
+                            if (!VoiceQueue.wantsCurrentAlbum(cmd, tracks, source)) tracks
+                            else catalog.albumContaining(source!!)?.also { Hub.log("queue: using ${it.label}, which holds the playing track") }?.tracks ?: tracks
+                        }
                         source != null -> catalog.similar(source.id)
                         else -> null
                     }

@@ -485,7 +485,10 @@ play more of this artist", "choose similar music for the rest of the queue") are
   `query` unless similar, and `count` as a decimal string when given).
 - **The source.** `song`: the top hit. `artist`: the artist's top songs. `album`, `playlist`: the
   top collection's tracks, in order (an album query that is an artist's name picks one of that
-  artist's albums, as for `play album`). `similar`: music like the **current track** (YouTube's
+  artist's albums, as for `play album`; and when that album does not hold the current track
+  but the query names the current track's artist, the host uses the artist's album that does
+  hold it, if it finds one: the interpreter names albums from its own knowledge and can be
+  wrong). `similar`: music like the **current track** (YouTube's
   radio for it); with nothing loaded it fails with "Nothing playing".
 - **What is added.** From the source, in order: if it is an album that contains the current
   track (the same id, or the same normalised title), only the tracks **after** it ("the rest of
