@@ -299,3 +299,23 @@ microphone / headset call route coming up (0.5–1.9 s measured with no headset)
 - Not seen on the device yet: "for the next three songs …" and "choose similar music …" (quota).
   Open for the user: keep the 3 s limit (Gemini can be much slower on some evenings)?
 
+
+### Root cause of the slow answers (2026-09-30, 23:20–23:27 local)
+
+- The wait is Google's model queue, not the request or the phone. In every slow call TLS was up in
+  about 0.1 s and the time to the first response byte was the whole wait (laptop, curl).
+- 40 interleaved requests on `gemini-3.1-flash-lite` (separate free quota; 3.5 Flash-Lite's daily
+  500 was used up after one 1.2 s probe). Four request shapes: Interactions + schema (the app's),
+  no schema, `generateContent` + schema, and a 17-token prompt instead of 1,750. p50 2.9 / 2.7 /
+  2.9 / 2.2 s, maxima 4.4–6.3 s, 3 × HTTP 503. Every shape was slow and uneven, so the schema, the
+  prompt's length and the API are not the cause. Back-to-back calls ranged from 1.0 to 6.3 s, and
+  the "movie" phrase was not slower than "moby".
+- Google's docs (checked tonight): Standard inference is "seconds to minutes" with no free-tier
+  SLO. `service_tier: "priority"` ("seconds", not sheddable, works on the Interactions API) needs
+  a Tier 2 paid project ($100 paid + 3 days). A forum thread from 2026-09-28 reports repeated 503s
+  on `gemini-3.5-flash-lite`. The daily quota resets at midnight Pacific (10:00 Israel time).
+- Not tested: whether a paid Standard key is faster than the free tier (it needs billing: about
+  $0.0006 a request, about $9 a month at 500 a day).
+- Side finding: `temperature` is deprecated for Gemini 3.5+, and Google says to remove it
+  (<https://ai.google.dev/gemini-api/docs/latest-model#sampling-parameter-deprecation>). This is not
+  related to the latency.
