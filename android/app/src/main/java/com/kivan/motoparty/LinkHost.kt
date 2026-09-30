@@ -835,7 +835,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         if (!talk.isOpen || fire.session != talkSession) return
         Hub.log(fire.line())
         // A host-mic talk holds no call route: the beep goes where the music goes (A2DP).
-        earcon(Earcons.Kind.LIVE, call = !larkTalk)
+        if (settings.value.liveBeep) earcon(Earcons.Kind.LIVE, call = !larkTalk)
         Hub.status.update { it.copy(talkLive = true) }
         // The first phrase's window runs from here; once it has passed, stop listening.
         phrases.live(clock())

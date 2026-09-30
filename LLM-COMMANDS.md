@@ -266,3 +266,19 @@ Ride screen (phone was locked), real speech, mobile data, iPhone.
   resuming the same track, `announce` "Added …" / "Next: …", a new `state` queue, and logcat
   `interpret: …` / `queued …`. Judge whether "the rest of this album" finds the right album.
 
+### Pixel attempts, 2026-09-30 evening (queueing still unverified on a device)
+
+Three runs with the release build and the laptop peer: every Gemini request from the phone hit
+the 3 s limit (`interpret: … failed: timeout`), 9 of 9. From the laptop the same phrases took
+1–14 s at the same time (earlier the same day: about 1.2 s), and one slow answer was also wrong.
+So Gemini's free tier was slow that evening; nothing in the app points elsewhere (YouTube
+lookups from the same HTTP client were fast). Not ruled out: something specific to the phone's
+path (Private DNS is set to a hostname; no IPv6 route). Retry another time; start from a real
+track with `hear play porcelain by moby`, because a failed interpretation plays the words as
+spoken ("play something by movie" found a 6-second clip). Open design question for the user:
+3 s may be too short a limit when Gemini is slow, but a longer one means a longer silence.
+
+Also that evening (user request): the "live" beep at talk start is now a setting, off by default
+(`Settings.liveBeep`, "Beep when the mic is live"). The wait before a talk is live is the
+microphone / headset call route coming up (0.5–1.9 s measured with no headset) and is unchanged.
+

@@ -41,6 +41,11 @@ data class Settings(
      * parse is sent to Gemini to be understood. Does nothing in a build with no API key.
      */
     val smartCommands: Boolean = true,
+    /**
+     * The "live" earcon: the beep that says the microphone of a just-opened talk is on. Off by
+     * default (user, 2026-09-30); the TALK button still shows "Connecting…" until the mic is live.
+     */
+    val liveBeep: Boolean = false,
 )
 
 class SettingsStore(context: Context) {
@@ -67,6 +72,7 @@ class SettingsStore(context: Context) {
             larkTalk = prefs.getBoolean("larkTalk", d.larkTalk),
             larkSwap = prefs.getBoolean("larkSwap", d.larkSwap),
             smartCommands = prefs.getBoolean("smartCommands", d.smartCommands),
+            liveBeep = prefs.getBoolean("liveBeep", d.liveBeep),
         )
     }
 
@@ -92,6 +98,7 @@ class SettingsStore(context: Context) {
             .putBoolean("larkTalk", s.larkTalk)
             .putBoolean("larkSwap", s.larkSwap)
             .putBoolean("smartCommands", s.smartCommands)
+            .putBoolean("liveBeep", s.liveBeep)
             .apply()
         _flow.value = load()
     }

@@ -102,6 +102,9 @@ fun SettingsTab(
             SwitchRow("Swap rider and passenger", "If the two Lark transmitters are the wrong way round", settings.larkSwap) { v ->
                 update { it.copy(larkSwap = v) }
             }
+            SwitchRow("Beep when the mic is live", "A short beep once a talk's microphone is on", settings.liveBeep) { v ->
+                update { it.copy(liveBeep = v) }
+            }
             val hasKey = BuildConfig.GEMINI_API_KEY.isNotEmpty()
             SwitchRow(
                 "Smart commands",
