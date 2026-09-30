@@ -15,9 +15,9 @@ public enum Command: Equatable, Sendable {
     case volumeDown
     /// Close the talk and change nothing else (PROTOCOL.md "Commands").
     case end
-    /// The host announces the current track; the talk stays open.
+    /// The host announces the current track, after the talk it ends.
     case nowPlaying
-    /// The host shuffles the upcoming queue; the talk stays open.
+    /// The host shuffles the upcoming queue and announces "Shuffled".
     case shuffle
     case unknown
 
@@ -42,8 +42,8 @@ public enum Command: Equatable, Sendable {
         }
     }
 
-    /// Volume is local: the phone that heard it changes its own volume
-    /// (earcon `ok`) and sends nothing.
+    /// Volume is local: the phone that heard it changes its own media volume
+    /// (earcon `ok`), sends no `command.text`, and ends the talk itself.
     public var isVolume: Bool { self == .volumeUp || self == .volumeDown }
 }
 
@@ -115,6 +115,39 @@ public enum CommandParser {
             return rest.isEmpty ? .unknown : .play(kind: kind, query: rest.joined(separator: " "))
         }
         return phrases[words.joined(separator: " ")] ?? .unknown
+    }
+}
+
+/// What the client does with its one command of a talk (PROTOCOL.md
+/// "Commands", "Effect on the talk: every command ends it"). The host ends
+/// the talk for every command it is sent; volume is never sent, so the client
+/// ends that talk itself, with the `talk.close` a Talk press sends.
+public enum ClientCommand: Equatable, Sendable {
+    /// Change this phone's media volume, then `talk.close{by:"client",
+    /// reason:"trigger"}`.
+    case volume(up: Bool, VolumeTiming)
+    /// `command.text`: the host acts and closes the talk.
+    case send(String)
+
+    public enum VolumeTiming: Equatable, Sendable {
+        /// The app owns the volume (keys armed): its level is the loudness of
+        /// music, talk and cues alike, so it changes at once, the `ok` earcon
+        /// plays on the talk route, which is up, and the close follows it.
+        case inTalk
+        /// The system volume is the volume, and during a talk that is the
+        /// call volume (HFP), not the media one: close first, and step (with
+        /// the earcon) once the session is back on the media route.
+        case afterMediaRoute
+    }
+
+    /// `text`: a command text from `FirstPhraseGate` (so it parses).
+    /// `volumeArmed`: the app level is the volume (`VolumeKeyGate.armed`).
+    public static func route(_ text: String, volumeArmed: Bool) -> ClientCommand {
+        switch CommandParser.parse(text) {
+        case .volumeUp: .volume(up: true, volumeArmed ? .inTalk : .afterMediaRoute)
+        case .volumeDown: .volume(up: false, volumeArmed ? .inTalk : .afterMediaRoute)
+        default: .send(text)
+        }
     }
 }
 

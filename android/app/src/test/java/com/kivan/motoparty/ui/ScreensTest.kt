@@ -31,6 +31,8 @@ import com.kivan.motoparty.music.DownloadProgress
 import com.kivan.motoparty.music.History
 import com.kivan.motoparty.music.RecentSearch
 import com.kivan.motoparty.music.Track
+import com.kivan.motoparty.audio.MicLevel
+import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -93,6 +95,21 @@ class ScreensTest {
         )
     }
 
+    /** Nothing a test put into the two process-wide values leaks into the next one. */
+    @After
+    fun reset() {
+        ArtTints.clear()
+        MicLevel.peak = 0
+    }
+
+    /**
+     * The glow's colour for [art], as the palette would give it for a cover of [cover]: Robolectric
+     * loads no art, and the fake loader's flat colours have no pixels to read.
+     */
+    private fun tint(art: String, cover: Long) = ArtTints.put(art, ambientTint(listOf(cover.toInt()), 0xFF0E1013.toInt()))
+
+    private val longTitle = track(0, "Shine On You Crazy Diamond (Parts I–V) [2011 Remastered Version] – Live at Knebworth", "Pink Floyd")
+
     private fun shoot(
         name: String,
         status: LinkStatus,
@@ -107,6 +124,71 @@ class ScreensTest {
 
     @Test
     fun ridePlaying() = shoot("1-ride-playing", playing, Tab.RIDE)
+
+    /** The cover's colour behind the music: an orange cover here, the strongest case being a light one. */
+    @Test
+    fun rideTinted() {
+        tint("art0", colors[0])
+        shoot("1m-ride-tinted", playing, Tab.RIDE)
+    }
+
+    @Test
+    fun rideTintedBlue() {
+        tint("art0", colors[5])
+        shoot("1n-ride-tinted-blue", playing, Tab.RIDE)
+    }
+
+    /** A yellow cover is the brightest tint there is; the mic-off banner's red has to stay readable on it. */
+    @Test
+    fun rideTintedYellowWithWarnings() {
+        tint("art0", 0xFFFFE600)
+        shoot(
+            "1o-ride-tinted-yellow-warnings",
+            playing.copy(micOff = true, playing = false, musicPhase = MusicPhase.LOADING, error = "Couldn't find pink floid"),
+            Tab.RIDE,
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideTintedLandscape() {
+        tint("art0", colors[0])
+        shoot("1p-ride-tinted-landscape", playing, Tab.RIDE)
+    }
+
+    /** A title far too long for the line: one line, from its start (it scrolls on a phone). */
+    @Test
+    fun rideLongTitle() = shoot("1q-ride-long-title", playing.copy(nowPlaying = longTitle), Tab.RIDE)
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideLongTitleLandscape() = shoot("1r-ride-long-title-landscape", playing.copy(nowPlaying = longTitle), Tab.RIDE)
+
+    @Test
+    fun miniPlayerLongTitle() = shoot("1s-mini-player-long-title", playing.copy(nowPlaying = longTitle), Tab.QUEUE)
+
+    /** A live talk with the rider speaking (-14 dB): the meter in the LIVE pill is about four fifths full. */
+    @Test
+    fun rideTalkLiveMeter() {
+        MicLevel.peak = 6500
+        tint("art0", colors[0])
+        shoot(
+            "1t-ride-talk-live-meter",
+            playing.copy(talkOpen = true, talkLive = true, playing = false, musicPhase = MusicPhase.PAUSED_FOR_TALK, heard = "are you cold"),
+            Tab.RIDE,
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideTalkLiveMeterLandscape() {
+        MicLevel.peak = 1000
+        shoot(
+            "1u-ride-talk-live-meter-landscape",
+            playing.copy(talkOpen = true, talkLive = true, playing = false, musicPhase = MusicPhase.PAUSED_FOR_TALK, heard = "are you cold"),
+            Tab.RIDE,
+        )
+    }
 
     /** The height the Ride tab really gets on the Pixel 8, under the status bar and above the gesture bar. */
     @Test

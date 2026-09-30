@@ -66,17 +66,29 @@ class VoiceSocket(
         return maxOf(clock, afterLast)
     }
 
-    fun sendAudio(ts: Long, payload: ByteArray) {
+    /** Sends the first [length] bytes of [payload]; it is copied, the caller may reuse it. */
+    fun sendAudio(ts: Long, payload: ByteArray, length: Int) {
         lastAudioTs = ts
-        send(VoicePacket.KIND_AUDIO, ts, payload)
+        send(VoicePacket.KIND_AUDIO, ts, payload, length)
     }
 
-    private fun send(kind: Int, ts: Long, payload: ByteArray) {
+    // One buffer and one packet for every send (L8): the capture thread sends 50 a second. The
+    // lock is only ever contended by the keepalive thread, which does not send while audio flows.
+    private val sendBuf = ByteArray(VoicePacket.HEADER + MAX_PAYLOAD)
+    private val sendPacket = DatagramPacket(sendBuf, 0)
+
+    private fun send(kind: Int, ts: Long, payload: ByteArray, length: Int) {
         val to = peer ?: return
         val s = socket ?: return
-        val packet = VoicePacket(kind, seq.getAndIncrement() and 0xffff, ts and 0xffffffffL, payload).encode()
+        if (length > MAX_PAYLOAD) return
         try {
-            s.send(DatagramPacket(packet, packet.size, to))
+            synchronized(sendBuf) {
+                VoicePacket.writeHeader(sendBuf, kind, seq.getAndIncrement() and 0xffff, ts and 0xffffffffL)
+                System.arraycopy(payload, 0, sendBuf, VoicePacket.HEADER, length)
+                sendPacket.setData(sendBuf, 0, VoicePacket.HEADER + length)
+                sendPacket.socketAddress = to
+                s.send(sendPacket)
+            }
             lastSentMs = System.currentTimeMillis()
             packetsOut.incrementAndGet()
         } catch (e: IOException) {
@@ -107,12 +119,15 @@ class VoiceSocket(
     private fun keepaliveLoop() {
         while (running) {
             Thread.sleep(250)
-            if (System.currentTimeMillis() - lastSentMs >= 1000) send(VoicePacket.KIND_KEEPALIVE, currentTs(), ByteArray(0))
+            if (System.currentTimeMillis() - lastSentMs >= 1000) send(VoicePacket.KIND_KEEPALIVE, currentTs(), NO_PAYLOAD, 0)
         }
     }
 
     companion object {
         const val PORT = 47801
+        /** The largest Opus packet. */
+        private const val MAX_PAYLOAD = 1275
+        private val NO_PAYLOAD = ByteArray(0)
         private const val TAG = "VoiceSocket"
     }
 }

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import discovery
-from .commands import TALK_ENDING, UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, FirstPhraseGate, parse_command
+from .commands import UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, FirstPhraseGate, parse_command
 from .music import VALID_ID, TrackInfo, browse, load_library, search
 from .opus import is_voice_activity
 from .protocol import (
@@ -52,7 +52,8 @@ from .voice import VoiceProtocol
 
 HELP = """commands: load | play | pause | stop | talk | mic on|off (refuse talk as unavailable) |
           hostmic on|off (next talks are host-mic talks: talk.open mic:"host") |
-          hear <phrase> (recognised in the talk: first phrase rule, or every phrase solo) |
+          hear <phrase> (recognised in the talk: first phrase rule, or every phrase solo;
+          a command ends the talk) |
           next | previous | queue (every other --track after the current one) |
           announce <text> | state | stats | raw <json> (send unvalidated) | quit"""
 
@@ -781,43 +782,54 @@ class Host:
                 self._command(text, "client")
         elif parse_command(text)["action"] in VOLUME_ACTIONS:
             log(f"local: {parse_command(text)['action']} handled here [earcon ok] "
-                f"(the peer has no real volume)")
+                f"(the peer has no real volume); it ends the talk")
+            self._close_talk("host", "trigger")
         else:
             log(f"hear: command {text!r}")
             self._command(text, "host")
 
     def _command(self, text: str, by: str) -> None:
-        """A command spoken in a talk by `by` (the client's command.text, or the host's own
-        phrase). It has an effect on the talk (PROTOCOL.md "Commands", Effect on the talk):
-        play/resume/end close it (by the side that spoke) as soon as the command parses, and
-        their announce goes after that close; pause/next/previous leave it open and choose
-        what happens after it. The announce goes to the client and the host speaks it too."""
+        """A command spoken by `by` (the client's command.text, or the host's own phrase).
+        PROTOCOL.md "Commands", Effect on the talk: every command that parses ends the talk it
+        was spoken in (closed by the side that spoke), even if it then fails, and its announce,
+        if it has one, goes after that close. It acts on the music the talk paused before the
+        close (pause cancels the resume, next/previous choose what resumes, play replaces it),
+        so the close itself starts the right thing. An unparsed phrase ends nothing. The
+        announce goes to the client and the host speaks it too."""
         cmd = parse_command(text)
         log(f"   parsed: {cmd}")
         a = cmd["action"]
-        if self.talk and a in TALK_ENDING:
-            ok = a == "resume" and self._resume()
-            if a == "play" and self.track is not None:
-                self.resume_after_talk = False  # the new track starts instead of the old one
-            log(f"   {a!r} ends the talk")
-            self._close_talk(by, "trigger")
-            self.media_at = now_ms() + RESUME_LEAD_MS
-            if a == "resume":
-                self.send({"t": "announce", "text": "Resuming" if ok else "Nothing to resume",
-                           "earcon": "ok" if ok else "error"})
-                return
-        if a == "unknown":
+        if a in VOLUME_ACTIONS:
+            # Volume is local: a client that sends a volume utterance is misbehaving
+            # (PROTOCOL.md "Commands": "A host that still receives a volume utterance in
+            # command.text answers 'Didn't catch that'"). Like an unparsed phrase, it ends nothing.
+            log("   volume is local; the client should not have sent this")
+        if a == "unknown" or a in VOLUME_ACTIONS:
             self.send(dict(UNKNOWN_ANNOUNCE))
             return
-        if a == "end":
-            if not self.talk:  # it closed above if it was open
-                log("   (no talk to end)")
-            return
+        reply = self._act(cmd)
+        if self.talk:
+            log(f"   {a!r} ends the talk")
+            self._close_talk(by, "trigger")
+            # whatever starts next waits for the headset to be back in media mode
+            self.media_at = now_ms() + RESUME_LEAD_MS
+        elif a == "end":
+            log("   (no talk to end)")
+        if reply:
+            text, earcon = reply
+            self.send({"t": "announce", "text": text, "earcon": earcon})
+
+    def _act(self, cmd: dict) -> tuple[str, str] | None:
+        """Carry out a parsed command; in a talk, on the music the talk paused. Returns its
+        announce as (text, earcon), or None: a command that succeeds and whose result is the
+        music itself has none (PROTOCOL.md "Commands", Spoken replies)."""
+        a = cmd["action"]
         if a == "play":
             if self.track is None:
-                self.send({"t": "announce", "text": f"No results for {cmd['query']}", "earcon": "error"})
-                return
-            self.send({"t": "announce", "text": f"Playing {self.track.title} by {self.track.artist}", "earcon": "ok"})
+                return f"Couldn't find {cmd['query']}", "error"
+            # the new track starts instead of the one the talk paused, whatever was said before
+            self.resume_after_talk = False
+            self.no_resume = False
             self._start(self.track)
         elif a == "pause":
             if self.talk:
@@ -827,42 +839,32 @@ class Host:
                 self.resume_after_talk = False
             else:
                 ok = self._pause()
-            self.send({"t": "announce", "text": "Paused" if ok else "Nothing is playing", "earcon": "ok" if ok else "error"})
+            if not ok:
+                return "Nothing playing", "error"
         elif a == "resume":
-            ok = self._resume()
-            self.send({"t": "announce", "text": "Resuming" if ok else "Nothing to resume", "earcon": "ok" if ok else "error"})
+            if not self._resume():
+                return "Nothing to resume", "error"
         elif a in ("next", "previous"):
-            # Inside a talk the track loads but stays paused until the talk closes (see
-            # _load_and_play): it chooses what resumes after the talk.
-            pool = self.queue if a == "next" else self.history
-            if not pool:
-                self.send({"t": "announce", "text": "Nothing queued" if a == "next" else "Nothing before this",
-                           "earcon": "error"})
-                return
-            title = pool[0 if a == "next" else -1].title
+            # Inside a talk the track loads paused (see _load_and_play); the close resumes it if
+            # music was playing before the talk.
+            if not (self.queue if a == "next" else self.history):
+                return ("End of queue" if a == "next" else "Nothing before this"), "error"
+            if self.talk and not (self.resume_after_talk or self._loading()):
+                self.no_resume = True  # paused before the talk: stays paused on the new track
             self._music_control(a)
-            self.send({"t": "announce", "text": f"{'Next' if a == 'next' else 'Back to'}: {title}", "earcon": "ok"})
         elif a == "nowplaying":
             t = self.track if self._has_current() else None
             if t is None:
-                self.send({"t": "announce", "text": "Nothing playing", "earcon": "error"})
-            else:
-                text = f"{t.title} by {t.artist}" if t.artist else t.title
-                self.send({"t": "announce", "text": text, "earcon": "ok"})
+                return "Nothing playing", "error"
+            return (f"{t.title} by {t.artist}" if t.artist else t.title), "ok"
         elif a == "shuffle":
             # the upcoming queue only; the current track stays (PROTOCOL.md "Commands")
             if len(self.queue) < 2:
-                self.send({"t": "announce", "text": "Nothing to shuffle", "earcon": "error"})
-                return
+                return "Nothing to shuffle", "error"
             random.shuffle(self.queue)
             self.send_state()
-            self.send({"t": "announce", "text": "Shuffled", "earcon": "ok"})
-        elif a in VOLUME_ACTIONS:
-            # Volume is local: a client that sends a volume utterance is misbehaving
-            # (PROTOCOL.md "Commands": "A host that still receives a volume utterance in
-            # command.text answers 'Didn't catch that'").
-            log("   volume is local; the client should not have sent this")
-            self.send(dict(UNKNOWN_ANNOUNCE))
+            return "Shuffled", "ok"
+        return None  # `end` does nothing but end the talk
 
     # ------------------------------------------------------------------ stdin
 

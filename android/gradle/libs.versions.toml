@@ -16,6 +16,8 @@ desugar = "2.1.5"
 junit = "4.13.2"
 # Cover art (2026-09-29).
 coil = "3.6.3"
+# Ambient colour from the cover art (2026-09-30). 1.0.0 is the latest stable; 1.1.0-alpha01 exists.
+palette = "1.0.0"
 # Screenshot tests on the JVM (2026-09-29): Robolectric draws Compose, Roborazzi saves PNGs.
 robolectric = "4.17"
 roborazzi = "1.76.0"
@@ -44,6 +46,7 @@ desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs_nio",
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
 coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
+androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 coil-test = { group = "io.coil-kt.coil3", name = "coil-test", version.ref = "coil" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }

@@ -6,9 +6,12 @@ The wire protocol is [`../PROTOCOL.md`](../PROTOCOL.md). The shared test vectors
 [`../fixtures`](../fixtures).
 
 ```
-Package.swift            one automatic library product "Motoparty" = the app (xtool convention)
+Package.swift            two automatic library products (xtool convention): "Motoparty" = the app,
+                         "MotopartyWidgets" = its widget extension (the Live Activity)
 xtool.yml, Info.plist    bundle ID + Info.plist keys merged by xtool (background audio, mic,
-                         local network/Bonjour, speech, ATS local networking, persistent Wi-Fi)
+                         local network/Bonjour, speech, ATS local networking, persistent Wi-Fi,
+                         NSSupportsLiveActivities); `extensions:` names the widget extension
+MotopartyWidgets-Info.plist  the extension's Info.plist keys (com.apple.widgetkit-extension)
 Sources/COpus/           libopus 1.5.2, portable float build (vendored; see below)
 Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            Messages (all control messages, Codable), Framing (u32, 64 KiB cap),
@@ -37,6 +40,8 @@ Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK
   UI/                      SwiftUI tabs: Ride (link pill, now playing + transport, TALK),
                            Search (songs/albums/playlists, album detail), Queue; Settings sheet
   AppModel.swift           ties it together (talk / music flows, commands inside talk)
+Sources/MotopartyActivity/ `MotopartyActivityAttributes` (ActivityKit), linked by the app and the extension
+Sources/MotopartyWidgets/  the widget extension: the Live Activity's lock-screen and Dynamic Island views
 Tests/MotopartyCoreTests/ XCTest: every fixture file, jitter buffer, Opus round trip + FEC
 scripts/fetch-opus.sh    re-vendors libopus (verifies SHA-256)
 ```
@@ -108,7 +113,7 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 142 tests: fixtures, command parser + first-phrase gate, app volume +
+swift test            # 223 tests: fixtures, command parser + first-phrase gate, app volume +
                       # volume-key gate, talk mode (host-mic), music status line,
                       # search history, jitter buffer, Opus, drift controller
 ```
@@ -171,7 +176,12 @@ Opus prints "compiling without optimization" in debug builds. That is expected. 
 
 6. **Free-account limits:** the profile expires after **7 days**, so re-run `xtool dev` (or
    `xtool dev -c release`) before each ride. Free accounts allow at most 3 sideloaded apps and 10
-   App IDs per week.
+   App IDs per week. Since 2026-09-30 the bundle holds a widget extension
+   (`PlugIns/MotopartyWidgets.appex`, for the Live Activity): xtool registers a second App ID
+   and profile for it (`…motoparty.MotopartyWidgets`), so an install uses 2 of the 10 App IDs,
+   and, as far as known (AltStore's description of the limit; not tried here), 2 of the 3
+   app slots, because iOS counts extensions. If the install is refused for that, delete the
+   `extensions:` block in `xtool.yml`: the app runs the same without the Live Activity.
 
 ### Testing without the Pixel
 
@@ -409,16 +419,37 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   from the earcon) the transcriber is stopped for the rest of the talk, which is logged as
   `first phrase spent: recognition off for this talk`. Every phrase is logged as
   `heard: "<text>" (command|conversation)`. A command's text (normalised, fillers kept: the
-  parser drops them) goes through `CommandParser`: volume is handled here (below); everything
-  else, `end` ("over", "end talk", "hang up"), `nowplaying` ("what's playing") and `shuffle`
-  (2026-09-30, answered with `announce`, talk stays open) included, is sent as
-  `command.text{text, lang}` and the host decides what it does to the talk (`play`, `resume`
-  and `end` close it with the usual `talk.close`). The host also enforces the rule: it acts
-  only on the first `command.text` of a talk the client opened.
+  parser drops them) goes through `ClientCommand.route` (MotopartyCore, on top of
+  `CommandParser`): volume is handled here (below); everything else, `end` ("over", "end
+  talk", "hang up"), `nowplaying` ("what's playing") and `shuffle` included, is sent as
+  `command.text{text, lang}`. The host also enforces the rule: it acts only on the first
+  `command.text` of a talk the client opened.
+- **Every command ends the talk** (2026-09-30, PROTOCOL.md "Effect on the talk"). For a
+  `command.text` the host closes it with the usual `talk.close` as soon as the command parses,
+  also when it then fails; nothing changed here for that (`closeTalkLocally`: end earcon on
+  the talk route, media route 0.22 s later, music on the host's `music.play`). A volume
+  command is never sent, so this phone ends that talk itself with the `talk.close{by:"client",
+  reason:"trigger"}` a TALK press sends (`requestTalkClose`), and tears down when the host's
+  `talk.close` comes back, like any close. Normally (keys armed) the app level steps at once
+  and the `ok` earcon plays on the talk route, which is up; the close is asked for
+  `okCueHold` = 0.12 s later, so the end earcon follows the `ok` instead of covering it (a
+  talk that closed in between cancels it). The Ride hint says "it is done and the talk ends".
+- **Spoken replies only when there is nothing else to hear** (2026-09-30). The host no longer
+  sends `announce` for a successful `play`/`resume`/`next`/`previous`/`pause` (no "Playing …").
+  Nothing here waited for one: `announce` only sets the Ride line (gone after 6 s by its own
+  timer), plays its earcon and speaks; "Heard: …" expires by its own timer too; the music
+  status line and the lock screen follow `music.*` and `state`. Failures, `nowplaying` and
+  `shuffle` still arrive as `announce`, after the host's `talk.close`, and are spoken on the
+  media session (they may start in the A2DP switch gap: device check below).
 - **Volume is local** (PROTOCOL.md "Commands"): `MotopartyCore.CommandParser` runs on this
   phone's own command before anything is sent, and `volume up`/`louder`/`volume down`/
-  `quieter` change *this* phone's volume with the `ok` earcon and no `command.text`. Everything
-  else goes to the host unchanged. `music.control` has no volume actions any more (one on the
+  `quieter` change *this* phone's **media** volume with the `ok` earcon and no `command.text`,
+  and the talk is then closed from here (above). While the link is up that is the app level,
+  the one loudness of music, talk and cues, so it is changed during the talk. Should the keys
+  be disarmed during a talk (the arming gap after a reconnect), the system volume is the
+  volume and in a talk that is the HFP call volume, so the step and its earcon wait for the
+  media route (`ClientCommand.VolumeTiming.afterMediaRoute`, applied in `restoreMediaRoute`).
+  Everything else goes to the host unchanged. `music.control` has no volume actions any more (one on the
   wire is a malformed message and is dropped). While the link is up the command is one app
   volume level (below), like a key press; while it is down it is one system step (1/16), as
   before. iOS has no public system-volume setter, so `LocalVolume` writes the hidden `UISlider`
@@ -709,8 +740,19 @@ them:
     `proto` 2 (or one answering `bye proto`): one `protocol mismatch` / `not a host (proto 2)`
     line, the red text on the Ride screen, no further probes of it in the log; Reconnect probes
     it once more.
+- **2026-09-30, every command ends the talk / fewer spoken replies** (not run on a phone):
+  - "louder" / "quieter" as the first phrase of a talk opened here: `heard: "louder" (command)`,
+    `volume key: command up → level <l>`, the `ok` blip, then the end earcon (two distinct
+    cues, not one smeared), the talk closes on both phones and music that was playing resumes
+    at the new level. Is 0.12 s enough for the `ok` to be heard whole over HFP?
+  - "next" with music playing before the talk: the talk closes by itself and the next track
+    plays; "pause": the talk closes and the music stays paused; "play <song>": no spoken
+    "Playing …" on either phone, the closing earcon and the music only.
+  - "what's playing" / "shuffle": the talk closes, then the reply is spoken. Is its first word
+    lost in the ~1 s the buds take to bring A2DP back? A failure ("play <nonsense>"): the talk
+    closes, the error earcon and "Couldn't find …" are heard, music that was playing resumes.
 - **2026-09-30 additions:** "what's playing" and "shuffle" as the first phrase are recognised
-  and the host's `announce` is spoken in the talk; tapping a song (or a recently played track)
+  and the host's `announce` is spoken (after the talk, which every command now ends); tapping a song (or a recently played track)
   during a talk closes the talk (end earcon, back to media mode) and the song starts; the
   Ride screen with the command list still fits without scrolling on the real iPhone; history
   survives an app restart.
@@ -743,13 +785,37 @@ them:
   - Settings: languages by name; "Music sync offset" with its footer; Diagnostics folded.
   - Open, unchanged: the 5 s unanswered-TALK timeout plays the error earcon; Play while the
     music is held for "headset gone" plays on the speaker.
+- **2026-09-30 tab accessory and Live Activity (built on Linux only, nothing seen on a
+  phone; the first install with the extension is itself the first check).**
+  - Install: `xtool dev -c release` signs the app and `PlugIns/MotopartyWidgets.appex` (a
+    second App ID; see "Free-account limits"). If it is refused, note the error.
+  - Mini player, iOS 26.1 or later: on Search and Queue it is the glass capsule above the
+    tab bar (cover, title, artist, play/pause, the LIVE / Connecting… chip in a talk), and
+    there is no second bar below the list; not on Ride; gone with neither track nor talk;
+    a tap opens Ride; the last list row is not covered; largest text size still fits the
+    capsule. iOS 17 to 26.0: the bar as before.
+  - Live Activity: open the app and let it link, then lock the phone: "Motoparty ·
+    Connected to <Pixel>" on the lock screen; start music from the Pixel with the iPhone
+    locked: title and artist, the playing / paused glyph follows; a talk: "Connecting…",
+    then "Talking with <Pixel>" with a running clock, and back to the track at its end; a
+    link loss with nothing playing: "Looking for <Pixel>…". On a phone with a Dynamic
+    Island: the glyph left, clock or glyph right, the expanded view on a long press. The
+    log has `live activity: started` once and no line per state message.
+  - Swipe it away on the lock screen: it stays away until the app is opened again. Quit
+    the app from the switcher: the activity goes (if it stays, it goes at the next launch:
+    `live activity: ending 1 left over`). Settings → Motoparty → Live Activities off:
+    nothing shows and nothing else changes.
+  - Music that starts before the app was ever linked in front (app launched, never linked,
+    phone locked) has no activity until the app is next opened: ActivityKit only starts one
+    in the foreground.
 - The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
   the AirPods A2DP ↔ HFP switch time.
 
 ## 2026-09-30 audit round 3 (UI/UX)
 
-Built and unit-tested on Linux only (`swift test` 211, `xtool dev build -c release` clean);
-the device checklist is under "What only a real iPhone can answer".
+Built and unit-tested on Linux only (`swift test` 211, then 222 with the Live Activity;
+`xtool dev build -c release` clean); the device checklist is under "What only a real iPhone
+can answer".
 
 - **Decisions live in `MotopartyCore/UIModel.swift`** (tested in `UIModelTests`): `TalkPhase`
   (TALK / Connecting… / END TALK and the caption), `LinkWording` ("Looking for <Pixel>…"),
@@ -771,6 +837,31 @@ the device checklist is under "What only a real iPhone can answer".
   `music.load` / `music.play`, "Talking with <Pixel>" during a talk.
 - **Images:** `UI/Artwork.swift` `ArtLoader` (one memory + disk cache for rows, the card and the
   lock screen), sized requests (144 / 288 / 544 px), fade-in.
-- **Not done:** the iOS 26 `.tabViewBottomAccessory` (the mini player is a `.safeAreaInset`
-  on every iOS), `.searchSuggestions` (the history list under the empty field does that job),
-  Live Activity (out of scope).
+- **Mini player as the tab accessory (added later the same day, device-unverified).** On
+  iOS 26.1+ `ContentView` puts `MiniPlayer` into `.tabViewBottomAccessory(isEnabled:)`
+  (enabled on Search and Queue while there is a track or a talk, the old conditions) and
+  the per-tab `.safeAreaInset` is left out, so it is never there twice; iOS 17 to 26.0 keep
+  the inset bar. 26.1 rather than 26.0: the iOS 26.5 SDK declares the plain
+  `tabViewBottomAccessory(content:)` for 26.0 and only the `isEnabled:` form (26.1) can hide
+  the capsule. `MiniPlayer.Style` drops the bar's own background in the accessory, and in
+  `tabViewBottomAccessoryPlacement == .inline` also the artist line and the chip's word
+  (the tab bar is not set to minimise, so `.inline` is not expected today).
+- **Live Activity (added later the same day, device-unverified).** Display only: track and
+  artist with playing / paused, "Connecting…" / "Talking with <Pixel>" with the talk's clock,
+  or "Connected to <Pixel>" / "Looking for <Pixel>…" with nothing playing. No cover (the
+  extension cannot read the app's cache without an app group) and no buttons (an interactive
+  Talk button needs App Intents metadata that Xcode generates).
+  - `MotopartyCore/LiveActivity.swift` (tested in `LiveActivityTests`): `LiveActivityState`
+    (the content, finished lines) and `LiveActivityTracker` (start / update / end / nothing;
+    equal states send nothing; a start only when the app is in front and activities are
+    allowed; swiped away = stays away until the app is opened).
+  - `Music/LiveActivity.swift` `LiveActivityController` makes the ActivityKit calls, in
+    order; `AppModel.updateLiveActivity()` feeds it from `updateNowPlaying()`, the link's
+    `didSet` and the live cue. The activity exists from the first link on (not only with a
+    track), because it can only be started in the foreground and music usually starts with
+    the phone in a pocket. Leftovers of a killed run are ended at launch, the running one at
+    `willTerminate`. With Live Activities off in Settings nothing is asked.
+  - The extension: product `MotopartyWidgets` (`Package.swift`), `extensions:` in `xtool.yml`,
+    `MotopartyWidgets-Info.plist`; xtool 1.19.2 links it with `-e _NSExtensionMain` and
+    bundles `PlugIns/MotopartyWidgets.appex`, bundle ID `com.vaknin.motoparty.MotopartyWidgets`.
+- **Not done:** `.searchSuggestions` (the history list under the empty field does that job).

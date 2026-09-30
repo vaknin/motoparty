@@ -189,7 +189,7 @@ private struct VoiceCommands: View {
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Press TALK and say one of these first. After that it's just talk.")
+                Text("Press TALK and say one of these first: it is done and the talk ends. Anything else is just talk.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -206,9 +206,92 @@ def test_shuffle_keeps_the_current_track(host):
     assert [q["id"] for q in last_state(host)["queue"]] == ids(host.queue)
 
 
-@pytest.mark.parametrize("phrase", ["what's playing", "shuffle"])
-def test_nowplaying_and_shuffle_keep_the_talk_open(host, phrase):
+CLIENT_CLOSE = {"t": "talk.close", "by": "client", "reason": "trigger"}
+
+
+def after_close(h):
+    """What was sent after the talk.close, without the states."""
+    i = h.sent.index(CLIENT_CLOSE)
+    return [m for m in h.sent[i + 1:] if m["t"] != "state"]
+
+
+@pytest.mark.parametrize("phrase, reply", [("what's playing", "Alpha by Band"), ("shuffle", "Shuffled")])
+def test_nowplaying_and_shuffle_end_the_talk_then_announce(host, phrase, reply):
     enq(host, "now", "a1", "a2", "b1")
+    host.music["playing"] = False  # as the talk froze it
+    open_talk(host)
+    host.sent.clear()
+    host._command(phrase, "client")
+    assert not host.talk and talk_closes(host) == [CLIENT_CLOSE]
+    # the music that was playing resumes, and the reply is spoken after the switch
+    assert [m["t"] for m in after_close(host)] == ["music.play", "announce"]
+    assert after_close(host)[0]["id"] == "a1"
+    assert after_close(host)[1] == {"t": "announce", "text": reply, "earcon": "ok"}
+    assert announces(host) == [(reply, "ok")]  # nothing before the close either
+
+
+@pytest.mark.parametrize("phrase", ["next", "previous", "pause", "resume", "play anything", "over"])
+def test_a_command_whose_result_is_the_music_ends_the_talk_without_an_announce(host, phrase):
+    enq(host, "now", "a1", "a2", "b1")
+    host._music_control("next")  # a2 current, a1 behind it, b1 ahead
+    host.music["playing"] = False  # as the talk froze it
+    open_talk(host)
+    host.sent.clear()
+    host._command(phrase, "client")
+    assert not host.talk and talk_closes(host) == [CLIENT_CLOSE]
+    assert announces(host) == []
+    assert host.media_at > 0
+
+
+@pytest.mark.parametrize("phrase", ["next", "previous", "pause", "resume", "play anything"])
+def test_a_successful_command_outside_a_talk_has_no_announce(host, phrase):
+    enq(host, "now", "a1", "a2", "b1")
+    host._music_control("next")
+    if phrase == "resume":
+        host.music["playing"] = False
+    host.sent.clear()
+    host._command(phrase, "client")
+    assert announces(host) == [] and not talk_closes(host)
+
+
+@pytest.mark.parametrize("phrase, reply", [
+    ("next", "End of queue"), ("previous", "Nothing before this"), ("pause", "Nothing playing"),
+    ("resume", "Nothing to resume"), ("shuffle", "Nothing to shuffle"), ("what's playing", "Nothing playing"),
+    ("play anything", "Couldn't find anything"),
+])
+def test_a_failing_command_ends_the_talk_and_the_error_follows_the_close(host, phrase, reply):
+    host.talk, host.talk_by = True, "client"  # nothing loaded, nothing queued
+    host._command(phrase, "client")
+    assert not host.talk and talk_closes(host) == [CLIENT_CLOSE]
+    assert after_close(host) == [{"t": "announce", "text": reply, "earcon": "error"}]
+    assert announces(host) == [(reply, "error")]
+
+
+@pytest.mark.parametrize("phrase", ["what a view", "volume up"])
+def test_an_unparsed_phrase_or_a_stray_volume_utterance_ends_nothing(host, phrase):
+    enq(host, "now", "a1")
     open_talk(host)
     host._command(phrase, "client")
     assert host.talk and not talk_closes(host)
+    assert announces(host) == [("Didn't catch that", "error")]
+
+
+@pytest.mark.parametrize("playing_before, held", [(True, False), (False, True)])
+def test_next_in_a_talk_resumes_only_music_that_was_playing_before_it(host, playing_before, held):
+    """The new track is still loading when the talk closes: it starts by itself once ready,
+    unless the music was paused before the talk (then it stays paused on the new track)."""
+    enq(host, "now", "a1", "a2")
+    host.music["playing"] = False
+    host.talk, host.talk_by, host.resume_after_talk = True, "client", playing_before
+    real_start = host._start
+
+    def start(t):
+        real_start(t)
+        host._loading = lambda: True
+
+    host._start = start
+    host.sent.clear()
+    host._command("next", "client")
+    assert not host.talk and host.started[-1] == "a2"
+    assert host.no_resume is held
+    assert after_close(host) == []  # the old track does not resume in between; no announce

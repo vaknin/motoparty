@@ -2,6 +2,7 @@ package com.kivan.motoparty.ui
 
 import android.os.SystemClock
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -285,10 +286,11 @@ fun MiniPlayer(
                 Column(Modifier.weight(1f)) {
                     Text(
                         track.title,
+                        // Scrolls when it does not fit, like the title on the Ride tab.
+                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         track.artist,

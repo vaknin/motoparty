@@ -9,13 +9,11 @@ data class CommandEffect(
     /** Close the talk as soon as the command parses, with this `talk.close.by`; null = leave it. */
     val closeBy: String?,
     val reply: Reply,
-    /** A volume command changes the call stream (what the rider hears in a talk), not media. */
-    val callVolume: Boolean = false,
 ) {
     enum class Reply {
         /** No talk: the media route, as before (F9b's MediaCue decides when). */
         MEDIA,
-        /** Spoken in the talk, on the call route, now. */
+        /** Spoken in the talk, on the call route, now (only "Didn't catch that"). */
         CALL,
         /** After the talk this command closed is torn down and the headset is back in media mode. */
         AFTER_CLOSE,
@@ -31,17 +29,19 @@ data class CommandEffect(
                 // "end" with no talk has nothing to end; everything else is as it always was.
                 return CommandEffect(null, if (cmd == Command.End) Reply.NONE else Reply.MEDIA)
             }
+            // Every command ends the talk it is spoken in: it was opened to give that command.
+            // Music cannot play in a talk, so the music and any reply wait for the headset to come
+            // back to media mode.
             return when (cmd) {
-                // Music cannot play in a talk: these end it, and the music and the reply wait for
-                // the headset to come back to media mode (the old command path spoke across it).
-                is Command.Play, Command.Resume -> CommandEffect(by, Reply.AFTER_CLOSE)
+                is Command.Play, Command.Resume, Command.Pause, Command.Next, Command.Previous,
+                Command.NowPlaying, Command.Shuffle -> CommandEffect(by, Reply.AFTER_CLOSE)
                 Command.End -> CommandEffect(by, Reply.NONE)
-                // The talk stays open; pause cancels the resume after it, next/previous pick what
-                // resumes; nowplaying and shuffle only speak or reorder. Volume is local: only the
-                // rider's own changes the call stream.
-                Command.Pause, Command.Next, Command.Previous, Command.NowPlaying, Command.Shuffle, Command.Unknown ->
-                    CommandEffect(null, Reply.CALL)
-                Command.VolumeUp, Command.VolumeDown -> CommandEffect(null, Reply.CALL, callVolume = !fromClient)
+                // Volume is local: the rider's own changes this phone's media volume after the
+                // close; one from the client should never have been sent and counts as unparsed.
+                Command.VolumeUp, Command.VolumeDown ->
+                    if (fromClient) CommandEffect(null, Reply.CALL) else CommandEffect(by, Reply.AFTER_CLOSE)
+                // Not a command: nothing ends (solo: "Didn't catch that", spoken in the talk).
+                Command.Unknown -> CommandEffect(null, Reply.CALL)
             }
         }
     }

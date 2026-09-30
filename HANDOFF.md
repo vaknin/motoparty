@@ -39,6 +39,13 @@ user approved implementing it, in rounds or in parallel. **State on 2026-09-30, 
   app can be driven from `tools/peer` (`search songs …`, `enqueue now <n>`). Still open: checks
   that need the screen (`android/HANDOFF.md` "Audit round 3"), the iPhone (not installed; the new
   MP4 layout is unplayed by AVPlayer), L8 leftovers.
+- 2026-09-30, last: the audit leftovers (L8, ambient tint, marquee, mic meter, iOS tab accessory,
+  Live Activity) and the user's new command rules (every command ends the talk; no spoken reply
+  when the music is the reply) are in, uncommitted; numbers and what was seen on the Pixel are in
+  `AUDIT.md` Status "Leftovers done" and "Command rules changed". Reports:
+  `~/.cache/claude-handoff/motoparty-leftovers/`. Open: on-screen checks on the Pixel, everything
+  on the iPhone (incl. whether the widget extension installs on the free account), two
+  timing-flaky Android tests, and iOS announces arriving during the route switch may be clipped.
 - The Pixel is reachable over wireless adb (user's go-ahead 2026-09-30; read
   `~/.config/system-notes.md` "adb over Wi-Fi" first). Next: install the debug build and run the
   solo checks of `android/HANDOFF.md` "Audit round 1/2". The iPhone install is on hold (user).

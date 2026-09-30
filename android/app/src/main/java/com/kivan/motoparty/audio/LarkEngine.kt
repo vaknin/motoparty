@@ -17,6 +17,7 @@ import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import com.kivan.motoparty.core.VoicePacket
+import com.kivan.motoparty.core.VoiceSend
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -52,7 +53,7 @@ import kotlin.concurrent.thread
  */
 class LarkEngine(
     private val context: Context,
-    private val send: (ts: Long, payload: ByteArray) -> Unit,
+    private val send: VoiceSend,
     /** The sender's running 16 kHz clock, shared with [VoiceEngine] (PROTOCOL.md "Voice"). */
     private val clockTs: () -> Long,
     /** First frame read; once per [start], from the capture thread. Must not block (the host hops to Main). */
@@ -116,6 +117,7 @@ class LarkEngine(
         captureUpAtMs = null
         clientAudio.set(0)
         clientAudioLogged.set(false)
+        MicLevel.peak = 0
         val s = Session(onFailed)
         session.set(s)
         // L9: a host-mic talk's "live" beep plays on the media route; see VoiceEngine.start.
@@ -249,6 +251,8 @@ class LarkEngine(
                 val tee = tee
                 pipeline.process(raw, passengerDown16 = passengerAsr && tee != null)
                 tee?.offer(if (passengerAsr) pipeline.passenger16 else pipeline.rider16)
+                // The rider's own channel, as it is sent: the Ride tab's meter reads it.
+                MicLevel.peak = MicLevel.peakOf(pipeline.rider16)
                 // The passenger into the rider's ears: never wait for the output, and never write
                 // part of a chunk (L4: the head of one followed by the next is a click). The play
                 // position is read from memory shared with the mixer, no binder call.
@@ -301,9 +305,9 @@ class LarkEngine(
                     // Binder calls: on the routing thread, never on this one.
                     routeHandler.post { runCatching { log(routedLine(am, record, out, preferred)) } }
                 }
-                val packet = enc.encode(pipeline.rider16)
-                if (!enc.inDtx && packet.size > 2) {
-                    send(ts, packet)
+                val packetLen = enc.encode(pipeline.rider16)
+                if (!enc.inDtx && packetLen > 2) {
+                    send.send(ts, enc.packet, packetLen)
                     framesSent++
                 }
                 ts = (ts + VoicePacket.FRAME_SAMPLES) and 0xffffffffL
@@ -318,6 +322,7 @@ class LarkEngine(
             if (startedAtMs != 0L) playbackLine?.let { line -> runCatching(line).onSuccess(log) }
             track?.let { runCatching { it.stop() }; it.release() }
             encoder?.close()
+            MicLevel.peak = 0
             if (startedAtMs != 0L) {
                 log(levels.line(LarkPipeline.RATE_IN, framesSent, framesPlayed, framesDropped, clientAudio.get()))
                 levels.silentLines(LarkPipeline.RATE_IN, cfg.swap).forEach(log)

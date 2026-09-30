@@ -21,13 +21,14 @@ class OpusEncoder : AutoCloseable {
     private var handle = Opus.encoderCreate(RATE, 1, BITRATE, LOSS_PERCENT).also {
         check(it != 0L) { "opus_encoder_create failed" }
     }
-    private val out = ByteArray(1275)
+    /** The last encoded packet: the first bytes of it, as many as [encode] returned. Reused. */
+    val packet = ByteArray(MAX_PACKET)
 
-    /** Returns the packet (1-2 bytes means "nothing to send" under DTX). */
-    fun encode(pcm: ShortArray): ByteArray {
-        val n = Opus.encode(handle, pcm, pcm.size, out)
+    /** Encodes into [packet] and returns its length (1-2 bytes means "nothing to send" under DTX). */
+    fun encode(pcm: ShortArray): Int {
+        val n = Opus.encode(handle, pcm, pcm.size, packet)
         check(n >= 0) { "opus_encode failed: $n" }
-        return out.copyOf(n)
+        return n
     }
 
     val inDtx: Boolean get() = Opus.encoderInDtx(handle) != 0
@@ -41,6 +42,8 @@ class OpusEncoder : AutoCloseable {
         const val RATE = 16_000
         const val BITRATE = 24_000
         const val LOSS_PERCENT = 10
+        /** The largest Opus packet there is. */
+        const val MAX_PACKET = 1275
     }
 }
 

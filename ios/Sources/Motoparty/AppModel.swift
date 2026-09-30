@@ -54,7 +54,11 @@ final class AppModel: ObservableObject {
         // The app owns the volume keys while connected (2026-09-29): a press
         // is an app volume step, a hold of volume up toggles talk. They stay
         // armed through a short link loss (`VolumeKeyArming`, audit H9).
-        didSet { updateVolumeKeyArming() }
+        didSet {
+            updateVolumeKeyArming()
+            if link.isConnected { everLinked = true }
+            updateLiveActivity()
+        }
     }
     @Published private(set) var talkOpen = false
     /// The open talk's "live" earcon has played: its microphone (host-mic:
@@ -138,6 +142,11 @@ final class AppModel: ObservableObject {
         self?.outputDelay() ?? OutputDelay(outputLatencyMs: 0, trimMs: 0, compensate: false)
     }
     private let nowPlayingCenter = NowPlaying()
+    /// The Live Activity (lock screen, Dynamic Island): display only.
+    private let liveActivity = LiveActivityController()
+    /// Linked at least once since the app started: from then on the Live
+    /// Activity is up, also with nothing playing.
+    private var everLinked = false
     /// Speech recognition on the talk's own mic (PROTOCOL.md "Commands").
     private let transcriber = Transcriber()
     /// The first-phrase gate of a talk this phone opened, from its live
@@ -194,6 +203,10 @@ final class AppModel: ObservableObject {
     private var armingTimer: Timer?
     private var talkRequestedAtMs: Double = 0
     private var talkRequestTimer: Timer?
+    /// A spoken volume command's close of its talk, waiting for the `ok` earcon.
+    private var volumeClose: DispatchWorkItem?
+    /// A spoken volume command that waits for the media route (`ClientCommand`).
+    private var mediaVolumeStep: Bool?
     /// The address of the current or last link, probed first after a link
     /// loss (PROTOCOL.md "Discovery" step 5), and when that link came up.
     private var lastLinkedAddress: String?
@@ -699,6 +712,17 @@ final class AppModel: ObservableObject {
         nowPlayingCenter.update(LockScreenInfo(track: track, art: art, talking: talkOpen, riderName: hostName,
                                                positionMs: trackPositionMs() ?? 0,
                                                playing: musicPlaying && !musicHeldForRoute))
+        updateLiveActivity()
+    }
+
+    /// Called on every change of what it shows; the controller only tells
+    /// ActivityKit about a state that differs from the one that is up.
+    private func updateLiveActivity() {
+        let linked: LiveActivityState.Link = link.isConnected ? .linked : everLinked && link != .idle ? .lost : .none
+        liveActivity.show(LiveActivityState(track: nowPlaying, playing: musicPlaying && !musicHeldForRoute,
+                                            talkOpen: talkOpen, talkLive: talkLive, talkLiveSince: talkLiveSince,
+                                            riderName: link.isConnected ? hostName : lastHostName ?? "",
+                                            link: linked))
     }
 
     /// Where the current track is on the host's timeline; nil with no track.
@@ -910,6 +934,7 @@ final class AppModel: ObservableObject {
         earcons.play("live")
         talkLive = true
         talkLiveSince = Date()
+        updateLiveActivity()
         clearProblem(on: .talkOpened)
         startRecognition()
     }
@@ -965,6 +990,8 @@ final class AppModel: ObservableObject {
     private func closeTalkLocally(cue: Bool = true) {
         talkRequested = false
         talkOpener = nil
+        volumeClose?.cancel()
+        volumeClose = nil
         guard talkOpen else { return }
         let ownMic = talkMode == .ownMic
         talkOpen = false
@@ -1003,6 +1030,11 @@ final class AppModel: ObservableObject {
         volumeKey.settle()
         do { try session.activate(.media) } catch {
             Log.audio.error("media route failed: \(error.localizedDescription, privacy: .public)")
+        }
+        if let up = mediaVolumeStep {
+            // A volume command spoken while disarmed: the media volume now.
+            mediaVolumeStep = nil
+            earcons.play(volumeKey.step(up: up) ? "ok" : "error")
         }
         keepAlive.start()
         noteAudioRoute()
@@ -1053,17 +1085,30 @@ final class AppModel: ObservableObject {
         stopRecognition()
     }
 
-    /// Volume is local (PROTOCOL.md "Commands"): the same parser the host runs
-    /// decides, and a volume result never leaves this phone. Everything else,
-    /// `end` included, goes to the host, which decides what it does to the
-    /// talk (play/resume/end close it with the usual talk.close).
+    /// The `ok` earcon (100 ms) of a spoken volume command plays on the talk
+    /// route before the close is asked for, so the "end" earcon follows it.
+    private static let okCueHold: TimeInterval = 0.12
+
+    /// Every command ends the talk (PROTOCOL.md "Commands"). The host does it
+    /// for what it is sent. Volume is local: the same parser the host runs
+    /// decides, a volume result never leaves this phone, and this phone then
+    /// closes the talk itself, as a TALK press would.
     private func runCommand(_ text: String) {
-        switch CommandParser.parse(text) {
-        case .volumeUp:
-            earcons.play(volumeKey.step(up: true) ? "ok" : "error")
-        case .volumeDown:
-            earcons.play(volumeKey.step(up: false) ? "ok" : "error")
-        default:
+        switch ClientCommand.route(text, volumeArmed: volumeKey.isArmed) {
+        case .volume(let up, .inTalk):
+            // The app level: what music plays at as much as the talk.
+            earcons.play(volumeKey.step(up: up) ? "ok" : "error")
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.volumeClose = nil
+                if self.talkOpen { self.requestTalkClose() }
+            }
+            volumeClose = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.okCueHold, execute: work)
+        case .volume(let up, .afterMediaRoute):
+            mediaVolumeStep = up
+            requestTalkClose()
+        case .send(let text):
             send(.commandText(CommandText(text: text, lang: settings.speechLanguage)))
         }
     }

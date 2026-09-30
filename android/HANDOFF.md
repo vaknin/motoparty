@@ -1169,6 +1169,54 @@ been played by AVPlayer yet.
    play (Rhino + extractor under R8), settings/history, a talk both ways, cover art.
 9. L9: `Earcons: live routed to … (prepared)` in logcat; beep audible on AirPods.
 
+### Audit leftovers (2026-09-30) — ambient colour, marquee title, mic meter
+
+The three UI items round 3 skipped (audit "UI improvements" 1 and 7). Built offline,
+**device-unverified** (477 tests / 0 fail / 5 skipped, lint 0 errors, `assembleRelease` builds).
+Report: `~/.cache/claude-handoff/motoparty-leftovers/android-ui.md`.
+
+- **Ambient colour** (`ui/Ambient.kt`): the Ride tab draws a vertical glow of the cover's colour
+  behind everything (nothing at the top, strongest at 30 % of the height, gone by 85 %, so TALK
+  and the tab bar stay on the plain surface). `ArtTints.load` asks Coil 3 for the cover at 96 px
+  with `allowHardware(false)`, reads `androidx.palette` (palette-ktx 1.0.0, the one new
+  dependency) on `Dispatchers.Default`, and remembers the answer per art URL (64 entries; a
+  failed load is not remembered). The rule is the pure `ambientTint` (`AmbientTest`): first
+  non-grey swatch of vibrant / dark vibrant / light vibrant / muted / dark muted / light muted /
+  dominant; saturation ≤ 0.70, lightness 0.30–0.50; then darkened until 25 % of it over the
+  surface has a relative luminance ≤ 0.024 (secondary text ≥ 7:1, warning red ≥ 3.5:1 for every
+  cover colour). No art, loading, error, grey cover: plain surface. A track change fades the
+  colour over 700 ms; it is read in a draw lambda, so the fade recomposes nothing. Controls keep
+  the fixed scheme.
+- **Marquee**: the title on Ride (both layouts) and in the mini-player is one line with
+  `basicMarquee(iterations = Int.MAX_VALUE)`; it scrolls only when it does not fit. Ride's title
+  was two lines with an ellipsis before. Artist lines are unchanged.
+- **Mic meter**: `audio/MicLevel.peak` is a `@Volatile` int the two capture loops store once per
+  20 ms frame (VoiceEngine: the peak it already computed for the mic trace; LarkEngine: the peak
+  of the rider's 16 kHz channel) — no allocation, lock or call that blocks. Zeroed at talk start
+  and when the loop ends. The bar sits in the LIVE pill (`MicMeter` in `RideTab.kt`), polls every
+  60 ms only while the pill is composed and the activity is started, and redraws only itself;
+  nothing goes through `Hub`. `micLevel` maps −48…−6 dB to 0…1, `meterStep` rises at once and
+  falls a full bar in 450 ms (`LogicTest`).
+
+On-screen device checklist (nothing here has been seen on the phone):
+
+1. Ride with a colourful cover: the glow is visible but quiet; text, the progress line and the
+   amber status line stay readable in daylight; no visible band or hard edge at the top, against
+   the tab bar, or (landscape) against the rail and the right screen edge.
+2. Next track: the colour fades to the new cover's, no flash to black in between; a track
+   without art and a grey cover leave the plain surface. Offline with a cached track: colour
+   appears if the cover is in Coil's disk cache, plain otherwise.
+3. Yellow / white-ish covers: the mic-off and error banners on top of the glow are still readable.
+4. A long title scrolls after about a second, loops, and restarts on the next track; a short
+   one stands still and stays centred (portrait). Same in the mini-player on the other tabs.
+   Check the scroll does not cost frames on the release build.
+5. Live talk on the AirPods mic: the bar in the LIVE pill follows the rider's voice, rests empty
+   (or nearly) in a quiet room, and does not sit pinned at full at riding wind noise — the
+   −48…−6 dB range (`METER_FLOOR_DB` / `METER_FULL_DB` in `ui/Logic.kt`) is a guess until then.
+6. The same with the Lark receiver (host-mic talk), and a talk the passenger opened.
+7. Bar is empty at the first instant of the next talk (no stale level), in portrait and landscape.
+8. `talk stats` / `capture:` lines: `slowest encode+send` no worse than before the meter.
+
 ## 3. Not done, in priority order
 
 Coordinator spec updates, all implemented: (1) DTX frames not sent, kind-1 = activity,

@@ -59,6 +59,31 @@ under `android/app/src/main/java/com/kivan/motoparty/`; iOS paths are under `ios
   Also seen on the Pixel: gapless change between two cached tracks, end of queue parks paused at 0.
   The MP4 layout changed (samples in chunks): **play one on the iPhone before trusting it**.
   Android 454 tests / 0 fail / 5 skipped.
+- **Leftovers done 2026-09-30** (coordinator-run: android 477 tests / 0 fail / 5 skipped, lint 0
+  errors, `assembleRelease` OK and installed on the Pixel; iOS `swift test` 223 + release build
+  clean; peer 348 + 1 skipped):
+  - L8 Android: `GetPrimitiveArrayCritical` in `opus_jni.c`, one reused send buffer and
+    `DatagramPacket` in `VoiceSocket`, `OpusEncoder.encode` returns a length into its own `packet`
+    buffer, `VoiceSend` fun interface (no boxed `ts`), `VoicePacket` without `ByteBuffer`. Left as
+    is: `JitterBuffer.pull` still allocates its `Out`, and a received packet still copies its
+    payload (the buffer keeps it). **Pixel-verified** with a 9 s tone talk from the laptop peer
+    (rx 499 / 0 lost, tx 48 received by the peer).
+  - Android UI (device-unverified, Roborazzi `1m`–`1u`): ambient art tint (`ui/Ambient.kt`,
+    `palette-ktx` 1.0.0), marquee titles, mic level bar in the LIVE pill (`audio/MicLevel`).
+    Checklist: `android/HANDOFF.md` "Audit leftovers".
+  - iOS (device-unverified, not installed): `.tabViewBottomAccessory` on iOS 26.1+, Live Activity
+    via a widget extension (`MotopartyWidgets.appex`; needs its own App ID and probably a second
+    free-account app slot; removing `extensions:` from `xtool.yml` drops it). `ios/README.md`.
+  - The agent saw `ControlServerTest.probeClosingWithoutReadingIsHarmless` and a
+    `TrackSchedulerTest` preResolve-order test fail once each under load (3 of 5 runs); both
+    coordinator runs were clean. Timing-dependent tests, not yet fixed.
+- **Command rules changed 2026-09-30 (user):** every spoken command ends the talk, and a command
+  whose result is the music has no spoken reply (PROTOCOL.md "Commands": "Effect on the talk",
+  "Spoken replies"). Android `CommandEffect` + `LinkHost.executeCommand`, peer, iOS (a volume
+  phrase closes the talk from the client). **Pixel-verified from the laptop peer:** `next` closes
+  the talk and the next track plays with no announce, `pause` closes and stays paused,
+  `what's playing` closes and is announced after. Rider-spoken commands and the iPhone side are
+  device-unverified.
 - **Open:** see `HANDOFF.md` "Do now" for what is in progress (iOS/peer round-2 integration,
   round 3 UI + H5, L8, L9, H10).
 

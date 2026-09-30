@@ -70,7 +70,7 @@ Stdin commands:
 | Command | Sends |
 |---|---|
 | `talk` | `talk.open{by:"client"}`, or `talk.close{by:"client",reason:"trigger"}` if talk is open |
-| `hear <phrase>` | a phrase the phone's ASR recognised **in a talk** (PROTOCOL.md "Commands", The first phrase decides). Only in a talk this client opened (`talk.open{by:"client"}`), only its first phrase that is not empty after normalisation, and only if it arrives within 8 s of the talk opening (the peer's stand-in for the live earcon) and parses: then it sends `command.text` with the normalised text (`hey`/`please` kept). Anything else logs `conversation (<why>), not sent`, with no "Didn't catch that"; a volume command is handled locally like `vol+`. Outside a talk it sends nothing (`hear: no talk open`) |
+| `hear <phrase>` | a phrase the phone's ASR recognised **in a talk** (PROTOCOL.md "Commands", The first phrase decides). Only in a talk this client opened (`talk.open{by:"client"}`), only its first phrase that is not empty after normalisation, and only if it arrives within 8 s of the talk opening (the peer's stand-in for the live earcon) and parses: then it sends `command.text` with the normalised text (`hey`/`please` kept). Anything else logs `conversation (<why>), not sent`, with no "Didn't catch that"; a volume command is handled locally like `vol+` and, being a command, ends the talk: the client sends `talk.close{by:"client",reason:"trigger"}`. Outside a talk it sends nothing (`hear: no talk open`) |
 | `say <text>` | `command.text{text, lang}` as is, no first-phrase gate (the bench's `hotspot_test.sh` uses it) — but the parser runs locally first, and a volume phrase (`louder`, `volume down`, …) is handled here and **not** sent. The host only acts on it as the first `command.text` of a talk the client opened |
 | `pause` `resume` `next` `previous` | `music.control{action}` |
 | `vol+` `vol-` | nothing: volume is local (the peer has no real volume, so it just logs it) |
@@ -162,28 +162,35 @@ and `state`, then the host logs the close; nothing else changes.
   with a client connected, only its first non-empty phrase within 8 s of the talk opening is a
   command, and only if it parses (else `conversation (<why>), not acted on`); in a **solo** talk
   (host `talk` with no client connected when it opened) every non-empty phrase is a command, with
-  no window. A volume phrase is handled locally (logged). A command goes through the grammar
-  parser and is answered with `announce` (sent to the client, or logged as `would send` solo).
-  `play …` announces "Playing <title> by <artist>" and loads/plays the track; `next`/`previous`
-  walk the queue ("Next: <title>" / "Back to: <title>", or an error announce at either end).
-  Effect on the talk:
-  - `play …`, `resume` and `end` close it first: `talk.close{by:<the side that spoke>,
-    reason:"trigger"}` + `state`, then the `announce` (none for `end`). After `resume` or `end`
-    the music that was playing resumes as after any talk (`music.play` at `now + 1500 ms`);
-    after `play …` the new track replaces it and its `music.play` is never sooner than 1500 ms
-    after the close.
-  - `pause` keeps the talk open and cancels the resume after it ("Paused", or "Nothing is
-    playing" when nothing would have resumed). It also covers a `next`/`previous` still loading.
-  - `next`/`previous` keep it open: the track loads (`music.load`) but stays paused until the
-    talk closes, then starts in place of the old one.
-  - `nowplaying` and `shuffle` keep it open. `nowplaying` announces "<title> by <artist>" (the
-    title alone with an empty artist) for the current track, loading or paused included, else
-    "Nothing playing" (error earcon). `shuffle` shuffles the upcoming queue (the current track
-    stays), sends `state`, then "Shuffled"; with fewer than 2 upcoming, "Nothing to shuffle"
-    (error earcon).
-  - Unmatched text gets `{"text":"Didn't catch that","earcon":"error"}` (a client's first
-    `command.text`, or a solo phrase), and so does a volume utterance in `command.text`:
-    volume is local and should never arrive here.
+  no window. A command goes through the grammar parser.
+  Effect on the talk (PROTOCOL.md "Effect on the talk: every command ends it"): every command
+  that parses closes the talk it was spoken in, even if it then fails: `talk.close{by:<the side
+  that spoke>, reason:"trigger"}` + `state`, then its `announce` if it has one (sent to the
+  client, or logged as `would send` solo). The host acts on the paused music first and then
+  closes, so the close starts the right thing:
+  - `play …` loads/plays the track in place of the one the talk paused; its `music.play` is
+    never sooner than 1500 ms after the close. (The fake host has no search: it plays its
+    first `--track`, or fails with "Couldn't find <query>" when it has none.)
+  - `resume`, `end`, `nowplaying`, `shuffle`: the music that was playing resumes as after any
+    talk (`music.play` at `now + 1500 ms`); `resume` also resumes music that was paused before
+    the talk.
+  - `pause` cancels the resume after the talk. It also covers a `next`/`previous` still loading.
+  - `next`/`previous` choose the track (`music.load`), which starts after the close if music
+    was playing before the talk and stays paused if it was not.
+  - The host's own volume phrase is handled locally (logged) and the host closes the talk
+    (`by:"host"`), with no `announce`.
+  - Unmatched text ends nothing and gets `{"text":"Didn't catch that","earcon":"error"}` (a
+    client's first `command.text`, or a solo phrase), and so does a volume utterance in
+    `command.text`: volume is local and should never arrive here.
+  Spoken replies (PROTOCOL.md "Spoken replies: only when there is nothing else to hear"): a
+  successful `play …`, `resume`, `next`, `previous`, `pause` or `end` has **no** `announce`, in
+  a talk or outside one. An `announce` is sent for `nowplaying` ("<title> by <artist>", the
+  title alone with an empty artist, for the current track, loading or paused included),
+  `shuffle` (shuffles the upcoming queue, the current track stays, sends `state`, then
+  "Shuffled"), and failures, all with the error earcon: "Couldn't find <query>", "Nothing to
+  resume", "Nothing playing" (`pause` with nothing that would have resumed, or `nowplaying`
+  with no current track), "End of queue" (`next`), "Nothing before this" (`previous`),
+  "Nothing to shuffle" (fewer than 2 upcoming), "Didn't catch that".
 - A `music.control` with a volume action is not a valid message any more; it is dropped as
   malformed (logged as `dropped invalid frame`) and the connection stays up.
 
@@ -216,10 +223,15 @@ uv run motoparty-peer client --host 192.168.1.100 --no-audio --tone
 #                                     a second > say pause in the same talk is ignored
 #    > talk, then > hear resume (within 8 s)
 #                                  -> >> command.text{"text":"resume"}, << talk.close{by:"client",
-#                                     reason:"trigger"} (+ music.play if music was playing)
+#                                     reason:"trigger"} (+ music.play if music was playing);
+#                                     no announce ("Resuming" is no longer sent)
 #    > talk, then > hear what a view -> "conversation (the first phrase does not parse)";
 #                                     a later > hear pause is conversation too
-#    > talk, then > hear pause (within 8 s) -> >> command.text{"text":"pause"}, talk stays open
+#    > talk, then > hear pause (within 8 s) -> >> command.text{"text":"pause"}, << talk.close{by:
+#                                     "client",reason:"trigger"}, no music.play, no announce
+#    > talk, then > hear next      -> << talk.close first, then the new track (or << announce
+#                                     with the end-of-queue error after the close); no "Next: …"
+#    > talk, then > hear louder    -> nothing sent but >> talk.close{by:"client",reason:"trigger"}
 #    Pixel-triggered talk, then > hear pause -> "conversation (this phone did not open the talk)"
 #    Start a song on the Pixel     -> << music.load, >> music.ready, << music.play (local time logged)
 # 2. Real audio: laptop mic <-> Pixel, music through mpv at the scheduled time
@@ -233,7 +245,7 @@ What to check:
 - `offset` should be stable within a few ms, with `rtt` in the single digits on a hotspot.
 - `voice rx` should show `underruns` staying low and `target` settling back to 40 ms.
 - Pixel-triggered talk should show up as `<< talk.open{by:"host"}`.
-- A long pause in talking must not end talk: it ends on a press only.
+- A long pause in talking must not end talk: it ends on a press or a spoken command only.
 - `raw {"t":"future.thing"}` must be ignored by the app. `raw {"t":"ping","id":1}` (missing
   `t0`) must not crash it.
 
@@ -275,7 +287,8 @@ sudo sh -c 'nft insert rule inet filter input tcp dport { 47800, 47802 } accept 
 Then, from the iPhone app, check each of these:
 
 - It connects via Bonjour. Mute Bonjour with `--no-mdns` to force the sweep.
-- Talk: you should hear yourself (the echo), and it should stay open until someone presses again.
+- Talk: you should hear yourself (the echo), and it should stay open until someone presses
+  again or the opener's first phrase is a command.
 - Type `load` on the host: the iPhone should download the file, send `music.ready`, and start
   at the logged host time.
 - Type `talk` on the host: the iPhone should pause music, and after the second `talk` it
@@ -397,7 +410,8 @@ CELT-only and other packets count as activity. Why:
   `state{talk:true}` (it joined mid-talk) is not its opener. A phrase after the window spends
   the first phrase. The fake host's talk is solo when no client was connected as it opened.
 - Volume: the client parses `say <text>` and `hear <phrase>` itself and swallows a volume result; `vol+`/`vol-`
-  send nothing. The fake host answers a volume utterance that still arrives in `command.text`
+  send nothing. Only a volume phrase that `hear` accepts as the talk's command closes the talk
+  (the client's own `talk.close`); `say` (the raw wire tool) and the buttons leave it open. The fake host answers a volume utterance that still arrives in `command.text`
   with "Didn't catch that", and drops a volume `music.control` as malformed.
 - The fake host treats `music.error` like a missed `music.ready`: it plays alone and still
   sends `music.play`.

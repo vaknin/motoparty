@@ -19,6 +19,7 @@ import android.util.Log
 import com.kivan.motoparty.core.JitterBuffer
 import com.kivan.motoparty.core.TalkStats
 import com.kivan.motoparty.core.VoicePacket
+import com.kivan.motoparty.core.VoiceSend
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
@@ -29,7 +30,7 @@ import kotlin.concurrent.thread
  * is the caller's job ([AudioRouter]), and [start]/[stop] belong on the one [AudioThread] with it.
  */
 class VoiceEngine(
-    private val send: (ts: Long, payload: ByteArray) -> Unit,
+    private val send: VoiceSend,
     /** The sender's running 16 kHz clock (PROTOCOL.md: random start, runs while talk is closed). */
     private val clockTs: () -> Long,
     /**
@@ -144,6 +145,7 @@ class VoiceEngine(
         captureUpAtMs = null
         micLiveAtMs = null
         micLive.reset()
+        MicLevel.peak = 0
         val s = Session(onFailed)
         session.set(s)
         // L9: the "live" beep of this talk goes to the call route. Have its track built (on the
@@ -347,6 +349,8 @@ class VoiceEngine(
                     val a = if (v < 0) -v.toInt() else v.toInt()
                     if (a > peak) peak = a
                 }
+                // The Ride tab's meter reads it: one volatile write.
+                MicLevel.peak = peak
                 // The frame exactly as the microphone delivered it, before the encoder or anything
                 // else touches it: that is the recording an A/B of two microphones is made from.
                 dump?.offer(pcm)
@@ -394,11 +398,11 @@ class VoiceEngine(
                 } else {
                     longestReadNanos = maxOf(longestReadNanos, workFrom - readFrom)
                 }
-                val packet = encoder.encode(pcm)
+                val packetLen = encoder.encode(pcm)
                 framesCaptured++
                 // PROTOCOL.md: frames encoded in DTX (incl. comfort-noise updates) are not sent.
-                if (!encoder.inDtx && packet.size > 2) {
-                    send(ts, packet)
+                if (!encoder.inDtx && packetLen > 2) {
+                    send.send(ts, encoder.packet, packetLen)
                     framesSent++
                 }
                 ts = (ts + FRAME) and 0xffffffffL
@@ -446,6 +450,7 @@ class VoiceEngine(
             }
             mic.release()
             encoder.close()
+            MicLevel.peak = 0
         }
     }
 

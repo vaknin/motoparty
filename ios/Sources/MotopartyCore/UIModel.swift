@@ -293,7 +293,7 @@ public struct VoiceCommandChip: Equatable, Sendable {
         VoiceCommandChip("quieter"),
         VoiceCommandChip("what's playing"),
         VoiceCommandChip("shuffle"),
-        VoiceCommandChip("over", note: "ends the talk"),
+        VoiceCommandChip("over", note: "only ends the talk"),
     ]
 
     public var accessibilityText: String {

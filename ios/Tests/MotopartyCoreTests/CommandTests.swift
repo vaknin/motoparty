@@ -128,4 +128,20 @@ final class FirstPhraseTests: XCTestCase {
         XCTAssertEqual(heard, .command("hey louder please"))
         if case .command(let text) = heard { XCTAssertEqual(CommandParser.parse(text), .volumeUp) }
     }
+
+    /// Volume never reaches the host, so the client closes that talk itself;
+    /// everything else is sent as heard and the host closes it.
+    func testClientCommandRoute() {
+        XCTAssertEqual(ClientCommand.route("hey louder please", volumeArmed: true), .volume(up: true, .inTalk))
+        XCTAssertEqual(ClientCommand.route("volume down", volumeArmed: true), .volume(up: false, .inTalk))
+        // Disarmed, the system volume in a talk is the call volume: the media
+        // volume can only be stepped after the close.
+        XCTAssertEqual(ClientCommand.route("volume up", volumeArmed: false), .volume(up: true, .afterMediaRoute))
+        XCTAssertEqual(ClientCommand.route("quieter", volumeArmed: false), .volume(up: false, .afterMediaRoute))
+        for text in ["play daft punk", "pause", "resume", "next", "previous", "over", "what's playing", "shuffle"] {
+            for armed in [true, false] {
+                XCTAssertEqual(ClientCommand.route(text, volumeArmed: armed), .send(text), text)
+            }
+        }
+    }
 }

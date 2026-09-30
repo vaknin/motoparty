@@ -401,20 +401,41 @@ the client and speaks it itself. Vectors: `fixtures/first_phrase.json` (one phon
 role, the phrases with their arrival time after the live earcon, and per phrase the command text,
 or `null` for conversation).
 
-**Effect on the talk.** `play …` and `resume` end the talk: the host closes it
-(`talk.close{by: <the side that spoke>, reason:"trigger"}`) as soon as the command parses, and
-the music starts after the headset is back in media mode, like any resume after talk; its
-`announce` is spoken after that switch too. They close the talk even if they then fail (no
-search result, nothing to resume): the error is announced after the switch and music that was
-playing before the talk resumes. `end` ends the talk exactly like a press (music that was
-playing resumes) and has no `announce`: the closing earcon is its acknowledgement.
-`pause`, `next`, `previous`, `nowplaying`, `shuffle` and the volume commands leave the talk open: music is paused during
-a talk anyway, so `next`/`previous` choose what resumes after it and `pause` cancels that
-resume (and stays cancelled through a later `next`/`previous`). Their `announce` is spoken in the talk.
+**Effect on the talk: every command ends it** (2026-09-30; before, only `play`, `resume` and
+`end` did, so a spoken `next` chose a track that did not play until the talk was ended by hand).
+A talk whose first phrase is a command was opened to give that command. The host closes the talk
+(`talk.close{by: <the side that spoke>, reason:"trigger"}`) as soon as the command parses; the
+music starts after the headset is back in media mode, like any resume after talk, and an
+`announce`, if the command has one (below), is sent and spoken after that switch. It closes
+the talk even if the command then fails (no search result, nothing to resume, nothing queued):
+the error is announced after the switch and music that was playing before the talk resumes.
+- `play …`: the new track starts instead of the one the talk paused.
+- `resume`: the paused track resumes.
+- `next` / `previous`: choose the track before the close; the close resumes it if music was
+  playing before the talk, and music that was paused before the talk stays paused on the new track.
+- `pause`: cancels the resume after the talk; the music stays paused.
+- `nowplaying`, `shuffle`: music that was playing resumes; the reply is spoken after the switch.
+- `end`: exactly like a press (music that was playing resumes).
+- Volume (below) is local: the phone that heard it changes its **media** volume and ends the
+  talk itself, the client with an ordinary `talk.close{by:"client", reason:"trigger"}`.
+- An unparsed phrase is not a command and ends nothing (in a solo talk it gets "Didn't catch
+  that" and the talk stays open; a parsed command ends a solo talk like any other). A volume
+  utterance that still arrives in `command.text` counts as unparsed. The ignored volume phrase on the passenger's channel of a
+  host-mic talk (above) also leaves the talk open.
+
+**Spoken replies: only when there is nothing else to hear** (2026-09-30). A command that
+succeeds and whose result is the music itself has **no `announce`**: `play …`, `resume`, `next`,
+`previous` and `pause` just do it (the closing earcon and the music are the acknowledgement;
+"Playing <title> by <artist>" is no longer sent or spoken). `end` has none either. An `announce`
+is sent for failures (earcon `error`: "Couldn't find <query>", "No coverage", "Search failed",
+"Nothing to resume", "End of queue", "Nothing to play", "Nothing to shuffle", "Nothing playing",
+"Didn't catch that"; the exact wording is the host's) and for the two commands that have
+nothing else to show for themselves: `nowplaying` (the track) and `shuffle` ("Shuffled"). The
+same holds for a command outside a talk (typed on the host's Ride screen).
 
 Volume is local: `volume up/down` changes the volume of the phone it was spoken on (or whose
 button was pressed) and is never sent. The client therefore runs the same parser on its own
-utterances first, handles a volume result itself (earcon `ok`, no `announce`), and sends
+utterances first, handles a volume result itself (earcon `ok`, no `announce`; in a talk it then closes the talk), and sends
 `command.text` for everything else. A host that still receives a volume utterance in
 `command.text` answers "Didn't catch that".
 
@@ -432,7 +453,7 @@ shuffle                                         (action "shuffle")
 the artist is empty), or "Nothing playing"; `shuffle` shuffles the upcoming queue (the current
 track stays) and announces "Shuffled", or "Nothing to shuffle" with fewer than two upcoming
 tracks. "Nothing playing" and "Nothing to shuffle" carry earcon `error`, the others `ok`. Both
-leave the talk open and are spoken in it, like `next`.
+end the talk like every command and are spoken after the switch.
 
 Normalisation before matching, per Unicode code point (not grapheme cluster): lowercase;
 map `’` (U+2019) to `'`; replace every code point that is not in a Unicode letter (L*),

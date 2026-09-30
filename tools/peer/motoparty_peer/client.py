@@ -29,7 +29,8 @@ from .protocol import (
 from .util import js, log, stdin_lines
 from .voice import Pacer, VoiceProtocol, VoiceReceiver, VoiceSender
 
-HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase rule) |
+HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase rule; a command
+          ends the talk, a volume phrase is local and closes it from here) |
           say <text> (command.text as is) | pause | resume | next | previous | vol+ | vol- (local) |
           unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
           browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit clear |
@@ -429,8 +430,11 @@ class Client:
         if text is None:
             log(f"hear: {phrase!r} is conversation ({self.gate.why}), not sent")
         elif parse_command(text)["action"] in VOLUME_ACTIONS:
+            # Volume is local and, like every command, ends the talk it was spoken in: the phone
+            # that heard it closes the talk itself (PROTOCOL.md "Commands", Effect on the talk).
             log(f"local: {parse_command(text)['action']} handled here [earcon ok]; "
-                f"no command.text sent (the peer has no real volume)")
+                f"no command.text sent (the peer has no real volume); it ends the talk")
+            self._talk_trigger()
         else:
             self.send({"t": "command.text", "text": text, "lang": self.args.lang})
 

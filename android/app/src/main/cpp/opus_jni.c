@@ -23,12 +23,17 @@ JNIEXPORT jlong JNICALL FN(encoderCreate)(JNIEnv *env, jclass cls, jint rate, ji
 JNIEXPORT jint JNICALL FN(encode)(JNIEnv *env, jclass cls, jlong handle, jshortArray pcm,
                                   jint frameSize, jbyteArray out) {
     OpusEncoder *enc = (OpusEncoder *)(intptr_t)handle;
-    jshort *in = (*env)->GetShortArrayElements(env, pcm, NULL);
-    jbyte *o = (*env)->GetByteArrayElements(env, out, NULL);
     jint outLen = (*env)->GetArrayLength(env, out);
-    int n = opus_encode(enc, in, frameSize, (unsigned char *)o, outLen);
-    (*env)->ReleaseShortArrayElements(env, pcm, in, JNI_ABORT);
-    (*env)->ReleaseByteArrayElements(env, out, o, 0);
+    // Critical: no copy of either array, once per 20 ms frame. No JNI calls until both are released.
+    jshort *in = (*env)->GetPrimitiveArrayCritical(env, pcm, NULL);
+    if (in == NULL) return OPUS_ALLOC_FAIL;
+    jbyte *o = (*env)->GetPrimitiveArrayCritical(env, out, NULL);
+    int n = OPUS_ALLOC_FAIL;
+    if (o != NULL) {
+        n = opus_encode(enc, in, frameSize, (unsigned char *)o, outLen);
+        (*env)->ReleasePrimitiveArrayCritical(env, out, o, 0);
+    }
+    (*env)->ReleasePrimitiveArrayCritical(env, pcm, in, JNI_ABORT);
     return n;
 }
 
@@ -55,16 +60,19 @@ JNIEXPORT jlong JNICALL FN(decoderCreate)(JNIEnv *env, jclass cls, jint rate, ji
 JNIEXPORT jint JNICALL FN(decode)(JNIEnv *env, jclass cls, jlong handle, jbyteArray data,
                                   jint len, jshortArray pcm, jint frameSize, jint fec) {
     OpusDecoder *dec = (OpusDecoder *)(intptr_t)handle;
-    jshort *out = (*env)->GetShortArrayElements(env, pcm, NULL);
-    int n;
+    jshort *out = (*env)->GetPrimitiveArrayCritical(env, pcm, NULL);
+    if (out == NULL) return OPUS_ALLOC_FAIL;
+    int n = OPUS_ALLOC_FAIL;
     if (data == NULL) {
         n = opus_decode(dec, NULL, 0, out, frameSize, 0);
     } else {
-        jbyte *d = (*env)->GetByteArrayElements(env, data, NULL);
-        n = opus_decode(dec, (const unsigned char *)d, len, out, frameSize, fec);
-        (*env)->ReleaseByteArrayElements(env, data, d, JNI_ABORT);
+        jbyte *d = (*env)->GetPrimitiveArrayCritical(env, data, NULL);
+        if (d != NULL) {
+            n = opus_decode(dec, (const unsigned char *)d, len, out, frameSize, fec);
+            (*env)->ReleasePrimitiveArrayCritical(env, data, d, JNI_ABORT);
+        }
     }
-    (*env)->ReleaseShortArrayElements(env, pcm, out, 0);
+    (*env)->ReleasePrimitiveArrayCritical(env, pcm, out, 0);
     return n;
 }
 

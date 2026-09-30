@@ -11,6 +11,11 @@
         <string>audio</string>
     </array>
 
+    <!-- The Live Activity (lock screen, Dynamic Island): what plays and the
+         talk. Drawn by PlugIns/MotopartyWidgets.appex. -->
+    <key>NSSupportsLiveActivities</key>
+    <true/>
+
     <key>NSMicrophoneUsageDescription</key>
     <string>Motoparty uses the microphone for the helmet intercom and for spoken music commands.</string>
 

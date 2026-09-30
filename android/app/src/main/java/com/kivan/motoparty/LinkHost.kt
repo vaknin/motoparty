@@ -182,7 +182,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     )
     private val control: ControlServer = ControlServer(scope, clock, ::hello, { lastState }, log = Hub::log)
     private val voice: VoiceEngine = VoiceEngine(
-        send = { ts, p -> voiceSocket.sendAudio(ts, p) },
+        send = { ts, p, n -> voiceSocket.sendAudio(ts, p, n) },
         clockTs = { voiceSocket.currentTs() },
         // From the capture thread, on its first frame: never block it, hop to Main.
         onCaptureUp = { atMs -> scope.launch { onCaptureUp(atMs) } },
@@ -203,7 +203,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      */
     private val lark: LarkEngine = LarkEngine(
         context,
-        send = { ts, p -> voiceSocket.sendAudio(ts, p) },
+        send = { ts, p, n -> voiceSocket.sendAudio(ts, p, n) },
         clockTs = { voiceSocket.currentTs() },
         onCaptureUp = { atMs -> scope.launch { onCaptureUp(atMs) } },
         openDump = { openCaptureDump(lark = true) },
@@ -1060,23 +1060,44 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         val cmd = CommandParser.parse(text)
         val effect = CommandEffect.of(cmd, talk.isOpen, fromClient)
         val inTalk = effect.reply == CommandEffect.Reply.CALL
-        fun reply(t: String, earcon: String) = announce(t, earcon, inTalk)
-        // What must happen before the talk closes: `resume` parks the track, so the close resumes
-        // it the usual way (held over the route switch); `play` drops the resume, so the music the
-        // talk paused does not come back for the second before the new track does.
-        var canResume = false
+        // What must happen before the talk closes, on the music the talk paused: `resume` parks
+        // the track and `next`/`previous` choose it, so the close resumes it the usual way (held
+        // over the route switch); `pause` cancels that resume; `play` drops it, so the old music
+        // does not come back for the second before the new track does.
         var hadResume = false
+        // The spoken reply, for a failure or a command with nothing else to show for itself. A
+        // command whose result is the music has none ("Spoken replies" in PROTOCOL.md).
+        var said: Pair<String, String>? = null
         when (cmd) {
             Command.Resume -> {
-                canResume = music.canResume
-                if (effect.closeBy != null) music.resume()
+                if (!music.canResume) said = "Nothing to resume" to Earcon.ERROR
+                music.resume()
             }
             is Command.Play -> if (effect.closeBy != null) hadResume = music.beforePlayEndsTalk(clock() + settings.value.resumeLeadMs)
-            else -> Unit
+            Command.Pause -> music.pause()
+            Command.Next -> {
+                // On the last track `next` parks it and `current` stays: that is the end of the queue.
+                if (!music.hasNext) said = "End of queue" to Earcon.OK
+                music.next()
+            }
+            Command.Previous -> {
+                music.previous()
+                if (music.current == null) said = "Nothing to play" to Earcon.OK
+            }
+            Command.NowPlaying -> said = music.current.let { MusicController.nowPlayingLine(it) to if (it != null) Earcon.OK else Earcon.ERROR }
+            Command.Shuffle -> said = if (music.shuffleUpcoming()) "Shuffled" to Earcon.OK else "Nothing to shuffle" to Earcon.ERROR
+            Command.Unknown -> said = "Didn't catch that" to Earcon.ERROR
+            // `end` has no reply: the talk's closing earcon is the acknowledgement.
+            Command.End -> if (effect.closeBy == null) Hub.log("end: no talk to end")
+            Command.VolumeUp, Command.VolumeDown -> Unit
         }
         val closed: Job? = effect.closeBy?.let { by ->
             talk.onCommandClose(by)?.let(::applyTalk)
             talkClosed
+        }
+        /** Now, or once the talk this command closed is down and the headset is back in media mode. */
+        fun afterClose(block: () -> Unit) {
+            if (closed == null) block() else scope.launch { closed.join(); block() }
         }
         when (cmd) {
             is Command.Play -> scope.launch {
@@ -1090,12 +1111,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 } finally {
                     Hub.status.update { it.copy(busy = null) }
                 }
-                // The music and the reply come after the headset is back in media mode.
+                // The music and a failure's reply come after the headset is back in media mode.
                 closed?.join()
                 when (found) {
                     is Catalog.Result -> {
                         music.setQueue(found.tracks)
-                        announce("Playing ${found.label}", Earcon.OK)
+                        Hub.log("playing ${found.label}")
+                        Hub.status.update { it.copy(error = null) }
                     }
                     else -> {
                         // The talk is closed anyway; the music it paused comes back.
@@ -1104,26 +1126,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                     }
                 }
             }
-            Command.Pause -> { music.pause(); reply("Paused", Earcon.OK) }
-            Command.Resume -> {
-                if (closed == null) music.resume()
-                val (t, e) = if (canResume) "Resuming" to Earcon.OK else "Nothing to resume" to Earcon.ERROR
-                if (closed == null) reply(t, e) else scope.launch { closed.join(); announce(t, e) }
+            Command.VolumeUp -> afterClose { onVolumeCommand(fromClient, AudioManager.ADJUST_RAISE, inTalk) }
+            Command.VolumeDown -> afterClose { onVolumeCommand(fromClient, AudioManager.ADJUST_LOWER, inTalk) }
+            else -> when (val reply = said) {
+                // Done, and the music says so: a failure's banner has nothing left to say.
+                null -> if (cmd != Command.End) Hub.status.update { it.copy(error = null) }
+                else -> afterClose { announce(reply.first, reply.second, inTalk) }
             }
-            // No reply: the talk's closing earcon is the acknowledgement.
-            Command.End -> if (effect.closeBy == null) Hub.log("end: no talk to end")
-            Command.Next -> {
-                // On the last track `next` parks it and `current` stays: that is the end of the queue.
-                val had = music.hasNext
-                music.next()
-                reply(music.current?.takeIf { had }?.let { "Next: ${it.title}" } ?: "End of queue", Earcon.OK)
-            }
-            Command.Previous -> { music.previous(); reply(music.current?.let { "Playing ${it.title}" } ?: "Nothing to play", Earcon.OK) }
-            Command.NowPlaying -> music.current.let { reply(MusicController.nowPlayingLine(it), if (it != null) Earcon.OK else Earcon.ERROR) }
-            Command.Shuffle -> if (music.shuffleUpcoming()) reply("Shuffled", Earcon.OK) else reply("Nothing to shuffle", Earcon.ERROR)
-            Command.VolumeUp -> onVolumeCommand(fromClient, AudioManager.ADJUST_RAISE, effect)
-            Command.VolumeDown -> onVolumeCommand(fromClient, AudioManager.ADJUST_LOWER, effect)
-            Command.Unknown -> reply("Didn't catch that", Earcon.ERROR)
         }
     }
 
@@ -1171,29 +1180,22 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * no `announce` — the passenger must not be told. A volume utterance arriving from the client
      * means the client failed to handle it locally, and is answered "Didn't catch that".
      *
-     * In a talk the rider hears the call stream, so that is the one that changes
-     * ([CommandEffect.callVolume]) and the tone plays on the call route; outside one, the media
-     * volume as always.
+     * Always the media volume: a volume phrase ends the talk it was spoken in, and this runs
+     * after that close.
      */
-    private fun onVolumeCommand(fromClient: Boolean, direction: Int, effect: CommandEffect) {
-        val inTalk = effect.reply == CommandEffect.Reply.CALL
+    private fun onVolumeCommand(fromClient: Boolean, direction: Int, inTalk: Boolean) {
         if (fromClient) {
             announce("Didn't catch that", Earcon.ERROR, inTalk)
             return
         }
-        // A host-mic talk plays everything on the media stream (the passenger's voice included).
-        val callVolume = effect.callVolume && !larkTalk
-        val stream = if (callVolume) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_MUSIC
         // Two steps: one step is barely audible under a helmet. Off Main with the earcon, in the
         // same block: adjustStreamVolume is a binder call into the audio service like any other.
         audio.post("volume") {
-            repeat(2) { audioManager.adjustStreamVolume(stream, direction, 0) }
+            repeat(2) { audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0) }
         }
-        // In a talk the tone goes on the call route, behind the change on the audio thread. Outside
-        // one it is a media-route sound like every other (F9b).
-        if (inTalk && !larkTalk) earcon(Earcons.Kind.OK, call = true)
-        else mediaSound(MediaCue.Kind.OK) { earcon(Earcons.Kind.OK) }
-        Hub.log("volume ${if (direction == AudioManager.ADJUST_RAISE) "up" else "down"} (local, ${if (callVolume) "call" else "media"})")
+        // A media-route sound like every other (F9b): the talk it was spoken in is closed by now.
+        mediaSound(MediaCue.Kind.OK) { earcon(Earcons.Kind.OK) }
+        Hub.log("volume ${if (direction == AudioManager.ADJUST_RAISE) "up" else "down"} (local, media)")
     }
 
     /**

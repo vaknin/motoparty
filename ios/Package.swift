@@ -2,11 +2,13 @@
 
 import PackageDescription
 
-// Layout follows `xtool new`: exactly one automatic library product (the app).
-// xtool wraps it in a generated executable target and bundles it as
-// Motoparty.app. On Linux, `swift build` / `swift test` build COpus,
+// Layout follows `xtool new`: automatic library products, one per bundle.
+// xtool wraps each in a generated executable target: "Motoparty" becomes
+// Motoparty.app and "MotopartyWidgets" its PlugIns/MotopartyWidgets.appex
+// (xtool.yml says which is which). On Linux, `swift build` / `swift test` build COpus,
 // MotopartyCore and the tests; every file in Sources/Motoparty is wrapped in
-// `#if os(iOS)`, so the app target compiles to an empty module there.
+// `#if os(iOS)` (so is MotopartyActivity and MotopartyWidgets), so those
+// targets compile to empty modules there.
 let package = Package(
     name: "Motoparty",
     platforms: [
@@ -15,6 +17,7 @@ let package = Package(
     ],
     products: [
         .library(name: "Motoparty", targets: ["Motoparty"]),
+        .library(name: "MotopartyWidgets", targets: ["MotopartyWidgets"]),
     ],
     targets: [
         // libopus 1.5.2, portable float build. Sources vendored by
@@ -43,7 +46,20 @@ let package = Package(
         // Network callbacks would turn every unchecked detail into an error.
         .target(
             name: "Motoparty",
+            dependencies: ["MotopartyCore", "MotopartyActivity"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // The Live Activity's attributes type (ActivityKit), linked by both the
+        // app and the widget extension.
+        .target(
+            name: "MotopartyActivity",
             dependencies: ["MotopartyCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        // The widget extension (WidgetKit): the Live Activity's views.
+        .target(
+            name: "MotopartyWidgets",
+            dependencies: ["MotopartyCore", "MotopartyActivity"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

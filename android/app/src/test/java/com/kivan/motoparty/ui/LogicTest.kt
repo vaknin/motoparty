@@ -189,4 +189,41 @@ class LogicTest {
         // A value set before the list existed is kept, and can be picked again.
         assertEquals("sv-SE", speechLanguages("sv-SE").last())
     }
+
+    // ---- the microphone meter ----
+
+    @Test
+    fun micLevelIsZeroForSilenceAndFullForLoud() {
+        assertEquals(0f, micLevel(0), 0f)
+        assertEquals(0f, micLevel(-5), 0f)
+        // -48 dB is a peak of about 130: the hiss of an open mic shows nothing.
+        assertEquals(0f, micLevel(100), 0f)
+        assertEquals(1f, micLevel(32768), 0f)
+        // -6 dB and above is a full bar.
+        assertEquals(1f, micLevel(16500), 0f)
+    }
+
+    @Test
+    fun micLevelIsEvenInDecibels() {
+        // Each doubling of the sample (6 dB) is the same step: 6 / 42 of the bar.
+        val step = micLevel(2000) - micLevel(1000)
+        assertEquals(6.02f / 42f, step, 0.002f)
+        assertEquals(step, micLevel(8000) - micLevel(4000), 0.002f)
+        // Ordinary speech (about -20 dB) is well up the bar, not a sliver as it would be linearly.
+        assertEquals(0.66f, micLevel(3277), 0.02f)
+    }
+
+    @Test
+    fun meterJumpsUpAndFallsSlowly() {
+        assertEquals(0.8f, meterStep(shown = 0.1f, level = 0.8f, elapsedMs = 60), 0f)
+        // Silence after a syllable: down by 60/450 of the bar per poll, not to zero at once.
+        assertEquals(0.8f - 60f / 450f, meterStep(shown = 0.8f, level = 0f, elapsedMs = 60), 0.0001f)
+        // The fall never goes below what the mic says, nor below empty.
+        assertEquals(0.75f, meterStep(shown = 0.8f, level = 0.75f, elapsedMs = 60), 0f)
+        assertEquals(0f, meterStep(shown = 0.05f, level = 0f, elapsedMs = 60), 0f)
+        assertEquals(0f, meterStep(shown = 1f, level = 0f, elapsedMs = 5_000), 0f)
+        // A clock that did not move (or went back) changes nothing.
+        assertEquals(0.5f, meterStep(shown = 0.5f, level = 0f, elapsedMs = 0), 0f)
+        assertEquals(0.5f, meterStep(shown = 0.5f, level = 0f, elapsedMs = -20), 0f)
+    }
 }

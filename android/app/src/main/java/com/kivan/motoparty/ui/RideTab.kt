@@ -7,7 +7,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,16 +51,21 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -69,11 +77,16 @@ import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.kivan.motoparty.LinkStatus
 import com.kivan.motoparty.UiAction
+import com.kivan.motoparty.audio.MicLevel
 import com.kivan.motoparty.core.ControlAction
 import com.kivan.motoparty.music.Track
 import com.kivan.motoparty.trigger.TriggerKind
+import kotlinx.coroutines.delay
 
 /**
  * The screen for the road. Nothing scrolls: the link on top, what is playing in the middle, and
@@ -107,7 +120,10 @@ fun RideTab(
         if (s.running) TalkButton(phase, m) { cb.onTrigger(TriggerKind.TALK) } else StartButton(m, cb.onStart)
     }
 
-    BoxWithConstraints(modifier.fillMaxSize()) {
+    // The cover's colour, faintly, behind it all; drawn, not composed (see [ambient]).
+    val glow = rememberAmbientColor(s.nowPlaying?.art)
+
+    BoxWithConstraints(modifier.fillMaxSize().ambient(glow)) {
         if (maxWidth > maxHeight) {
             Row(Modifier.fillMaxSize().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -348,9 +364,10 @@ private fun Titles(t: Track, centred: Boolean) {
         Text(
             t.title,
             style = if (centred) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+            // One line; a title that does not fit scrolls (and only then) instead of being cut.
+            modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
             fontWeight = FontWeight.Bold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+            maxLines = 1,
             textAlign = align,
         )
         Text(
@@ -517,9 +534,9 @@ fun CommandsList(solo: Boolean, modifier: Modifier = Modifier, inTalk: Boolean =
         Text(
             when {
                 inTalk && solo -> "Alone, every phrase is a command."
-                inTalk -> "Only the first thing you say. After that it's just talk."
+                inTalk -> "Only the first thing you say: it is done and the talk ends. Anything else is just talk."
                 solo -> "Press TALK and say one. Alone, every phrase is a command."
-                else -> "Press TALK and say one of these first. After that it's just talk."
+                else -> "Press TALK and say one of these first: it is done and the talk ends. Anything else is just talk."
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -627,7 +644,40 @@ private fun LivePill() {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(Modifier.size(8.dp).background(Palette.TalkOpen, CircleShape))
-        Text("LIVE", color = Color(0xFFB4232A), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
+        Text("LIVE", color = LiveInk, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
+        MicMeter()
+    }
+}
+
+/** The dark red of "LIVE" and of the meter's fill on the white pill (about 6.5:1). */
+private val LiveInk = Color(0xFFB4232A)
+
+/**
+ * The rider's own microphone, as a bar in the LIVE pill: it moves when they speak, so a glance
+ * says the mic is picking them up. It reads [MicLevel] [METER_POLL_MS] apart, only while this is
+ * on screen (a live talk, the Ride tab, the app in front), and only its own draw pass runs.
+ */
+@Composable
+private fun MicMeter(modifier: Modifier = Modifier) {
+    val shown = remember { mutableFloatStateOf(0f) }
+    val lifecycle = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var last = SystemClock.elapsedRealtime()
+            while (true) {
+                val now = SystemClock.elapsedRealtime()
+                shown.floatValue = meterStep(shown.floatValue, micLevel(MicLevel.peak), now - last)
+                last = now
+                delay(METER_POLL_MS)
+            }
+        }
+    }
+    Canvas(modifier.size(width = 40.dp, height = 8.dp).semantics { contentDescription = "Microphone level" }) {
+        val r = CornerRadius(size.height / 2)
+        drawRoundRect(LiveInk.copy(alpha = 0.18f), cornerRadius = r)
+        val w = size.width * shown.floatValue
+        // Narrower than it is tall would not be a rounded bar: nothing is shown for next to nothing.
+        if (w >= size.height) drawRoundRect(LiveInk, size = Size(w, size.height), cornerRadius = r)
     }
 }
 

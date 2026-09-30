@@ -34,9 +34,6 @@ _EXACT = {
 FIRST_PHRASE_MS = 8000
 ROLES = ("opener", "other", "solo")
 
-# Actions that end the talk they are spoken in (PROTOCOL.md "Commands", Effect on the talk).
-TALK_ENDING = ("play", "resume", "end")
-
 UNKNOWN_ANNOUNCE = {"t": "announce", "text": "Didn't catch that", "earcon": "error"}
 
 # Volume is local (PROTOCOL.md "Commands"): the parser still recognises these phrases, but the

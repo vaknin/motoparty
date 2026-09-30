@@ -2,9 +2,6 @@ package com.kivan.motoparty.core
 
 import com.kivan.motoparty.core.CommandEffect.Reply
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** PROTOCOL.md "Commands", *Effect on the talk*. */
@@ -16,10 +13,10 @@ class CommandEffectTest {
     )
 
     @Test
-    fun playAndResumeEndTheTalkByWhoeverSpokeAndReplyAfterTheSwitch() {
-        for (cmd in listOf(play, Command.Resume)) {
-            assertEquals(CommandEffect(Role.HOST, Reply.AFTER_CLOSE), CommandEffect.of(cmd, talkOpen = true, fromClient = false))
-            assertEquals(CommandEffect(Role.CLIENT, Reply.AFTER_CLOSE), CommandEffect.of(cmd, talkOpen = true, fromClient = true))
+    fun everyCommandEndsTheTalkByWhoeverSpokeAndRepliesAfterTheSwitch() {
+        for (cmd in listOf(play, Command.Resume, Command.Pause, Command.Next, Command.Previous, Command.NowPlaying, Command.Shuffle)) {
+            assertEquals("$cmd", CommandEffect(Role.HOST, Reply.AFTER_CLOSE), CommandEffect.of(cmd, talkOpen = true, fromClient = false))
+            assertEquals("$cmd", CommandEffect(Role.CLIENT, Reply.AFTER_CLOSE), CommandEffect.of(cmd, talkOpen = true, fromClient = true))
         }
     }
 
@@ -32,24 +29,18 @@ class CommandEffectTest {
     }
 
     @Test
-    fun theRestLeaveTheTalkOpenAndReplyInIt() {
-        for (cmd in listOf(Command.Pause, Command.Next, Command.Previous, Command.NowPlaying, Command.Shuffle, Command.Unknown)) {
-            for (fromClient in listOf(false, true)) {
-                assertEquals("$cmd", CommandEffect(null, Reply.CALL), CommandEffect.of(cmd, talkOpen = true, fromClient = fromClient))
-            }
+    fun anUnparsedPhraseLeavesTheTalkOpenAndIsAnsweredInIt() {
+        for (fromClient in listOf(false, true)) {
+            assertEquals(CommandEffect(null, Reply.CALL), CommandEffect.of(Command.Unknown, talkOpen = true, fromClient = fromClient))
         }
     }
 
-    /** Volume is local: in a talk the rider's own changes the call stream; the client's is refused. */
+    /** Volume is local: the rider's own ends the talk (media volume after it); the client's is refused like an unparsed phrase. */
     @Test
-    fun volumeInATalkIsTheCallStreamForTheRiderOnly() {
+    fun volumeInATalkEndsItForTheRiderOnly() {
         for (cmd in listOf(Command.VolumeUp, Command.VolumeDown)) {
-            val rider = CommandEffect.of(cmd, talkOpen = true, fromClient = false)
-            assertNull(rider.closeBy)
-            assertEquals(Reply.CALL, rider.reply)
-            assertTrue(rider.callVolume)
-            assertFalse(CommandEffect.of(cmd, talkOpen = true, fromClient = true).callVolume)
-            assertFalse(CommandEffect.of(cmd, talkOpen = false, fromClient = false).callVolume)
+            assertEquals(CommandEffect(Role.HOST, Reply.AFTER_CLOSE), CommandEffect.of(cmd, talkOpen = true, fromClient = false))
+            assertEquals(CommandEffect(null, Reply.CALL), CommandEffect.of(cmd, talkOpen = true, fromClient = true))
         }
     }
 

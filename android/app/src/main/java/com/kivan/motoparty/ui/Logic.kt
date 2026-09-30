@@ -57,6 +57,38 @@ fun phaseText(phase: MusicPhase, clientName: String?): String = when (phase) {
     MusicPhase.PAUSED_FOR_TALK -> "Paused for talk — plays when the talk ends"
 }
 
+// ---- the microphone meter of a live talk ----
+
+/** Below this the bar is empty: about the hiss of an open microphone. */
+private const val METER_FLOOR_DB = -48f
+
+/** At this the bar is full; speech through the headset peaks a little under it. */
+private const val METER_FULL_DB = -6f
+
+/** How long a full bar takes to fall to nothing once the rider stops speaking. */
+private const val METER_FALL_MS = 450f
+
+/** How often the Ride tab reads [com.kivan.motoparty.audio.MicLevel]: 16 times a second. */
+const val METER_POLL_MS = 60L
+
+/**
+ * A frame's loudest sample (0…32768) as the fill of the meter, 0…1, on a decibel scale: every
+ * 6 dB (a doubling of the sample) is the same step of the bar, so quiet speech already shows.
+ */
+fun micLevel(peak: Int): Float {
+    if (peak <= 0) return 0f
+    val db = 20f * kotlin.math.log10(peak / 32768f)
+    return ((db - METER_FLOOR_DB) / (METER_FULL_DB - METER_FLOOR_DB)).coerceIn(0f, 1f)
+}
+
+/**
+ * What the meter shows [elapsedMs] after it showed [shown], given the microphone is at [level]
+ * now: it jumps up at once and falls back at a steady rate, so a syllable is seen and the bar
+ * does not flicker between frames.
+ */
+fun meterStep(shown: Float, level: Float, elapsedMs: Long): Float =
+    maxOf(level, shown - elapsedMs.coerceAtLeast(0) / METER_FALL_MS).coerceIn(0f, 1f)
+
 /** A snackbar after an action: what happened, and the action that takes it back, if one does. */
 data class Confirmation(val text: String, val undo: UiAction? = null)
 
@@ -138,7 +170,7 @@ val COMMANDS: List<List<String>> = listOf(
     listOf("next", "previous"),
     listOf("louder", "quieter"),
     listOf("what's playing", "shuffle"),
-    listOf("over  ·  ends the talk"),
+    listOf("over  ·  only ends the talk"),
 )
 
 /** The one-line reminder on the Ride tab; the sheet behind it has [COMMANDS]. */
