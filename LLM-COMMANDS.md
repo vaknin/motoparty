@@ -338,3 +338,9 @@ microphone / headset call route coming up (0.5–1.9 s measured with no headset)
   "play something by movie" → Moby, "who sings this" → "Porcelain by Moby". Time from phrase to
   action: 1.7 / 2.9 / 3.4 s. Which model won is unknown: wireless debugging dropped, so there is
   no logcat.
+- Second Pixel run, 23:58 (with logcat). 3.5's quota was still used up, so 3.1 answered every one:
+  "play porcelain by moby" → `play song porcelain moby` in 4.7 s; "for the next three songs play
+  more of this artist" → `queue next 3 artist moby` in 5.2 s, "Next: 3 songs"; "choose similar
+  music for the rest of the queue" → `queue instead similar` in 3.9 s, "Added 20 songs"; "play
+  something by movie" → Moby in 2.9 s; "what song is this" → "Porcelain by Moby". Four of the five
+  would have failed under the old 3 s limit. **Queueing is now verified on the device.**
