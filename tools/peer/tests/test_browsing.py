@@ -295,3 +295,45 @@ def test_next_in_a_talk_resumes_only_music_that_was_playing_before_it(host, play
     assert not host.talk and host.started[-1] == "a2"
     assert host.no_resume is held
     assert after_close(host) == []  # the old track does not resume in between; no announce
+
+
+# Queueing by voice (PROTOCOL.md "Commands"). The fake host "finds" its library for any query.
+
+def test_queue_adds_without_interrupting_and_says_what(host):
+    enq(host, "now", "a1", "a2")
+    host._command("queue 1 artist band", "client")
+    assert host.track.id == "a1" and host.started == ["a1"]
+    added = [t for t in LIB if t.id not in ("a1", "a2")][0]
+    assert ids(host.queue) == ["a2", added.id]
+    assert announces(host)[-1] == (f"Added {added.title} by {added.artist}", "ok")
+    host._command("queue next 2 similar", "client")
+    assert ids(host.queue)[2:] == ["a2", added.id] and len(host.queue) == 4
+    assert announces(host)[-1] == ("Next: 2 songs", "ok")
+    assert [q["id"] for q in last_state(host)["queue"]] == ids(host.queue)
+
+
+def test_queue_instead_replaces_the_upcoming_tracks(host):
+    enq(host, "now", "a1", "a2")
+    host._command("queue instead anything", "client")
+    assert host.track.id == "a1" and ids(host.queue) == [t.id for t in LIB if t.id != "a1"]
+    host._command("queue anything", "client")
+    assert announces(host)[-1] == ("Nothing to add", "error")
+
+
+def test_queue_with_nothing_loaded_just_plays(host):
+    host._command("queue similar", "client")
+    assert announces(host) == [("Nothing playing", "error")]
+    host._command("queue 2 artist band", "client")
+    assert host.started == [LIB[0].id] and ids(host.queue) == [LIB[1].id]
+    assert announces(host) == [("Nothing playing", "error")]
+
+
+def test_queue_ends_the_talk_then_announces(host):
+    enq(host, "now", "a1")
+    host.music["playing"] = False  # as the talk froze it
+    open_talk(host)
+    host.sent.clear()
+    host._command("queue next 1 song whatever", "client")
+    assert not host.talk and talk_closes(host) == [CLIENT_CLOSE]
+    assert [m["t"] for m in after_close(host)] == ["music.play", "announce"]
+    assert after_close(host)[0]["id"] == "a1" and after_close(host)[1]["text"].startswith("Next: ")

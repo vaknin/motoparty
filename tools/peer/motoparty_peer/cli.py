@@ -49,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--host-mic", action="store_true",
                    help="decide talks as host-mic talks: talk.open carries mic:'host' and client "
                         "audio is dropped (stdin `hostmic on|off` toggles)")
+    h.add_argument("--interpret-table",
+                   help="JSON file {normalised phrase: answer JSON string}: a stub interpreter; "
+                        "with it the hello says interpret:true (PROTOCOL.md 'Commands')")
     h.add_argument("-v", "--verbose", action="store_true", help="also print ping/pong frames")
     return p
 

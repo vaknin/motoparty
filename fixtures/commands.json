@@ -1,5 +1,5 @@
 {
- "_doc": "Parser vectors. See PROTOCOL.md 'Commands' for the normalisation rules (per code point; U+2019 maps to an apostrophe).",
+ "_doc": "Parser vectors. See PROTOCOL.md 'Commands' for the normalisation rules (per code point; U+2019 maps to an apostrophe). A queue command has where, kind (a play kind or similar), query unless similar, and count as a decimal string when given.",
  "cases": [
   {
    "text": "play album dark side of the moon",
@@ -289,6 +289,172 @@
   },
   {
    "text": "shuffle the queue",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "queue porcelain",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "song",
+    "query": "porcelain"
+   }
+  },
+  {
+   "text": "Queue album Play Moby.",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "album",
+    "query": "play moby"
+   }
+  },
+  {
+   "text": "queue next song Natural Blues",
+   "expect": {
+    "action": "queue",
+    "where": "next",
+    "kind": "song",
+    "query": "natural blues"
+   }
+  },
+  {
+   "text": "queue next porcelain",
+   "expect": {
+    "action": "queue",
+    "where": "next",
+    "kind": "song",
+    "query": "porcelain"
+   }
+  },
+  {
+   "text": "queue next 3 artist moby",
+   "expect": {
+    "action": "queue",
+    "where": "next",
+    "kind": "artist",
+    "query": "moby",
+    "count": "3"
+   }
+  },
+  {
+   "text": "queue instead similar",
+   "expect": {
+    "action": "queue",
+    "where": "instead",
+    "kind": "similar"
+   }
+  },
+  {
+   "text": "queue similar",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "similar"
+   }
+  },
+  {
+   "text": "please queue 5 similar",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "similar",
+    "count": "5"
+   }
+  },
+  {
+   "text": "queue instead 10 playlist road trip",
+   "expect": {
+    "action": "queue",
+    "where": "instead",
+    "kind": "playlist",
+    "query": "road trip",
+    "count": "10"
+   }
+  },
+  {
+   "text": "queue 3 doors down",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "song",
+    "query": "3 doors down"
+   }
+  },
+  {
+   "text": "queue 0 artist moby",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "song",
+    "query": "0 artist moby"
+   }
+  },
+  {
+   "text": "queue 51 artist moby",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "song",
+    "query": "51 artist moby"
+   }
+  },
+  {
+   "text": "queue 50 artist moby",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "artist",
+    "query": "moby",
+    "count": "50"
+   }
+  },
+  {
+   "text": "queue similar things",
+   "expect": {
+    "action": "queue",
+    "where": "end",
+    "kind": "song",
+    "query": "similar things"
+   }
+  },
+  {
+   "text": "queue 2 album",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "queue",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "queue next",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "queue instead 3",
+   "expect": {
+    "action": "queue",
+    "where": "instead",
+    "kind": "song",
+    "query": "3"
+   }
+  },
+  {
+   "text": "queue album",
+   "expect": {
+    "action": "unknown"
+   }
+  },
+  {
+   "text": "queue next playlist",
    "expect": {
     "action": "unknown"
    }

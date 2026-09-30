@@ -23,6 +23,16 @@ class CatalogNetworkTest {
     @Before fun onlyWithNetwork() = assumeTrue(System.getProperty("motoparty.network") == "true")
 
     @Test
+    fun similarMusicComesFromTheRadioOfATrack(): Unit = runBlocking {
+        val catalog = Catalog(http)
+        val track = catalog.search(Command.Kind.SONG, "porcelain moby").tracks.first()
+        val similar = catalog.similar(track.id)
+        println("similar to ${track.title} (${track.id}) -> ${similar.size}: ${similar.take(8).map { "${it.title} – ${it.artist} ${it.durationMs}" }}")
+        assertTrue(similar.size >= 5)
+        assertTrue(similar.none { it.id == track.id })
+    }
+
+    @Test
     fun searchResolveAndDownloadASong(): Unit = runBlocking {
         val catalog = Catalog(http)
         val result = catalog.search(Command.Kind.SONG, "bohemian rhapsody queen")

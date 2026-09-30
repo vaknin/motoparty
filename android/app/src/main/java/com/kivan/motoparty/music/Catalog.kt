@@ -1,6 +1,7 @@
 package com.kivan.motoparty.music
 
 import com.kivan.motoparty.core.Command
+import com.kivan.motoparty.core.CommandParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -20,6 +21,7 @@ import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.IOException
+import kotlin.random.Random
 
 /**
  * YouTube Music search and audio resolution through NewPipeExtractor. YouTube does the fuzzy
@@ -69,6 +71,25 @@ class Catalog(private val http: OkHttpClient) {
     /** The tracks of the album or playlist [id], in order, at most [MAX_COLLECTION]. */
     suspend fun browse(id: String): List<Track> = withContext(Dispatchers.IO) { tracksOf(id).second }
 
+    /**
+     * Music like the track [id], without the track itself: YouTube Music's radio for it, else
+     * the plain YouTube mix. Empty when YouTube has neither.
+     */
+    suspend fun similar(id: String): List<Track> = withContext(Dispatchers.IO) {
+        require(isValidTrackId(id)) { "bad track id" }
+        for (mix in listOf("RDAMVM$id", "RD$id")) {
+            val tracks = try {
+                PlaylistInfo.getInfo(yt, "https://www.youtube.com/watch?v=$id&list=$mix").relatedItems
+                    .mapNotNull { it.toTrack(album = null, art = null) }.filter { it.id != id }
+            } catch (e: Exception) {
+                if (e is InterruptedException || e is IOException) throw e
+                emptyList()
+            }
+            if (tracks.isNotEmpty()) return@withContext tracks
+        }
+        emptyList()
+    }
+
     private fun songs(query: String): List<Track> {
         val items = runSearch(query, Q.MUSIC_SONGS).filterIsInstance<StreamInfoItem>()
         val fromMusic = items.mapNotNull { it.toTrack(album = null, art = null) }
@@ -79,8 +100,9 @@ class Catalog(private val http: OkHttpClient) {
 
     private fun topCollection(albums: Boolean, query: String, word: String): Result {
         val filter = if (albums) Q.MUSIC_ALBUMS else Q.MUSIC_PLAYLISTS
-        val hit = (runSearch(query, filter).filterIsInstance<PlaylistInfoItem>().firstNotNullOfOrNull { it.toCollection() }
-            ?: runSearch(query, Q.PLAYLISTS).filterIsInstance<PlaylistInfoItem>().firstNotNullOfOrNull { it.toCollection() })
+        val hits = runSearch(query, filter).filterIsInstance<PlaylistInfoItem>().mapNotNull { it.toCollection() }
+        val hit = (if (albums) anyAlbum(hits, query) else null) ?: hits.firstOrNull()
+            ?: runSearch(query, Q.PLAYLISTS).filterIsInstance<PlaylistInfoItem>().firstNotNullOfOrNull { it.toCollection() }
             ?: throw NotFound(query)
         val (name, tracks) = tracksOf(hit.id, hit.art)
         if (tracks.isEmpty()) throw NotFound(query)
@@ -198,6 +220,19 @@ class Catalog(private val http: OkHttpClient) {
         private const val RESIZED_PX = 544
         private val RESIZABLE = Regex("""^https://(yt3|lh3)\.(googleusercontent|ggpht)\.com/[^?]*=w\d+-h\d+""")
         private val SIZE = Regex("""=w\d+-h\d+""")
+
+        /**
+         * "Any album by X" (PROTOCOL.md "Commands", *The clarifying question*): when [query] is
+         * the artist of album results and the title of none, one of that artist's top
+         * [ANY_ALBUM_TOP] results at random; null when the query names an album as usual.
+         */
+        fun anyAlbum(hits: List<CollectionItem>, query: String, random: Random = Random): CollectionItem? {
+            val q = CommandParser.normalize(query)
+            if (hits.any { CommandParser.normalize(it.title) == q }) return null
+            return hits.filter { CommandParser.normalize(it.artist) == q }.take(ANY_ALBUM_TOP).randomOrNull(random)
+        }
+
+        const val ANY_ALBUM_TOP = 5
 
         fun cleanAlbum(name: String): String = name.removePrefix("Album – ").removePrefix("Album - ")
 

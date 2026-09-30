@@ -238,7 +238,7 @@ final class UIModelTests: XCTestCase {
             actions.insert(CommandParser.parse(chip.argument == nil ? chip.words : "\(chip.words) x").action)
         }
         XCTAssertEqual(actions, ["play", "pause", "resume", "next", "previous", "volumeUp", "volumeDown",
-                                 "nowplaying", "shuffle", "end"])
+                                 "nowplaying", "shuffle", "queue", "end"])
     }
 
     func testPlayChipsNameTheirKind() {

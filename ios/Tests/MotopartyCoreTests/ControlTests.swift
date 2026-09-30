@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 36)
+        XCTAssertEqual(messages.count, 38)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -38,6 +38,9 @@ final class MessageFixtureTests: XCTestCase {
     func testDecodedValues() throws {
         let hello = try ControlCodec.decode(Data(#"{"t":"hello","proto":1,"role":"host","name":"Pixel 8","voicePort":47801,"httpPort":47802}"#.utf8))
         XCTAssertEqual(hello, .hello(Hello(role: .host, name: "Pixel 8", voicePort: 47801, httpPort: 47802)))
+        let smart = try ControlCodec.decode(Data(#"{"t":"hello","proto":1,"role":"host","name":"Pixel 8","interpret":true}"#.utf8))
+        XCTAssertEqual(smart, .hello(Hello(role: .host, name: "Pixel 8", interpret: true)))
+        XCTAssertFalse(String(decoding: try ControlCodec.encode(hello), as: UTF8.self).contains("interpret"))
 
         let state = try ControlCodec.decode(Data(#"{"t":"state","talk":true,"queue":[]}"#.utf8))
         XCTAssertEqual(state, .state(HostState(talk: true)))

@@ -8,6 +8,10 @@ final class CommandFixtureTests: XCTestCase {
     private func dictionary(_ command: Command) -> [String: String] {
         switch command {
         case .play(let kind, let query): ["action": "play", "kind": kind.rawValue, "query": query]
+        case .queue(let place, let count, let kind, let query):
+            ["action": "queue", "where": place.rawValue, "kind": kind?.rawValue ?? CommandParser.similar]
+                .merging(kind == nil ? [:] : ["query": query]) { $1 }
+                .merging(count.map { ["count": String($0)] } ?? [:]) { $1 }
         default: ["action": command.action]
         }
     }
@@ -15,7 +19,7 @@ final class CommandFixtureTests: XCTestCase {
     func testEveryFixtureCase() throws {
         let fixture = try Fixtures.json("commands.json")
         let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 45)
+        XCTAssertEqual(cases.count, 65)
         for c in cases {
             let text = try XCTUnwrap(c["text"] as? String)
             let expect = try XCTUnwrap(c["expect"] as? [String: String])
@@ -85,7 +89,8 @@ final class FirstPhraseTests: XCTestCase {
         let fixture = try Fixtures.json("first_phrase.json")
         XCTAssertEqual(fixture["firstPhraseMs"] as? Double, FirstPhraseGate.firstPhraseMs)
         let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
-        XCTAssertEqual(cases.count, 12)
+        XCTAssertEqual(fixture["answerMs"] as? Double, FirstPhraseGate.answerMs)
+        XCTAssertEqual(cases.count, 24)
         for c in cases {
             let name = try XCTUnwrap(c["name"] as? String)
             let role = try XCTUnwrap((c["role"] as? String).flatMap(FirstPhraseGate.Role.init(rawValue:)), name)
@@ -94,13 +99,24 @@ final class FirstPhraseTests: XCTestCase {
             XCTAssertEqual(phrases.count, expect.count, name)
             // Any live-earcon time: only the difference counts.
             let liveAtMs = 123_456.0
-            var gate = FirstPhraseGate(role: role, liveAtMs: liveAtMs)
+            var gate = FirstPhraseGate(role: role, liveAtMs: liveAtMs, interpret: c["interpret"] as? Bool ?? false)
+            // The host's question arrives before any phrase at or after askAtMs;
+            // the opener's next phrase is then the reply.
+            var askAtMs = c["askAtMs"] as? Double
+            var replying = false
             for (phrase, want) in zip(phrases, expect) {
                 let text = try XCTUnwrap(phrase["text"] as? String)
                 let atMs = try XCTUnwrap(phrase["atMs"] as? Double)
+                if let at = askAtMs, at <= atMs {
+                    gate.ask(atMs: liveAtMs + at)
+                    askAtMs = nil
+                    replying = role == .opener
+                }
                 // JSON null arrives as NSNull: conversation.
-                let expected: HeardPhrase = (want as? String).map(HeardPhrase.command) ?? .conversation
+                let expected: HeardPhrase = (want as? String).map { replying ? .reply($0) : .command($0) } ?? .conversation
                 XCTAssertEqual(gate.classify(text, nowMs: liveAtMs + atMs), expected, "\(name): \(text.debugDescription)")
+                // An empty phrase spends nothing: the reply is still to come.
+                if expected != .conversation || !CommandParser.normalize(text).isEmpty { replying = false }
             }
         }
     }
@@ -120,6 +136,19 @@ final class FirstPhraseTests: XCTestCase {
         XCTAssertFalse(FirstPhraseGate(role: .solo, liveAtMs: 0).isSpent(atMs: 60_000))
     }
 
+    func testAQuestionOpensTheGateForOneReply() {
+        var gate = FirstPhraseGate(role: .opener, liveAtMs: 0, interpret: true)
+        XCTAssertEqual(gate.classify("play an album by Moby", nowMs: 2_000), .command("play an album by moby"))
+        XCTAssertTrue(gate.isSpent(atMs: 2_000))
+        gate.ask(atMs: 3_000)
+        XCTAssertFalse(gate.isSpent(atMs: 13_000))
+        XCTAssertTrue(gate.isSpent(atMs: 13_001))
+        XCTAssertEqual(gate.classify("…", nowMs: 4_000), .conversation)
+        XCTAssertEqual(gate.classify("Louder!", nowMs: 6_000), .reply("louder"))
+        XCTAssertTrue(gate.isSpent(atMs: 6_000))
+        XCTAssertEqual(gate.classify("next", nowMs: 7_000), .conversation)
+    }
+
     func testCommandTextFeedsTheParser() {
         var gate = FirstPhraseGate(role: .opener, liveAtMs: 0)
         XCTAssertEqual(gate.classify("Hey, turn it LOUDER please!", nowMs: 500), .conversation)
@@ -131,6 +160,15 @@ final class FirstPhraseTests: XCTestCase {
 
     /// Volume never reaches the host, so the client closes that talk itself;
     /// everything else is sent as heard and the host closes it.
+    /// With a host that interprets, an unparsed first phrase is sent as it is
+    /// and volume still stays on this phone.
+    func testClientCommandRouteOfCandidate() {
+        var gate = FirstPhraseGate(role: .opener, liveAtMs: 0, interpret: true)
+        XCTAssertEqual(gate.classify("Put on something by Moby", nowMs: 1_000), .command("put on something by moby"))
+        XCTAssertEqual(ClientCommand.route("put on something by moby", volumeArmed: false), .send("put on something by moby"))
+        XCTAssertEqual(ClientCommand.route("louder", volumeArmed: true), .volume(up: true, .inTalk))
+    }
+
     func testClientCommandRoute() {
         XCTAssertEqual(ClientCommand.route("hey louder please", volumeArmed: true), .volume(up: true, .inTalk))
         XCTAssertEqual(ClientCommand.route("volume down", volumeArmed: true), .volume(up: false, .inTalk))

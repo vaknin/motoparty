@@ -170,6 +170,7 @@ val COMMANDS: List<List<String>> = listOf(
     listOf("next", "previous"),
     listOf("louder", "quieter"),
     listOf("what's playing", "shuffle"),
+    listOf("queue [next] <song>  ·  adds it"),
     listOf("over  ·  only ends the talk"),
 )
 

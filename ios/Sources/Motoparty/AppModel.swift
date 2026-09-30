@@ -161,6 +161,8 @@ final class AppModel: ObservableObject {
     private var hostName = "host"
     private var voicePort = LinkDefaults.voicePort
     private var httpPort = LinkDefaults.httpPort
+    /// The host's latest `hello.interpret`: it interprets unparsed first phrases.
+    private var hostInterprets = false
     private var loads: [String: MusicLoad] = [:]
     private var musicStatusTracker = MusicStatusTracker() {
         didSet {
@@ -410,6 +412,7 @@ final class AppModel: ObservableObject {
         voice?.stop()
         voice = nil
         hostAddress = nil
+        hostInterprets = false
         talkRequested = false
         talkOpener = nil
         talkOpenPending = false
@@ -475,6 +478,7 @@ final class AppModel: ObservableObject {
             clearProblem(on: .connected)
             let newVoice = hello.voicePort ?? LinkDefaults.voicePort
             httpPort = hello.httpPort ?? LinkDefaults.httpPort
+            hostInterprets = hello.interpret ?? false
             if newVoice != voicePort || voice == nil {
                 voicePort = newVoice
                 startVoiceSocket()
@@ -548,6 +552,7 @@ final class AppModel: ObservableObject {
             lastAnnouncement = announce.text
             if let earcon = announce.earcon { earcons.play(earcon) }
             announcer.speak(announce.text, language: settings.speechLanguage)
+            if announce.ask == true { awaitReply() }
         case .musicResults(let results):
             receive(results)
         case .bye, .ping, .pong, .musicReady, .musicError, .musicControl, .commandText,
@@ -1051,7 +1056,7 @@ final class AppModel: ObservableObject {
         // phone never sends command.text (it has no mic to recognise anyway).
         guard talkMode.recognisesCommands(opener: talkOpener) else { return }
         let now = MonotonicClock.nowMs()
-        firstPhrase = FirstPhraseGate(role: .opener, liveAtMs: now)
+        firstPhrase = FirstPhraseGate(role: .opener, liveAtMs: now, interpret: hostInterprets)
         firstPhraseTimer?.invalidate()
         // A phrase still in progress at the deadline would arrive too late
         // anyway. A little past it, since the window's edge is inclusive.
@@ -1064,18 +1069,45 @@ final class AppModel: ObservableObject {
     }
 
     /// One phrase recognised on this phone's mic during a talk it opened. A
-    /// command only if it is the first phrase, in time, and parses;
-    /// everything else is conversation, never sent or acted on.
+    /// command only if it is the first phrase, in time, and parses (or the
+    /// host interprets, and decides); everything else is conversation, never
+    /// sent or acted on.
     private func heard(_ phrase: String) {
         guard talkOpen, var gate = firstPhrase else { return }
         let kind = gate.classify(phrase, nowMs: MonotonicClock.nowMs())
         firstPhrase = gate
         Log.voice.info("heard: \"\(phrase, privacy: .public)\" (\(kind.label, privacy: .public))")
-        if case .command(let text) = kind {
+        switch kind {
+        case .command(let text):
             lastHeard = text
             runCommand(text)
+        case .reply(let text):
+            // The host's to understand: not parsed here, volume words included.
+            lastHeard = text
+            send(.commandText(CommandText(text: text, lang: settings.speechLanguage)))
+        case .conversation:
+            break
         }
         stopRecognitionIfSpent()
+    }
+
+    /// The host asked a clarifying question (PROTOCOL.md "The clarifying
+    /// question"): in a talk this phone opened, its next phrase within
+    /// `ANSWER_MS` is the reply, so recognition (stopped once the first
+    /// phrase was spent) runs again for that one phrase.
+    private func awaitReply() {
+        guard talkOpen, talkMode.recognisesCommands(opener: talkOpener) else { return }
+        let now = MonotonicClock.nowMs()
+        var gate = FirstPhraseGate(role: .opener, liveAtMs: now, interpret: true)
+        gate.ask(atMs: now)
+        firstPhrase = gate
+        firstPhraseTimer?.invalidate()
+        firstPhraseTimer = Timer.scheduledTimer(withTimeInterval: FirstPhraseGate.answerMs / 1000 + 0.05,
+                                                repeats: false) { [weak self] _ in
+            self?.stopRecognitionIfSpent()
+        }
+        Log.voice.info("question from the host: listening for the reply")
+        transcriber.start(language: settings.speechLanguage)
     }
 
     /// Nothing more this talk can be a command: stop listening.

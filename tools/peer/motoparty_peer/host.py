@@ -24,7 +24,17 @@ from dataclasses import dataclass, field, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import discovery
-from .commands import UNKNOWN_ANNOUNCE, VOLUME_ACTIONS, FirstPhraseGate, parse_command
+from .commands import (
+    UNKNOWN_ANNOUNCE,
+    VOLUME_ACTIONS,
+    QUEUE_SIMILAR,
+    SIMILAR,
+    FirstPhraseGate,
+    ANSWER_GRACE_MS,
+    ANSWER_MS,
+    interpretation_outcome,
+    parse_command,
+)
 from .music import VALID_ID, TrackInfo, browse, load_library, search
 from .opus import is_voice_activity
 from .protocol import (
@@ -92,6 +102,14 @@ class VoiceStats:
 class Host:
     def __init__(self, args) -> None:
         self.args = args
+        # The stub interpreter (--interpret-table, or set by a test); None = not interpreting.
+        self.interpret_table: dict[str, str] | None = None
+        if getattr(args, "interpret_table", None):
+            with open(args.interpret_table, encoding="utf-8") as f:
+                self.interpret_table = json.load(f)
+        self.interpret_delay_ms = 0  # tests: how long the stub takes to answer
+        self.question: dict | None = None  # this talk's clarifying question, asked or answered
+        self.answer_wait_ms = ANSWER_MS + ANSWER_GRACE_MS  # tests shorten it
         self.name = args.name or f"{socket.gethostname()} peer"
         self.conns: set[Conn] = set()
         self.current: Conn | None = None
@@ -206,7 +224,85 @@ class Host:
 
     def hello(self) -> dict:
         return {"t": "hello", "proto": PROTO_VERSION, "role": "host", "name": self.name,
-                "voicePort": self.voice_port, "httpPort": self.http_port}
+                "voicePort": self.voice_port, "httpPort": self.http_port,
+                **({"interpret": True} if self.interpret_table is not None else {})}
+
+    def _awaits_reply(self, by: str) -> bool:
+        """Is the next phrase of `by` the reply to the host's question of this talk?"""
+        q = self.question
+        return bool(q and self.talk and not q["answered"] and q["by"] == by and q["session"] == self.talk_opened)
+
+    def _interpret(self, text: str, by: str, solo: bool, reply: dict | None) -> None:
+        """An unparsed candidate while interpreting (PROTOCOL.md "Commands", Interpretation), or
+        the `reply` to a question. The stub interpreter is a table, normalised phrase -> the
+        answer a model would give; a phrase not in it is conversation, and the value null is a
+        failure (a timeout)."""
+        assert self.interpret_table is not None
+        answer = self.interpret_table.get(text, '{"action":"none"}')
+        failed = not isinstance(answer, str)
+        outcome = None if failed else interpretation_outcome(answer)
+        talk_was, session = self.talk, self.talk_opened
+        if reply is not None:
+            reply["answered"] = True
+
+        def done() -> None:
+            asks = isinstance(outcome, dict)
+            if self.talk != talk_was or self.talk_opened != session:
+                log(f"interpret: {text!r} -> {outcome or 'conversation'} (dropped: the talk changed)")
+                return
+            if asks and talk_was and self.question is None:
+                log(f"interpret: {text!r} -> ask {outcome['ask']!r} (fallback {outcome['fallback']})")
+                self._ask({"session": session, "by": by, "phrase": text, "text": outcome["ask"],
+                           "fallback": outcome["fallback"], "answered": False})
+                return
+            # A reply that settles nothing falls back on the first answer; "never mind" does not.
+            fallback = reply["fallback"] if reply is not None and (failed or asks) else None
+            cmd = (outcome["fallback"] or fallback) if asks else outcome if outcome is not None else fallback
+            # A `play …` of the grammar that the interpreter did not settle is played as spoken.
+            if cmd is None and reply is None and parse_command(text)["action"] in ("play", "queue"):
+                cmd = text
+            if cmd is None:
+                log(f"interpret: {text!r} -> {'failed' if failed else 'conversation'}")
+                if solo:
+                    self.send(dict(UNKNOWN_ANNOUNCE))
+            elif by == "client" and parse_command(cmd)["action"] in VOLUME_ACTIONS:
+                log(f"interpret: {text!r} -> {cmd} (ignored: volume is the passenger's own)")
+            else:
+                log(f"interpret: {text!r} -> {cmd}")
+                self._command(cmd, by)
+
+        if self.interpret_delay_ms:
+            asyncio.get_running_loop().call_later(self.interpret_delay_ms / 1000, done)
+        else:
+            done()
+
+    def _ask(self, q: dict) -> None:
+        """The host's one question of the talk (PROTOCOL.md "Commands", The clarifying question):
+        said in the talk, which stays open; the next phrase of the same side is the reply, and
+        with none in time the fallback is executed."""
+        self.question = q
+        if self.gate is not None and (q["by"] == "host" or self.talk_mic == "host"):
+            self.gate.ask(now_ms())
+        self.send({"t": "announce", "text": q["text"], "ask": True})
+
+        def no_reply() -> None:
+            if self.question is not q or q["answered"] or not self.talk or self.talk_opened != q["session"]:
+                return
+            q["answered"] = True
+            log(f"ask: no reply to {q['text']!r}; fallback {q['fallback']}")
+            if q["fallback"]:
+                self._command(q["fallback"], q["by"])
+
+        asyncio.get_running_loop().call_later(self.answer_wait_ms / 1000, no_reply)
+
+    def _submit(self, text: str, by: str, solo: bool = False) -> None:
+        """A command candidate: the grammar first, then (if on) the interpreter, which also gets
+        every `play …` (to repair names, or ask). The reply to a question is always interpreted."""
+        reply = self.question if self._awaits_reply(by) else None
+        if self.interpret_table is not None and (reply is not None or parse_command(text)["action"] in ("unknown", "play", "queue")):
+            self._interpret(text, by, solo, reply)
+        else:
+            self._command(text, by)
 
     def state(self) -> dict:
         s: dict = {"t": "state", "talk": self.talk}
@@ -382,12 +478,13 @@ class Host:
         self.talk_opened = now
         self.talk_by = by
         self.client_command_seen = False
+        self.question = None
         self.talk_mic = "host" if self.host_mic else None
         self.talk_dropped = 0
         # The host's live earcon plays now; a talk with no client is solo. In a host-mic talk
         # the host runs ASR on the opener's channel whoever opened it (PROTOCOL.md "Commands").
         role = "solo" if self.current is None else "opener" if by == "host" or self.talk_mic else "other"
-        self.gate = FirstPhraseGate(role, now)
+        self.gate = FirstPhraseGate(role, now, interpret=self.interpret_table is not None)
         self.no_resume = False
         self.next_sent = None  # a talk cancels the client's pending music.next
         if self.music and self.music["playing"]:
@@ -752,11 +849,11 @@ class Host:
             why = "host-mic talk: the host recognises the opener's channel, the client never does"
         elif self.talk_by != "client":
             why = "the client did not open this talk"
-        elif self.client_command_seen:
+        elif self.client_command_seen and not self._awaits_reply("client"):
             why = "not the first command.text of this talk"
         else:
             self.client_command_seen = True
-            self._command(text, "client")
+            self._submit(text, "client")
             return
         log(f"   command.text ignored: {why}")
 
@@ -772,6 +869,9 @@ class Host:
         passenger = self.talk_mic == "host" and self.talk_by == "client" and self.current is not None
         if text is None:
             log(f"hear: {phrase!r} is conversation ({self.gate.why}), not acted on")
+        elif self._awaits_reply("client" if passenger else "host"):
+            log(f"hear: reply {text!r} to the question")
+            self._submit(text, "client" if passenger else "host", solo=self.gate.role == "solo")
         elif passenger:
             if parse_command(text)["action"] in VOLUME_ACTIONS:
                 log(f"hear: {parse_command(text)['action']} on the passenger's channel ignored, "
@@ -779,14 +879,14 @@ class Host:
             else:
                 log(f"hear: command {text!r} (passenger's channel, as the client's command)")
                 self.client_command_seen = True
-                self._command(text, "client")
+                self._submit(text, "client")
         elif parse_command(text)["action"] in VOLUME_ACTIONS:
             log(f"local: {parse_command(text)['action']} handled here [earcon ok] "
                 f"(the peer has no real volume); it ends the talk")
             self._close_talk("host", "trigger")
         else:
             log(f"hear: command {text!r}")
-            self._command(text, "host")
+            self._submit(text, "host", solo=self.gate.role == "solo")
 
     def _command(self, text: str, by: str) -> None:
         """A command spoken by `by` (the client's command.text, or the host's own phrase).
@@ -852,6 +952,34 @@ class Host:
             if self.talk and not (self.resume_after_talk or self._loading()):
                 self.no_resume = True  # paused before the talk: stays paused on the new track
             self._music_control(a)
+        elif a == "queue":
+            # Queueing by voice. The fake host has no catalog: whatever is asked for, it "finds"
+            # its library, in order (a query is not looked at).
+            current = self.track if self._has_current() else None
+            if cmd["kind"] == SIMILAR and current is None:
+                return "Nothing playing", "error"
+            have = {current.id} if current else set()
+            if cmd["where"] != "instead":
+                have |= {t.id for t in self.queue}
+            limit = int(cmd["count"]) if "count" in cmd else QUEUE_SIMILAR if cmd["kind"] == SIMILAR else MAX_QUEUE
+            added = [t for t in self.library if t.id not in have][:limit]
+            if not added:
+                return "Nothing to add", "error"
+            if current is None:
+                # nothing loaded: they just start playing, and the music says so
+                self.queue = added[1:]
+                self._start(added[0])
+                self.send_state()
+                return None
+            if cmd["where"] == "next":
+                self.queue[0:0] = added
+            else:
+                self.queue = (self.queue if cmd["where"] == "end" else []) + added
+            del self.queue[MAX_QUEUE:]
+            self.send_state()
+            one = added[0]
+            what = (f"{one.title} by {one.artist}" if one.artist else one.title) if len(added) == 1 else f"{len(added)} songs"
+            return (f"Next: {what}" if cmd["where"] == "next" else f"Added {what}"), "ok"
         elif a == "nowplaying":
             t = self.track if self._has_current() else None
             if t is None:

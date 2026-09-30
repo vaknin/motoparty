@@ -30,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import com.kivan.motoparty.BuildConfig
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -101,6 +102,14 @@ fun SettingsTab(
             SwitchRow("Swap rider and passenger", "If the two Lark transmitters are the wrong way round", settings.larkSwap) { v ->
                 update { it.copy(larkSwap = v) }
             }
+            val hasKey = BuildConfig.GEMINI_API_KEY.isNotEmpty()
+            SwitchRow(
+                "Smart commands",
+                if (hasKey) "Say it your own way: \"put on something by Moby\". The first thing said in a talk is sent to Google Gemini to be understood; later speech never is"
+                else "Not in this build: it was made without a Gemini API key",
+                settings.smartCommands && hasKey,
+                enabled = hasKey,
+            ) { v -> update { it.copy(smartCommands = v) } }
             LanguageRow(settings.asrLanguage) { tag -> update { it.copy(asrLanguage = tag) } }
         }
         Group("Tuning") {
@@ -188,9 +197,9 @@ private fun Group(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun SwitchRow(title: String, detail: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(title: String, detail: String?, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 72.dp).clickable { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().heightIn(min = 72.dp).clickable(enabled = enabled) { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
@@ -199,7 +208,7 @@ private fun SwitchRow(title: String, detail: String?, checked: Boolean, onChange
                 Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Switch(checked, onChange)
+        Switch(checked, onChange, enabled = enabled)
     }
 }
 

@@ -75,7 +75,7 @@ catches up.
 
 | `t`             | Dir   | Fields |
 |-----------------|-------|--------|
-| `hello`         | both  | `proto`:1, `role`:`"host"`\|`"client"`, `name`: string, `voicePort`: int (host only), `httpPort`: int (host only) |
+| `hello`         | both  | `proto`:1, `role`:`"host"`\|`"client"`, `name`: string, `voicePort`: int (host only), `httpPort`: int (host only), `interpret`: bool (host only, optional, absent = `false`: the host interprets unparsed first phrases, see Commands, *Interpretation*) |
 | `ping`          | C→H   | `id`: int, `t0`: client clock ms at send |
 | `pong`          | H→C   | `id`, `t0` (echoed), `t1`: host clock at receive, `t2`: host clock at send |
 | `talk.open`     | both  | `by`: `"host"`\|`"client"`, `mic` (optional, H→C only): `"host"`. C→H is a request; H→C is the decision. See "Host-mic talk" |
@@ -94,7 +94,7 @@ catches up.
 | `music.results` | H→C   | `id` (echoed), `items`: array of result items, `error` (optional): string to show instead of an empty list |
 | `music.enqueue` | C→H   | `mode`: `"now"`\|`"next"`\|`"end"`, `tracks`: array of tracks, `art` (optional): URL for tracks without their own |
 | `music.edit`    | C→H   | `op`: `"jump"`\|`"remove"`\|`"clear"`, `index` (optional): int, `id` (optional): string |
-| `announce`      | H→C   | `text`: to be spoken by TTS; `earcon` (optional): `"ok"`\|`"error"` |
+| `announce`      | H→C   | `text`: to be spoken by TTS; `earcon` (optional): `"ok"`\|`"error"`; `ask` (optional, only `true`): the text is a clarifying question, see Commands, "The clarifying question" |
 | `state`         | H→C   | see below |
 | `bye`           | both  | `reason` (optional). Sender closes the socket after it |
 
@@ -414,7 +414,8 @@ the error is announced after the switch and music that was playing before the ta
 - `next` / `previous`: choose the track before the close; the close resumes it if music was
   playing before the talk, and music that was paused before the talk stays paused on the new track.
 - `pause`: cancels the resume after the talk; the music stays paused.
-- `nowplaying`, `shuffle`: music that was playing resumes; the reply is spoken after the switch.
+- `nowplaying`, `shuffle`, `queue …`: music that was playing resumes; the reply is spoken after
+  the switch.
 - `end`: exactly like a press (music that was playing resumes).
 - Volume (below) is local: the phone that heard it changes its **media** volume and ends the
   talk itself, the client with an ordinary `talk.close{by:"client", reason:"trigger"}`.
@@ -430,7 +431,8 @@ succeeds and whose result is the music itself has **no `announce`**: `play …`,
 is sent for failures (earcon `error`: "Couldn't find <query>", "No coverage", "Search failed",
 "Nothing to resume", "End of queue", "Nothing to play", "Nothing to shuffle", "Nothing playing",
 "Didn't catch that"; the exact wording is the host's) and for the two commands that have
-nothing else to show for themselves: `nowplaying` (the track) and `shuffle` ("Shuffled"). The
+nothing else to show for themselves: `nowplaying` (the track), `shuffle` ("Shuffled") and
+`queue …` (what was added, see "Queueing by voice"). The
 same holds for a command outside a talk (typed on the host's Ride screen).
 
 Volume is local: `volume up/down` changes the volume of the phone it was spoken on (or whose
@@ -447,6 +449,8 @@ volume up | louder | volume down | quieter
 over | end talk | hang up                       (action "end": close the talk)
 what's playing | whats playing | what is playing | what song is this   (action "nowplaying")
 shuffle                                         (action "shuffle")
+queue [next|instead] [<count>] [song|album|artist|playlist] <query>   (action "queue")
+queue [next|instead] [<count>] similar
 ```
 
 `nowplaying` (2026-09-30) announces the current track, `"<title> by <artist>"` (just the title when
@@ -464,6 +468,158 @@ song/album/artist/playlist; without a kind, `play <query>` searches songs; an em
 not a command. The other phrases must match exactly ("next song" is not `next`). Anything
 else → `announce{text:"Didn't catch that", earcon:"error"}`. Vectors: `fixtures/commands.json`.
 
+### Queueing by voice (2026-09-30)
+
+`queue …` adds music to the queue instead of replacing it: what `music.enqueue` does by touch
+("Browsing"), by voice. The plain grammar is terse; with interpretation on, the natural forms
+("add the rest of this album to the queue", "play Porcelain next", "for the next three songs
+play more of this artist", "choose similar music for the rest of the queue") are turned into it.
+
+- **Parsing.** After `queue`: an optional place, `next` (right after the current track) or
+  `instead` (the upcoming queue is cleared first, then the tracks are appended); without one the
+  tracks go to the end. Then an optional **count**: a word of one or two ASCII digits with a
+  value 1–`QUEUE_MAX_COUNT` = 50, and only when the word after it is a kind or `similar` (so
+  `queue 3 doors down` is a song search). Then either the single word `similar`, or a kind
+  (default `song`) and a query; an empty query is not a command. Vectors: `fixtures/commands.json`
+  (`expect` has `where`: `"end"`/`"next"`/`"instead"`, `kind` (a play kind or `"similar"`),
+  `query` unless similar, and `count` as a decimal string when given).
+- **The source.** `song`: the top hit. `artist`: the artist's top songs. `album`, `playlist`: the
+  top collection's tracks, in order (an album query that is an artist's name picks one of that
+  artist's albums, as for `play album`). `similar`: music like the **current track** (YouTube's
+  radio for it); with nothing loaded it fails with "Nothing playing".
+- **What is added.** From the source, in order: if it is an album that contains the current
+  track (the same id, or the same normalised title), only the tracks **after** it ("the rest of
+  this album"); then the current track and tracks already upcoming are left out (for `instead`
+  only the current track, since the rest is replaced); then at most `count` tracks, or all of
+  them (`similar`: `QUEUE_SIMILAR` = 20) without one.
+- **Effect.** Like every command it ends the talk, and music that was playing resumes. The reply
+  is spoken after the switch, earcon `ok`: "Added <title> by <artist>" for one track, "Added <n>
+  songs" for more; with `next`, "Next: <title> by <artist>" / "Next: <n> songs". Failures
+  (earcon `error`): the search ones of `play`, "Nothing playing" (`similar`), and "Nothing to
+  add" when nothing is left to add. With **no track loaded** the tracks simply start playing, as
+  for `music.enqueue`, and there is no reply.
+- With interpretation on, a `queue …` the grammar parses is also given to the interpreter, like
+  `play …`, and executed as spoken if that does not settle it.
+
+### Interpretation (2026-09-30)
+
+The grammar above is the fast path: a phrase it parses is a command at once, offline, exactly as
+before — **except `play …`**, which an interpreting host also gives to the interpreter (so
+"play something by movie" becomes Moby instead of a search for a song of that name, and a vague
+"play an album by Moby" can be asked about). A `play …` the interpreter does not settle
+(conversation, a timeout, any failure, a question that may not be asked and has no fallback) is
+executed as spoken. A host with **smart commands** on (a setting; it needs a Gemini API key in the build)
+also understands first phrases the grammar does not parse ("put on something by Moby", "I don't
+like this one"), by asking a language model what the speaker wanted. Only the host does this;
+the client has no key and never calls a model.
+
+**The host says so in `hello`:** `interpret:true` (sent again when the setting changes; absent
+or `false` = the rules above, unchanged).
+
+**The gate with interpretation on.** The opener's first phrase (same definition, same window)
+is always a **candidate**: if it parses it is a command as above; if it does not, its normalised
+text is still passed on, to be interpreted. Either way the first phrase is spent. Vectors: the
+cases with `"interpret": true` in `fixtures/first_phrase.json` (`expect` is then the candidate
+text, parsed or not).
+- The client, connected to a host whose `hello` has `interpret:true`, sends its first phrase as
+  `command.text` whether or not its own grammar parses it. A phrase its grammar parses as volume
+  stays local, as before. So the first phrase of a conversation the passenger opens now goes to
+  the host; later phrases never do.
+- The host's own rider's first phrase, and the passenger's in a host-mic talk, are handled the
+  same way on the host.
+- In a solo talk, and for a command typed on the host, an unparsed phrase is interpreted too.
+
+**What the host does with an unparsed candidate.** It asks the interpreter, giving it the text,
+its language tag, the current track (`"<title> – <artist>"` or none, and its album when the host knows it) and up to
+`INTERPRET_UP_NEXT` = 5 upcoming titles, and waits at most **`INTERPRET_TIMEOUT_MS` = 3000 ms**.
+The talk stays open and nothing is said while it waits. The answer is one JSON object,
+`{"action": …, "kind"?: …, "query"?: …, "question"?: …, "where"?: …, "count"?: …}`, mapped to a command text of the grammar
+(or, for `ask`, to a question: next section):
+
+| `action` | command text |
+|----------|--------------|
+| `play` | `play <kind> <query>`; `kind` absent or not one of song/album/artist/playlist → `song`; `query` normalised as above, and empty after that → conversation |
+| `queue` | `queue [next\|instead] [<count>] <kind> <query>` or `queue [next\|instead] [<count>] similar`: `where` `"next"` or `"instead"` gives that word, anything else none; `count` is used when it is an integer 1–50, else left out; `kind` `"similar"` needs no query; otherwise `kind` and `query` as for `play` (no usable query → conversation) |
+| `pause`, `resume`, `next`, `previous`, `shuffle` | the same word |
+| `volumeUp` / `volumeDown` | `volume up` / `volume down` |
+| `nowplaying` | `what is playing` |
+| `end` | `over` |
+| `ask` | a question, see "The clarifying question" |
+| `none`, any other value, no `action`, not a JSON object | conversation |
+
+A command text is then executed exactly as if it had been spoken in those words by the same
+side: it ends the talk, and the replies are the ones above. **Conversation**, a timeout, an HTTP
+or network error, a rate limit and an unreadable answer are all the same: nothing happens, the
+talk stays open, no `announce`, no error earcon (in a solo talk and for a typed command:
+"Didn't catch that", as for any unparsed phrase). Also:
+- The answer is acted on only if the talk it was spoken in is still open when it arrives;
+  otherwise it is dropped and logged.
+- An interpreted volume command from the passenger (their `command.text`, or their channel in a
+  host-mic talk) is ignored with no `announce`, like a spoken one on that channel.
+- With interpretation on, a `command.text` that neither parses nor interprets gets no "Didn't
+  catch that" (it is the passenger's conversation). The host-enforced rule is unchanged: one
+  `command.text` per talk, only from the opener.
+- When the model's rate limit is hit, the host stops asking for a while (it keeps the grammar);
+  it does not queue phrases.
+
+Vectors: `fixtures/interpret.json` (the model's answer → command text, question or conversation;
+this is the mapping only, not what a model says).
+
+### The clarifying question (2026-09-30)
+
+The one deliberate exception to "every command ends the talk" and to "no spoken reply": when a
+first phrase is a music request that lacks the one detail needed to act on it ("play an album by
+Moby", "put some music on"), the interpreter may answer `{"action":"ask", "question": …}`,
+optionally with a **fallback** in `kind`/`query` (mapped like a `play`; absent, empty or kind `similar` = none).
+The host then asks the question aloud, the talk stays open, and the **next phrase of the same
+side** is the reply. The model is told to ask rarely: a request with a reasonable reading
+("something by Moby") is simply played.
+
+- **The question** is the answer's `question` with whitespace collapsed and trimmed; it must be
+  1–`ASK_MAX_CHARS` = 80 code points. An `ask` without a usable question is its fallback as a
+  command, or conversation when it has none.
+- **Asking.** The host sends `announce{text: <question>, ask: true}` (no earcon) and speaks it
+  itself **in the talk** (on the call route; in a host-mic talk on the media route, like every
+  reply there). At most **one question per talk**: a later `ask` in the same talk (a solo talk
+  has many phrases) is its fallback, or conversation. An `ask` for a command typed outside a
+  talk is likewise its fallback, or "Didn't catch that".
+- **The reply window.** The side that was asked gets one more phrase: the first phrase that is
+  not empty after normalisation and whose result arrives within **`ANSWER_MS` = 10000 ms** of
+  the question (the host: of sending the `announce`; the client: of receiving it). The gate that
+  had spent its first phrase is open again for exactly that phrase; it is passed on as it is,
+  parsed or not. A phone that had stopped recognising starts again. Vectors: the cases with
+  `askAtMs` in `fixtures/first_phrase.json` (the question arrives at that time, before any
+  phrase with the same or a later `atMs`).
+  - A client that receives `announce{ask:true}` while a talk it opened is open (and is not a
+    host-mic talk) sends that phrase as a second `command.text`, **without** running its own
+    parser on it (a volume phrase is sent too). Otherwise `ask` changes nothing for it: the
+    text is spoken like any `announce`.
+  - The host accepts that second `command.text` only while its question to the client is
+    unanswered; the rule "one `command.text` per talk" holds in every other case.
+  - In a solo talk every phrase is a command anyway; the first one after the question is the
+    reply.
+- **The reply is always interpreted**, never parsed by the grammar, with the first request and
+  the question as context (`asked: {phrase, question}` in the interpreter's input). The model is
+  told to settle it without asking again, and that a reply which leaves the choice open ("any",
+  "I don't care, just play any album", "you pick") means *choose*: after a question about an
+  album it answers `play album <artist>`, which the host's catalog turns into one of that
+  artist's albums (when the query is an artist's name and not an album title, a random one of
+  the artist's top `ANY_ALBUM_TOP` = 5 album results); otherwise `play artist <artist>` or a
+  playlist of hits.
+  The host then does one of:
+
+  | the reply's answer | the host |
+  |--------------------|----------|
+  | a command | executes it (it ends the talk; an interpreted volume from the passenger is ignored as above) |
+  | conversation (`none`: "never mind", or talk to the other rider) | nothing; the talk stays open (solo: "Didn't catch that") |
+  | `ask` again | that answer's fallback, else the first answer's fallback, else nothing |
+  | a timeout or any other failure | the first answer's fallback, else nothing |
+
+- **No reply.** If no reply has arrived `ANSWER_MS` + `ANSWER_GRACE_MS` (2000 ms) after the
+  question, the host executes the first answer's fallback (which ends the talk); with no
+  fallback nothing happens and the talk stays open. A reply that arrives after that is ignored.
+- A question whose talk closed meanwhile is dropped with everything that belongs to it.
+
 ## Test vectors
 
 | File | Covers |
@@ -473,5 +629,6 @@ else → `announce{text:"Didn't catch that", earcon:"error"}`. Vectors: `fixture
 | `fixtures/clock.json`            | offset estimator incl. negative RTT, ties, window eviction, the step reset |
 | `fixtures/jitter.json`           | jitter buffer: spurts, underruns and target changes, FEC/conceal, shedding, re-anchor, wrap-around |
 | `fixtures/voice/header.json`     | UDP header encode/decode and rejection |
-| `fixtures/commands.json`         | command parser |
-| `fixtures/first_phrase.json`     | the first-phrase gate: command text or conversation per phrase |
+| `fixtures/commands.json`         | command parser, including `queue …` |
+| `fixtures/first_phrase.json`     | the first-phrase gate: command text or conversation per phrase, with and without interpretation, and the reply to a question |
+| `fixtures/interpret.json`        | an interpreter answer → command text, question or conversation |

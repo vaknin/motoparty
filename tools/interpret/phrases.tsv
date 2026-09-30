@@ -1,0 +1,53 @@
+play something by movie	Honey – Moby	play artist moby
+put on some cold play		play artist coldplay
+can we get something a bit more mellow	Enter Sandman – Metallica	play playlist *
+play the dark side of the moon album		play album *dark side of the moon*
+i want to hear bohemian rhapsody		play song bohemian rhapsody*
+play blinding lights by the wicked		play song blinding lights*
+more from this band	Yellow – Coldplay	queue artist coldplay
+play the whole album	Porcelain – Moby	play album *
+i don't like this one skip it	Yellow – Coldplay	next
+go back one	Yellow – Coldplay	previous
+stop the music for a second	Yellow – Coldplay	pause
+ok put the music back on		resume
+who sings this	Yellow – Coldplay	what is playing
+turn it up a bit	Yellow – Coldplay	volume up
+it's too loud	Yellow – Coldplay	volume down
+mix them up	Yellow – Coldplay	shuffle
+ok that's all bye	Yellow – Coldplay	over
+some eighties rock please		play playlist *
+play that song again	Porcelain – Moby	play song porcelain*
+are you cold back there	Yellow – Coldplay	-
+do you want to stop for coffee	Yellow – Coldplay	-
+did you see that car	Yellow – Coldplay	-
+can you hear me		-
+i love this song	Yellow – Coldplay	-
+let's stop at the next gas station		-
+my back hurts can we take a break	Yellow – Coldplay	-
+תשים משהו של שלמה ארצי		play artist *
+play an album by moby		ask * | *moby
+put some music on		ask *
+play that song by queen	Yellow – Coldplay	ask * | *queen
+play something	Yellow – Coldplay	*
+i dont care just play any album		play album moby	play an album by moby	Which Moby album?
+any		play album moby	play an album by moby	Which Moby album?
+you pick		play album moby	play an album by moby	Which Moby album?
+eighteen		play album *moby*	play an album by moby	Which Moby album?
+the one with porcelain on it		play album *	play an album by moby	Which Moby album?
+whatever surprise me		play playlist *	put some music on	What would you like to hear?
+some jazz		play playlist *jazz*	put some music on	What would you like to hear?
+i dont know you choose	Yellow – Coldplay	play artist queen	play that song by queen	Which Queen song?
+don't stop me now	Yellow – Coldplay	play song don't stop me now*	play that song by queen	Which Queen song?
+never mind		-	play an album by moby	Which Moby album?
+watch out for that truck		-	play an album by moby	Which Moby album?
+the mobile one		play *moby*	play an album by moby	Which Moby album?
+add the rest of this album to the queue	Porcelain – Moby	queue album play*moby
+as the next song play natural blues	Porcelain – Moby	queue next song natural blues*
+choose similar music for the rest of the queue	Porcelain – Moby	queue instead similar
+for the next three songs play more of this artist	Porcelain – Moby	queue next 3 artist moby
+add some cold play to the queue	Porcelain – Moby	queue artist coldplay
+play yellow by cold play after this one	Porcelain – Moby	queue next song yellow*coldplay
+more like this please	Porcelain – Moby	queue similar
+queue up the dark side of the moon	Porcelain – Moby	queue album the dark side of the moon*
+add five more songs like this	Porcelain – Moby	queue 5 similar
+are we next in the queue for the ferry		-

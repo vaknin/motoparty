@@ -34,7 +34,7 @@ data class CommandEffect(
             // back to media mode.
             return when (cmd) {
                 is Command.Play, Command.Resume, Command.Pause, Command.Next, Command.Previous,
-                Command.NowPlaying, Command.Shuffle -> CommandEffect(by, Reply.AFTER_CLOSE)
+                Command.NowPlaying, Command.Shuffle, is Command.Queue -> CommandEffect(by, Reply.AFTER_CLOSE)
                 Command.End -> CommandEffect(by, Reply.NONE)
                 // Volume is local: the rider's own changes this phone's media volume after the
                 // close; one from the client should never have been sent and counts as unparsed.

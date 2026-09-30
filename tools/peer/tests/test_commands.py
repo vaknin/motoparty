@@ -2,9 +2,15 @@ import pytest
 
 from conftest import load_fixture
 from motoparty_peer.commands import (
+    ANSWER_GRACE_MS,
+    ANSWER_MS,
+    ASK_MAX_CHARS,
     FIRST_PHRASE_MS,
+    INTERPRET_TIMEOUT_MS,
+    INTERPRET_UP_NEXT,
     FirstPhraseGate,
     command_text,
+    interpretation_outcome,
     normalise,
     parse_command,
 )
@@ -20,8 +26,13 @@ def test_fixture(case):
 
 @pytest.mark.parametrize("case", FIRST_PHRASE["cases"], ids=lambda c: c["name"])
 def test_first_phrase_fixture(case):
-    gate = FirstPhraseGate(case["role"], live_ms=100_000)  # any earcon time: only the offset counts
-    got = [gate.phrase(p["text"], 100_000 + p["atMs"]) for p in case["phrases"]]
+    gate = FirstPhraseGate(case["role"], live_ms=100_000, interpret=case.get("interpret", False))  # any earcon time: only the offset counts
+    ask_at, got = case.get("askAtMs"), []
+    for p in case["phrases"]:
+        if ask_at is not None and ask_at <= p["atMs"]:
+            gate.ask(100_000 + ask_at)
+            ask_at = None
+        got.append(gate.phrase(p["text"], 100_000 + p["atMs"]))
     assert got == case["expect"]
 
 
@@ -70,3 +81,25 @@ def test_extra(text, expect):
 
 def test_normalise_keeps_apostrophe_and_digits():
     assert normalise("What's 4U?") == ["what's", "4u"]
+
+
+INTERPRET = load_fixture("interpret.json")
+
+
+@pytest.mark.parametrize("case", INTERPRET["cases"], ids=lambda c: c["answer"] or "empty")
+def test_interpretation_fixture(case):
+    got = interpretation_outcome(case["answer"])
+    assert got == case["expect"]
+    # whatever comes out is executed through the parser, so it must parse
+    text = got["fallback"] if isinstance(got, dict) else got
+    assert text is None or parse_command(text)["action"] != "unknown"
+
+
+def test_answer_constants_match_the_fixtures():
+    assert (INTERPRET["askMaxChars"], INTERPRET["answerMs"], INTERPRET["answerGraceMs"]) == (ASK_MAX_CHARS, ANSWER_MS, ANSWER_GRACE_MS)
+    assert FIRST_PHRASE["answerMs"] == ANSWER_MS
+
+
+def test_interpret_constants_match_fixture():
+    assert INTERPRET["interpretTimeoutMs"] == INTERPRET_TIMEOUT_MS
+    assert INTERPRET["interpretUpNext"] == INTERPRET_UP_NEXT

@@ -128,6 +128,8 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
         # Required when role == "host", dropped when role == "client" (see _check_hello).
         "voicePort": ("int", False),
         "httpPort": ("int", False),
+        # Host only, absent = false: it interprets unparsed first phrases (PROTOCOL.md "Commands").
+        "interpret": ("bool", False),
     },
     "ping": {"id": ("int", True), "t0": ("int", True)},
     "pong": {"id": ("int", True), "t0": ("int", True), "t1": ("int", True), "t2": ("int", True)},
@@ -166,7 +168,8 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
     # index/id are required for jump/remove, but a stale or missing pair is the host's
     # "ignore the edit" case, not a malformed frame (see host.py).
     "music.edit": {"op": (_OP, True), "index": ("int", False), "id": ("str", False)},
-    "announce": {"text": ("str", True), "earcon": (_EARCON, False)},
+    # ask (only true): the text is a clarifying question (PROTOCOL.md "Commands").
+    "announce": {"text": ("str", True), "earcon": (_EARCON, False), "ask": ("bool", False)},
     "state": {
         "talk": ("bool", True),
         "music": (("obj", STATE_MUSIC_SCHEMA), False),
@@ -229,6 +232,7 @@ def _check_hello(msg: dict[str, Any]) -> None:
     else:
         msg.pop("voicePort", None)
         msg.pop("httpPort", None)
+        msg.pop("interpret", None)
 
 
 def _check_state(msg: dict[str, Any]) -> None:

@@ -38,6 +38,7 @@ import com.kivan.motoparty.core.CloseReason
 import com.kivan.motoparty.core.ControlAction
 import com.kivan.motoparty.core.Earcon
 import com.kivan.motoparty.core.Hello
+import com.kivan.motoparty.core.Interpretation
 import com.kivan.motoparty.core.MainLag
 import com.kivan.motoparty.core.Mic
 import com.kivan.motoparty.core.PROTO_VERSION
@@ -79,11 +80,14 @@ import com.kivan.motoparty.music.remuxWebmToMp4
 import com.kivan.motoparty.music.TrackCache
 import com.kivan.motoparty.music.OutputRoute
 import com.kivan.motoparty.music.TrackCaches
+import com.kivan.motoparty.music.VoiceQueue
 import com.kivan.motoparty.music.TrackServer
 import com.kivan.motoparty.trigger.TriggerKind
 import com.kivan.motoparty.trigger.TriggerSource
 import com.kivan.motoparty.trigger.Triggers
 import com.kivan.motoparty.voicecmd.Announcer
+import com.kivan.motoparty.voicecmd.CloudGemini
+import com.kivan.motoparty.voicecmd.Interpreter
 import com.kivan.motoparty.voicecmd.TalkRecognizer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -138,6 +142,15 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
     private val catalog = Catalog(http)
+    /** Understands phrases the grammar does not parse; null in a build with no Gemini API key. */
+    private val interpreter: Interpreter? = BuildConfig.GEMINI_API_KEY.takeIf { it.isNotEmpty() }?.let { key ->
+        fun raw(id: Int) = context.resources.openRawResource(id).bufferedReader().use { it.readText() }.trimEnd()
+        CloudGemini(http, key, raw(R.raw.interpret_prompt), raw(R.raw.interpret_schema), clock)
+    }
+    /** PROTOCOL.md "Commands", *Interpretation*: smart commands are on and there is a key. */
+    private val interprets: Boolean get() = interpreter != null && settings.value.smartCommands
+    /** The `interpret` of the last `hello` built, to send a new one when the setting changes. */
+    private var helloInterprets = false
     /** Opus (remuxed to MP4) by default; `tracks/` stays the AAC one it always was. */
     private val caches = TrackCaches(
         opusCache = TrackCache(
@@ -249,6 +262,22 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private val phrases = FirstPhraseGate()
     /** The client's `command.text` for the current talk has been acted on (it gets one). Main only. */
     private var clientCommanded = false
+
+    /** A clarifying question of this talk (PROTOCOL.md "Commands", *The clarifying question*). */
+    private class Question(
+        val session: Int,
+        val fromClient: Boolean,
+        /** The first request, the question it got and the command text to fall back on. */
+        val phrase: String,
+        val text: String,
+        val fallback: String?,
+    ) {
+        /** The reply came (or the wait for it ended): nothing later is one. */
+        var answered = false
+    }
+
+    /** The one question of the open talk, asked or answered; null = none yet. Main only. */
+    private var question: Question? = null
     /**
      * The microphone of the current (or last) talk, chosen at its open and fixed for it
      * (PROTOCOL.md "Host-mic talk"). Main only.
@@ -347,6 +376,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 guarded("settings") {
                     applyTrim()
                     checkLarkPresence()
+                    // The client follows our latest `hello` (smart commands switched on or off).
+                    if (interprets != helloInterprets) control.send(hello())
                 }
             }
         }
@@ -389,10 +420,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     // ---- control channel ----
 
-    private fun hello() = Hello(
-        proto = PROTO_VERSION, role = Role.HOST, name = deviceName,
-        voicePort = VoiceSocket.PORT, httpPort = TrackServer.PORT,
-    )
+    private fun hello(): Hello {
+        helloInterprets = interprets
+        return Hello(
+            proto = PROTO_VERSION, role = Role.HOST, name = deviceName,
+            voicePort = VoiceSocket.PORT, httpPort = TrackServer.PORT,
+            interpret = true.takeIf { helloInterprets },
+        )
+    }
 
     private fun state(): Message = StateFit.fit(
         State(
@@ -603,8 +638,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                         action.by == Role.HOST || passengerAsr -> FirstPhraseGate.Role.OPENER
                         else -> FirstPhraseGate.Role.OTHER
                     },
+                    interpret = interprets,
                 )
                 clientCommanded = false
+                question = null
                 // The Ride tab: "Connecting…" until the live earcon, and the command list while a
                 // phrase of ours can still be a command.
                 Hub.status.update {
@@ -730,6 +767,11 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             Hub.log("heard: \"$text\" (own speech, ignored)")
             return
         }
+        // Our question, heard back by the talk microphone, is not its own reply.
+        if (awaitsReply(passengerAsr) && announcer.spokeWithin(ASK_ECHO_MS)) {
+            Hub.log("heard: \"$text\" (the question itself, ignored)")
+            return
+        }
         val command = phrases.onPhrase(text, clock())
         val who = if (passengerAsr) "passenger, " else ""
         Hub.log("heard: \"$text\" ($who${if (command != null) "command" else "conversation"})")
@@ -737,7 +779,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         // Before the command: a `play` closes the talk, and with it this check's reason to run.
         stopRecognizerIfSpent(session)
         if (command == null) return
-        if (passengerAsr) onPassengerCommand(command) else executeCommand(command)
+        if (passengerAsr) onPassengerCommand(command) else submitCommand(command)
     }
 
     /**
@@ -747,6 +789,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * volume phrase is ignored, with no `announce`.
      */
     private fun onPassengerCommand(text: String) {
+        // The reply to our question goes on as it is, volume words and all.
+        if (awaitsReply(fromClient = true)) return submitCommand(text, fromClient = true)
         if (clientCommanded) {
             Hub.log("command: \"$text\" (passenger) ignored: not the talk's first")
             return
@@ -757,7 +801,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             Hub.log("command: \"$text\" (passenger) ignored: volume is the passenger's own")
             return
         }
-        executeCommand(text, fromClient = true)
+        submitCommand(text, fromClient = true)
     }
 
     /**
@@ -1039,7 +1083,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             // The host recognises the passenger itself (PROTOCOL.md "Commands"); the client never should.
             larkTalk -> "host-mic talk"
             talk.openedBy != Role.CLIENT -> "the host opened the talk"
-            clientCommanded -> "not the talk's first"
+            clientCommanded && !awaitsReply(fromClient = true) -> "not the talk's first"
             else -> null
         }
         if (why != null) {
@@ -1047,7 +1091,105 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             return
         }
         clientCommanded = true
-        executeCommand(text, fromClient = true)
+        submitCommand(text, fromClient = true)
+    }
+
+    /**
+     * A command candidate from any source. One the grammar parses (except a `play …`), and every
+     * one while smart commands are off, goes straight to [executeCommand]. Otherwise the interpreter is asked what
+     * was meant (PROTOCOL.md "Commands", *Interpretation*) and its answer, as a command text, is
+     * executed as if the same side had said it in those words. Conversation and every failure do
+     * nothing: the talk stays open, nothing is said (solo and typed: "Didn't catch that"). An
+     * `ask` answer becomes our one question of the talk ([ask]), and the phrase after it its reply.
+     */
+    private fun submitCommand(text: String, fromClient: Boolean = false) {
+        val interpreter = interpreter
+        // The reply to our question is always interpreted, with the question as its context.
+        val reply = question?.takeIf { awaitsReply(fromClient) }
+        // The grammar's own `play …` and `queue …` are interpreted too (names get repaired, a vague
+        // one may be asked about); if the interpreter does not settle it, it is executed as spoken.
+        val parsed = CommandParser.parse(text)
+        val spoken = text.takeIf { reply == null && (parsed is Command.Play || parsed is Command.Queue) }
+        if (interpreter == null || !interprets || (reply == null && spoken == null && parsed != Command.Unknown)) {
+            return executeCommand(text, fromClient)
+        }
+        reply?.answered = true
+        // The answer counts only for the talk (or the absence of one) the phrase was said in.
+        val talkWas = talk.isOpen
+        val session = talkSession
+        // Where an unparsed phrase gets "Didn't catch that": typed, or spoken in a solo talk.
+        val solo = !talkWas || phrases.role == FirstPhraseGate.Role.SOLO
+        val current = music.current
+        val playing = current?.let { "${it.title} – ${it.artist}" }
+        val upNext = music.upcoming.take(Interpretation.INTERPRET_UP_NEXT).map { it.title }
+        scope.launch {
+            val t0 = clock()
+            val answer = interpreter.interpret(
+                text, settings.value.asrLanguage, playing, current?.album, upNext, reply?.let { Interpreter.Asked(it.phrase, it.text) },
+            )
+            val outcome = (answer as? Interpreter.Text)?.let { Interpretation.outcome(it.text) }
+            val stale = talk.isOpen != talkWas || talkSession != session
+            // One question a talk, and only in a talk: otherwise an `ask` is its fallback.
+            val ask = (outcome as? Interpretation.Ask)?.takeIf { talkWas && question == null }
+            // What a reply falls back on when it settles nothing: never on "never mind".
+            val fallback = reply?.fallback?.takeIf { answer is Interpreter.Failed || outcome is Interpretation.Ask }
+            val command = when (outcome) {
+                is Interpretation.Do -> outcome.text
+                is Interpretation.Ask -> if (ask != null) null else outcome.fallback ?: fallback ?: spoken
+                null -> fallback ?: spoken
+            }
+            val what = when {
+                outcome is Interpretation.Ask -> "ask \"${outcome.question}\" (fallback ${outcome.fallback ?: "none"})"
+                answer is Interpreter.Failed -> "failed: ${answer.why}"
+                outcome == null -> "conversation"
+                else -> command
+            }
+            val volume = command == "volume up" || command == "volume down"
+            val note = when {
+                stale -> " (dropped: the talk changed)"
+                command != null && volume && fromClient -> " (ignored: volume is the passenger's own)"
+                command != null && command == spoken -> " (played as spoken)"
+                command != null && command != (outcome as? Interpretation.Do)?.text -> " (the fallback)"
+                else -> ""
+            }
+            val of = if (reply != null) " (reply to \"${reply.text}\")" else ""
+            Hub.log("interpret: \"$text\"${if (fromClient) " (client)" else ""}$of → $what in ${clock() - t0} ms$note")
+            when {
+                stale -> Unit
+                ask != null -> ask(Question(session, fromClient, text, ask.question, ask.fallback))
+                // The unparsed text itself: [executeCommand] answers it "Didn't catch that".
+                command == null -> if (solo) executeCommand(text, fromClient)
+                volume && fromClient -> Unit
+                else -> executeCommand(command, fromClient)
+            }
+        }
+    }
+
+    /** Is the next phrase of that side (the passenger's, [fromClient]) the reply to our question? */
+    private fun awaitsReply(fromClient: Boolean): Boolean =
+        question?.let { !it.answered && it.fromClient == fromClient && talk.isOpen && it.session == talkSession } == true
+
+    /**
+     * Ask [q] aloud in the talk and give the side that spoke one more phrase (PROTOCOL.md
+     * "Commands", *The clarifying question*). With no reply in time its fallback is played.
+     */
+    private fun ask(q: Question) {
+        question = q
+        // The client's own reply comes as a second `command.text`; [onClientCommand] lets it in.
+        if (!q.fromClient || passengerAsr) {
+            phrases.ask(clock())
+            startRecognizer(q.session)
+            Hub.status.update { it.copy(commandWindow = true) }
+        }
+        announce(q.text, earcon = null, inTalk = true, ask = true)
+        scope.launch {
+            delay(Interpretation.ANSWER_MS + Interpretation.ANSWER_GRACE_MS)
+            stopRecognizerIfSpent(q.session)
+            if (question !== q || q.answered || !talk.isOpen || talkSession != q.session) return@launch
+            q.answered = true
+            Hub.log("ask: no reply to \"${q.text}\"${q.fallback?.let { ", the fallback: $it" } ?: ", nothing to fall back on"}")
+            q.fallback?.let { executeCommand(it, q.fromClient) }
+        }
     }
 
     /**
@@ -1089,7 +1231,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             Command.Unknown -> said = "Didn't catch that" to Earcon.ERROR
             // `end` has no reply: the talk's closing earcon is the acknowledgement.
             Command.End -> if (effect.closeBy == null) Hub.log("end: no talk to end")
-            Command.VolumeUp, Command.VolumeDown -> Unit
+            Command.VolumeUp, Command.VolumeDown, is Command.Queue -> Unit
         }
         val closed: Job? = effect.closeBy?.let { by ->
             talk.onCommandClose(by)?.let(::applyTalk)
@@ -1123,6 +1265,41 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                         // The talk is closed anyway; the music it paused comes back.
                         if (hadResume) music.resume()
                         announce(searchFailure(found as Exception, cmd.query), Earcon.ERROR)
+                    }
+                }
+            }
+            is Command.Queue -> scope.launch {
+                val source = music.current
+                val what = cmd.kind?.let { "${it.word} \"${cmd.query}\"" } ?: "similar music"
+                Hub.status.update { it.copy(busy = "Searching $what") }
+                val found = try {
+                    when {
+                        cmd.kind != null -> catalog.search(cmd.kind, cmd.query).tracks
+                        source != null -> catalog.similar(source.id)
+                        else -> null
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    e
+                } finally {
+                    Hub.status.update { it.copy(busy = null) }
+                }
+                // The talk paused the music; it is back before anything is added or said.
+                closed?.join()
+                val current = music.current
+                val added = (found as? List<*>)?.filterIsInstance<Track>()?.let { VoiceQueue.pick(cmd, it, current, music.upcoming) }
+                when {
+                    found is Exception -> announce(searchFailure(found, cmd.query), Earcon.ERROR)
+                    found == null -> announce("Nothing playing", Earcon.ERROR)
+                    added.isNullOrEmpty() -> announce("Nothing to add", Earcon.ERROR)
+                    else -> {
+                        if (cmd.where == Command.Where.INSTEAD) music.clearUpcoming()
+                        music.enqueue(if (cmd.where == Command.Where.NEXT) EnqueueMode.NEXT else EnqueueMode.END, added)
+                        Hub.log("queued ${cmd.where.name.lowercase()}: ${added.size} track(s) of $what")
+                        Hub.status.update { it.copy(error = null) }
+                        // With nothing loaded they just started playing: the music says so.
+                        if (current != null) announce(VoiceQueue.reply(cmd.where, added), Earcon.OK)
                     }
                 }
             }
@@ -1204,8 +1381,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * a talk follows that talk's `exitCall` by a few ms, exactly the teardown the first syllable
      * used to be lost in — or, [inTalk], spoken now on the call route the headset is in.
      */
-    private fun announce(text: String, earcon: String?, inTalk: Boolean = false) {
-        control.send(Announce(text, earcon))
+    private fun announce(text: String, earcon: String?, inTalk: Boolean = false, ask: Boolean = false) {
+        control.send(Announce(text, earcon, ask = true.takeIf { ask }))
         val kind = when (earcon) {
             Earcon.OK -> Earcons.Kind.OK
             Earcon.ERROR -> Earcons.Kind.ERROR
@@ -1260,7 +1437,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is UiAction.DismissError -> Hub.status.update { it.copy(error = null) }
             is UiAction.Download -> downloads.start(a.collection.id, a.tracks.map { it.id })
             is UiAction.CancelDownload -> downloads.cancel(a.collectionId)
-            is UiAction.Command -> executeCommand(a.text)
+            is UiAction.Command -> submitCommand(a.text)
             is UiAction.Control -> onMusicControl(a.action, "ui")
             is UiAction.UsbStereoProbe -> when {
                 talk.isOpen -> Hub.log("usb probe: not during a talk")
@@ -1509,6 +1686,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         private const val PRE_RESOLVE_TOP = 3
         /** In a solo talk, phrases this soon after our own speech are taken for its echo. */
         private const val ECHO_MS = 2_000L
+        /** Shorter than any spoken reply takes to be recognised after our question ends. */
+        private const val ASK_ECHO_MS = 500L
         /** How long a spoken reply stays on the Ride tab. */
         private const val ANNOUNCE_SHOWN_MS = 6_000L
         /**

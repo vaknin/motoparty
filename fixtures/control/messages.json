@@ -12,6 +12,15 @@
   {
    "t": "hello",
    "proto": 1,
+   "role": "host",
+   "name": "Pixel 8",
+   "voicePort": 47801,
+   "httpPort": 47802,
+   "interpret": true
+  },
+  {
+   "t": "hello",
+   "proto": 1,
    "role": "client",
    "name": "iPhone"
   },
@@ -204,6 +213,11 @@
   {
    "t": "announce",
    "text": "Link lost"
+  },
+  {
+   "t": "announce",
+   "text": "Which Moby album?",
+   "ask": true
   },
   {
    "t": "state",

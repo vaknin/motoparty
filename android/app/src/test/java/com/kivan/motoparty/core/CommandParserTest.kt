@@ -18,6 +18,12 @@ class CommandParserTest {
                     Command.Kind.entries.first { it.word == e["kind"]!!.jsonPrimitive.content },
                     e["query"]!!.jsonPrimitive.content,
                 )
+                "queue" -> Command.Queue(
+                    Command.Where.entries.first { (it.word ?: "end") == e["where"]!!.jsonPrimitive.content },
+                    e["count"]?.jsonPrimitive?.content?.toInt(),
+                    Command.Kind.entries.firstOrNull { it.word == e["kind"]!!.jsonPrimitive.content },
+                    e["query"]?.jsonPrimitive?.content ?: "",
+                )
                 "pause" -> Command.Pause
                 "resume" -> Command.Resume
                 "next" -> Command.Next

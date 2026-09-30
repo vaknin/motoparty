@@ -141,16 +141,18 @@ class TrackSchedulerTest {
         val cache = cache()
         cache.preResolve(listOf(a, b, "bad id"))
         waitUntil("both resolved") { resolves.size == 2 }
-        assertEquals(listOf(a, b), resolves.toList())
+        // Pre-resolves run in parallel: their order is not fixed.
+        assertEquals(setOf(a, b), resolves.toSet())
         assertTrue("nothing is downloaded by a pre-resolve", server.requests.isEmpty())
         cache.ensure(a)
-        assertEquals("the download used the pre-resolved URL", listOf(a, b), resolves.toList())
+        assertEquals("the download used the pre-resolved URL", 2, resolves.size)
         cache.preResolve(listOf(a, b))
         delay(50)
-        assertEquals("cached / fresh ones are skipped", listOf(a, b), resolves.toList())
+        assertEquals("cached / fresh ones are skipped", 2, resolves.size)
         now += 3_600_001
         cache.ensure(b)
-        assertEquals("an hour later it is looked up again", listOf(a, b, b), resolves.toList())
+        assertEquals("an hour later it is looked up again", 3, resolves.size)
+        assertEquals(b, resolves.last())
     }
 
     // ---- M4 ----

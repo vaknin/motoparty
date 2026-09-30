@@ -90,6 +90,8 @@ data class Hello(
     val name: String,
     val voicePort: Int? = null,
     val httpPort: Int? = null,
+    /** Host only: it interprets unparsed first phrases (PROTOCOL.md "Commands", Interpretation). Absent = false. */
+    val interpret: Boolean? = null,
 ) : Message
 
 @Serializable
@@ -205,7 +207,12 @@ data class MusicEdit(val op: String, val index: Int? = null, val id: String? = n
 
 @Serializable
 @SerialName("announce")
-data class Announce(val text: String, val earcon: String? = null) : Message
+data class Announce(
+    val text: String,
+    val earcon: String? = null,
+    /** Only `true`: [text] is a clarifying question (PROTOCOL.md "Commands", *The clarifying question*). */
+    val ask: Boolean? = null,
+) : Message
 
 @Serializable
 @SerialName("state")

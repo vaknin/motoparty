@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["play", "queue", "pause", "resume", "next", "previous", "volumeUp", "volumeDown", "shuffle", "nowplaying", "end", "ask", "none"]
+    },
+    "where": { "type": "string", "enum": ["next", "end", "instead"] },
+    "count": { "type": "integer", "description": "How many songs the rider asked for: 3 for \"the next three songs\". 0 when no number was said or the action is not queue." },
+    "kind": { "type": "string", "enum": ["song", "album", "artist", "playlist", "similar"] },
+    "query": { "type": "string" },
+    "question": { "type": "string" }
+  },
+  "required": ["action", "count"]
+}

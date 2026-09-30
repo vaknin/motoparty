@@ -14,7 +14,7 @@ class CommandEffectTest {
 
     @Test
     fun everyCommandEndsTheTalkByWhoeverSpokeAndRepliesAfterTheSwitch() {
-        for (cmd in listOf(play, Command.Resume, Command.Pause, Command.Next, Command.Previous, Command.NowPlaying, Command.Shuffle)) {
+        for (cmd in listOf(play, Command.Resume, Command.Pause, Command.Next, Command.Previous, Command.NowPlaying, Command.Shuffle, Command.Queue(Command.Where.NEXT, 3, null, ""))) {
             assertEquals("$cmd", CommandEffect(Role.HOST, Reply.AFTER_CLOSE), CommandEffect.of(cmd, talkOpen = true, fromClient = false))
             assertEquals("$cmd", CommandEffect(Role.CLIENT, Reply.AFTER_CLOSE), CommandEffect.of(cmd, talkOpen = true, fromClient = true))
         }

@@ -36,6 +36,11 @@ data class Settings(
     val larkTalk: Boolean = true,
     /** Swap the receiver's left and right, for when the TX stickers got mixed up. */
     val larkSwap: Boolean = false,
+    /**
+     * Smart commands (PROTOCOL.md "Commands", Interpretation): a first phrase the grammar does not
+     * parse is sent to Gemini to be understood. Does nothing in a build with no API key.
+     */
+    val smartCommands: Boolean = true,
 )
 
 class SettingsStore(context: Context) {
@@ -61,6 +66,7 @@ class SettingsStore(context: Context) {
             captureDump = prefs.getBoolean("captureDump", d.captureDump),
             larkTalk = prefs.getBoolean("larkTalk", d.larkTalk),
             larkSwap = prefs.getBoolean("larkSwap", d.larkSwap),
+            smartCommands = prefs.getBoolean("smartCommands", d.smartCommands),
         )
     }
 
@@ -85,6 +91,7 @@ class SettingsStore(context: Context) {
             .putBoolean("captureDump", s.captureDump)
             .putBoolean("larkTalk", s.larkTalk)
             .putBoolean("larkSwap", s.larkSwap)
+            .putBoolean("smartCommands", s.smartCommands)
             .apply()
         _flow.value = load()
     }

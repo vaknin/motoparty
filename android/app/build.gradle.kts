@@ -29,6 +29,12 @@ val keystoreProperties = Properties().apply {
 }
 fun signingValue(name: String): String? =
     keystoreProperties.getProperty(name) ?: providers.gradleProperty("motoparty.$name").orNull
+// The Gemini API key of the smart commands (PROTOCOL.md "Commands", Interpretation), from the
+// git-ignored local.properties. Without one the build works and the feature is off.
+val geminiApiKey: String = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.isFile) f.inputStream().use(::load)
+}.getProperty("gemini.apiKey", "").trim()
 val releaseStoreFile = signingValue("storeFile")?.let { rootProject.file(it) }?.takeIf { it.isFile }
 
 android {
@@ -45,6 +51,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "GEMINI_API_KEY", "\"$geminiApiKey\"")
         ndk {
             // The Pixel 8 is arm64-v8a; nothing else is built or shipped.
             abiFilters += listOf("arm64-v8a")
@@ -88,6 +95,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     externalNativeBuild {

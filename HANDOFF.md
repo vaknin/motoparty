@@ -46,6 +46,20 @@ user approved implementing it, in rounds or in parallel. **State on 2026-09-30, 
   `~/.cache/claude-handoff/motoparty-leftovers/`. Open: on-screen checks on the Pixel, everything
   on the iPhone (incl. whether the widget extension installs on the free account), two
   timing-flaky Android tests, and iOS announces arriving during the route switch may be clipped.
+- 2026-09-30, smart commands (Gemini understands first phrases the grammar does not parse):
+  built on all three components, uncommitted, release build on the Pixel and checked there with
+  the laptop peer. Spec: `PROTOCOL.md` "Commands", *Interpretation*; fixtures
+  `fixtures/interpret.json` + the `interpret` cases of `first_phrase.json`; numbers, what was and
+  was not verified, and open points: `LLM-COMMANDS.md` "Progress". Spike/regression of the
+  prompt: `tools/interpret/smoke.sh` (uses the free-tier quota). Gemini Nano was ruled out.
+- 2026-09-30, clarifying question + voice queueing: the question ("Which Moby album?", "any" picks
+  one) is verified incl. on the Pixel with typed phrases. Voice queueing (`queue [next|instead]
+  [<count>] <kind> <query>` / `… similar`; `PROTOCOL.md` "Queueing by voice") is built on all
+  three components and committed: Android 496 tests / 0 fail / 6 skipped, lint warnings only,
+  `assembleRelease` OK; peer 461 passed; `swift test` 225. **Open: the Pixel run of the four
+  queueing phrases (phone was off wireless debugging; the user will say when it is back), and
+  the iOS release build (skipped at the user's request until the iPhone is back; write Swift,
+  do not build).** Steps and expectations: `LLM-COMMANDS.md`, fifth session.
 - The Pixel is reachable over wireless adb (user's go-ahead 2026-09-30; read
   `~/.config/system-notes.md` "adb over Wi-Fi" first). Next: install the debug build and run the
   solo checks of `android/HANDOFF.md` "Audit round 1/2". The iPhone install is on hold (user).

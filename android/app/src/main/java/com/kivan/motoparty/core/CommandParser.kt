@@ -15,13 +15,29 @@ sealed interface Command {
     data object NowPlaying : Command
     /** "shuffle": shuffle the upcoming queue, the current track stays (2026-09-30). */
     data object Shuffle : Command
+    /**
+     * "queue …": add music to the queue (PROTOCOL.md "Commands", *Queueing by voice*, 2026-09-30).
+     * [kind] null = `similar`, music like the current track, and [query] is then empty.
+     */
+    data class Queue(val where: Where, val count: Int?, val kind: Kind?, val query: String) : Command
     data object Unknown : Command
+
+    /** Where queued tracks go; [word] is the grammar's, null for the end (no word). */
+    enum class Where(val word: String?) { END(null), NEXT("next"), INSTEAD("instead") }
 
     enum class Kind(val word: String) { SONG("song"), ALBUM("album"), ARTIST("artist"), PLAYLIST("playlist") }
 }
 
 object CommandParser {
     private val kinds = Command.Kind.entries.associateBy { it.word }
+
+    private val wheres = Command.Where.entries.filter { it.word != null }.associateBy { it.word }
+    const val SIMILAR = "similar"
+    const val QUEUE_MAX_COUNT = 50
+
+    /** A `queue` count: one or two ASCII digits, 1..[QUEUE_MAX_COUNT]. */
+    private fun count(word: String): Int? =
+        word.takeIf { it.length in 1..2 && it.all { c -> c in '0'..'9' } }?.toInt()?.takeIf { it in 1..QUEUE_MAX_COUNT }
 
     private val phrases: Map<String, Command> = mapOf(
         "pause" to Command.Pause, "stop" to Command.Pause,
@@ -76,6 +92,16 @@ object CommandParser {
                 kind = Command.Kind.SONG
             }
             return if (rest.isEmpty()) Command.Unknown else Command.Play(kind, rest.joinToString(" "))
+        }
+        if (words[0] == "queue") {
+            var rest = words.drop(1)
+            val where = wheres[rest.firstOrNull()]?.also { rest = rest.drop(1) } ?: Command.Where.END
+            // A number is a count only in front of a kind or `similar`: "queue 3 doors down" is a song.
+            val count = rest.takeIf { it.size >= 2 && (it[1] in kinds || it[1] == SIMILAR) }?.let { count(it[0]) }
+            if (count != null) rest = rest.drop(1)
+            if (rest == listOf(SIMILAR)) return Command.Queue(where, count, null, "")
+            val kind = kinds[rest.firstOrNull()]?.also { rest = rest.drop(1) } ?: Command.Kind.SONG
+            return if (rest.isEmpty()) Command.Unknown else Command.Queue(where, count, kind, rest.joinToString(" "))
         }
         return phrases[words.joinToString(" ")] ?: Command.Unknown
     }

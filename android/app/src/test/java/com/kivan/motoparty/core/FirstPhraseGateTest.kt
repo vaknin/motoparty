@@ -2,6 +2,7 @@ package com.kivan.motoparty.core
 
 import com.kivan.motoparty.core.FirstPhraseGate.Role
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -18,6 +19,7 @@ class FirstPhraseGateTest {
     fun fixtureCases() {
         val root = Fixtures.load("first_phrase.json").jsonObject
         assertEquals(FirstPhraseGate.FIRST_PHRASE_MS, root["firstPhraseMs"]!!.jsonPrimitive.long)
+        assertEquals(Interpretation.ANSWER_MS, root["answerMs"]!!.jsonPrimitive.long)
         val cases = root["cases"]!!.jsonArray
         assertTrue("first_phrase.json has cases", cases.isNotEmpty())
         for (c in cases) {
@@ -27,11 +29,16 @@ class FirstPhraseGateTest {
             val expect = c.jsonObject["expect"]!!.jsonArray
             assertEquals(name, phrases.size, expect.size)
             val gate = FirstPhraseGate()
-            gate.open(role)
+            gate.open(role, interpret = c.jsonObject["interpret"]?.jsonPrimitive?.boolean ?: false)
             gate.live(0)
+            var askAt = c.jsonObject["askAtMs"]?.jsonPrimitive?.long
             phrases.forEachIndexed { i, p ->
                 val text = p.jsonObject["text"]!!.jsonPrimitive.content
                 val at = p.jsonObject["atMs"]!!.jsonPrimitive.long
+                askAt?.takeIf { it <= at }?.let {
+                    gate.ask(it)
+                    askAt = null
+                }
                 val e = expect[i]
                 val expected = if (e is JsonNull) null else e.jsonPrimitive.content
                 assertEquals("$name: \"$text\" at $at", expected, gate.onPhrase(text, at))
@@ -64,6 +71,26 @@ class FirstPhraseGateTest {
         gate.live(0)
         gate.live(5_000)
         assertNull(gate.onPhrase("next", 8_001))
+    }
+
+    @Test
+    fun aQuestionOpensTheGateForOneReply() {
+        val gate = FirstPhraseGate()
+        gate.open(Role.OPENER, interpret = true)
+        gate.live(0)
+        assertEquals("play an album by moby", gate.onPhrase("play an album by Moby", 2_000))
+        assertTrue(gate.isSpent(2_000))
+        gate.ask(3_000)
+        assertFalse(gate.isSpent(13_000))
+        assertTrue(gate.isSpent(13_001))
+        assertEquals("any", gate.onPhrase("Any.", 6_000))
+        assertTrue(gate.isSpent(6_000))
+        assertNull(gate.onPhrase("next", 7_000))
+        // A new talk forgets the question.
+        gate.ask(8_000)
+        gate.open(Role.OPENER)
+        gate.live(20_000)
+        assertNull(gate.onPhrase("whatever you like", 21_000))
     }
 
     @Test

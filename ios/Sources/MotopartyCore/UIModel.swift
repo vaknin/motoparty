@@ -293,6 +293,8 @@ public struct VoiceCommandChip: Equatable, Sendable {
         VoiceCommandChip("quieter"),
         VoiceCommandChip("what's playing"),
         VoiceCommandChip("shuffle"),
+        VoiceCommandChip("queue", argument: "song", note: "adds it to the queue"),
+        VoiceCommandChip("queue next", argument: "song", note: "plays it after this one"),
         VoiceCommandChip("over", note: "only ends the talk"),
     ]
 

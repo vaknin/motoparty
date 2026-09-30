@@ -1,6 +1,7 @@
 {
- "_doc": "First-phrase gate vectors, one phone per case. See PROTOCOL.md 'Commands', The first phrase decides. role: opener = this phone opened the talk; other = it did not; solo = the host's talk has no client. atMs = when the phrase's result arrives, after this phone's live earcon; FIRST_PHRASE_MS = 8000, inclusive. expect[i] = the command text for phrases[i] (the normalisation of 'Commands' up to and including trim, before the hey/please drop), or null = conversation.",
+ "_doc": "First-phrase gate vectors, one phone per case. See PROTOCOL.md 'Commands', The first phrase decides. role: opener = this phone opened the talk; other = it did not; solo = the host's talk has no client. atMs = when the phrase's result arrives, after this phone's live earcon; FIRST_PHRASE_MS = 8000, inclusive. expect[i] = the command text for phrases[i] (the normalisation of 'Commands' up to and including trim, before the hey/please drop), or null = conversation. A case with interpret: true is a phone whose host interprets (PROTOCOL.md 'Commands', Interpretation): the opener's first phrase is a candidate whether it parses or not, so expect is its text; without the field, interpret is false. A case with askAtMs is one where the host asks a clarifying question (PROTOCOL.md 'Commands', The clarifying question) that reaches this phone at that time, before any phrase with the same or a later atMs: the next non-empty phrase within answerMs = 10000 of it (inclusive) is the reply, passed on as it is.",
  "firstPhraseMs": 8000,
+ "answerMs": 10000,
  "cases": [
   {
    "name": "opener, first phrase parses",
@@ -211,6 +212,260 @@
     "what's the weather",
     null,
     "over"
+   ]
+  },
+  {
+   "name": "interpret: opener, unparsed first phrase is a candidate, later phrases are not",
+   "role": "opener",
+   "interpret": true,
+   "phrases": [
+    {
+     "text": "Put on something by Moby.",
+     "atMs": 3000
+    },
+    {
+     "text": "next",
+     "atMs": 5000
+    }
+   ],
+   "expect": [
+    "put on something by moby",
+    null
+   ]
+  },
+  {
+   "name": "interpret: opener, parsed first phrase as before",
+   "role": "opener",
+   "interpret": true,
+   "phrases": [
+    {
+     "text": "Skip!",
+     "atMs": 2000
+    },
+    {
+     "text": "are you cold",
+     "atMs": 4000
+    }
+   ],
+   "expect": [
+    "skip",
+    null
+   ]
+  },
+  {
+   "name": "interpret: opener, empty phrases do not spend, window still applies",
+   "role": "opener",
+   "interpret": true,
+   "phrases": [
+    {
+     "text": "...",
+     "atMs": 1000
+    },
+    {
+     "text": "something mellow",
+     "atMs": 8000
+    },
+    {
+     "text": "pause",
+     "atMs": 8100
+    }
+   ],
+   "expect": [
+    null,
+    "something mellow",
+    null
+   ]
+  },
+  {
+   "name": "interpret: opener, after the window",
+   "role": "opener",
+   "interpret": true,
+   "phrases": [
+    {
+     "text": "something by moby",
+     "atMs": 8001
+    }
+   ],
+   "expect": [
+    null
+   ]
+  },
+  {
+   "name": "interpret: non-opener never commands",
+   "role": "other",
+   "interpret": true,
+   "phrases": [
+    {
+     "text": "something by moby",
+     "atMs": 1000
+    }
+   ],
+   "expect": [
+    null
+   ]
+  },
+  {
+   "name": "interpret: solo, every non-empty phrase",
+   "role": "solo",
+   "interpret": true,
+   "phrases": [
+    {
+     "text": "something by moby",
+     "atMs": 1000
+    },
+    {
+     "text": "",
+     "atMs": 2000
+    },
+    {
+     "text": "who sings this",
+     "atMs": 20000
+    }
+   ],
+   "expect": [
+    "something by moby",
+    null,
+    "who sings this"
+   ]
+  },
+  {
+   "name": "ask: opener, the next phrase is the reply, later ones are not",
+   "role": "opener",
+   "interpret": true,
+   "askAtMs": 4000,
+   "phrases": [
+    {
+     "text": "play an album by Moby",
+     "atMs": 3000
+    },
+    {
+     "text": "I don't care, any album",
+     "atMs": 9000
+    },
+    {
+     "text": "next",
+     "atMs": 10000
+    }
+   ],
+   "expect": [
+    "play an album by moby",
+    "i don't care any album",
+    null
+   ]
+  },
+  {
+   "name": "ask: the reply is passed on even when it parses as volume",
+   "role": "opener",
+   "interpret": true,
+   "askAtMs": 4000,
+   "phrases": [
+    {
+     "text": "put some music on",
+     "atMs": 3000
+    },
+    {
+     "text": "Louder",
+     "atMs": 7000
+    }
+   ],
+   "expect": [
+    "put some music on",
+    "louder"
+   ]
+  },
+  {
+   "name": "ask: empty phrases do not spend the reply, window edge inclusive",
+   "role": "opener",
+   "interpret": true,
+   "askAtMs": 9000,
+   "phrases": [
+    {
+     "text": "put some music on",
+     "atMs": 7500
+    },
+    {
+     "text": "...",
+     "atMs": 10000
+    },
+    {
+     "text": "some jazz",
+     "atMs": 19000
+    },
+    {
+     "text": "rock",
+     "atMs": 19001
+    }
+   ],
+   "expect": [
+    "put some music on",
+    null,
+    "some jazz",
+    null
+   ]
+  },
+  {
+   "name": "ask: a reply after the window is conversation and spends it",
+   "role": "opener",
+   "interpret": true,
+   "askAtMs": 4000,
+   "phrases": [
+    {
+     "text": "put some music on",
+     "atMs": 3000
+    },
+    {
+     "text": "some jazz",
+     "atMs": 14001
+    },
+    {
+     "text": "rock",
+     "atMs": 14002
+    }
+   ],
+   "expect": [
+    "put some music on",
+    null,
+    null
+   ]
+  },
+  {
+   "name": "ask: the non-opener never replies",
+   "role": "other",
+   "interpret": true,
+   "askAtMs": 4000,
+   "phrases": [
+    {
+     "text": "any album",
+     "atMs": 6000
+    }
+   ],
+   "expect": [
+    null
+   ]
+  },
+  {
+   "name": "ask: solo is unchanged",
+   "role": "solo",
+   "interpret": true,
+   "askAtMs": 4000,
+   "phrases": [
+    {
+     "text": "put some music on",
+     "atMs": 3000
+    },
+    {
+     "text": "any",
+     "atMs": 6000
+    },
+    {
+     "text": "next",
+     "atMs": 60000
+    }
+   ],
+   "expect": [
+    "put some music on",
+    "any",
+    "next"
    ]
   }
  ]

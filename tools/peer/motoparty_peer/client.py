@@ -80,6 +80,7 @@ class Client:
         self.cached: dict[str, Path] = {}
         self.quitting = False
         self.http_port: int | None = None
+        self.host_interprets = False  # the host's latest hello.interpret
         # "this phone cannot open its microphone": refuse talk with reason "unavailable"
         self.mic_unavailable = bool(getattr(args, "mic_unavailable", False))
         # Browsing: newest request id, its kind, the numbered results and the host's queue
@@ -189,6 +190,7 @@ class Client:
         self.got_bye = False
         self.last_rx = now_ms()
         self.http_port = conn.hello["httpPort"]
+        self.host_interprets = bool(conn.hello.get("interpret"))
         # PROTOCOL.md "Clock": a reconnect to the same host keeps the window.
         if self.clock_host not in (None, conn.hello["name"]):
             log(f"clock: different host ({conn.hello['name']!r}), window cleared")
@@ -300,7 +302,9 @@ class Client:
         if not is_known(msg):
             log(f"   (unknown type {t!r} ignored)")
         elif t == "hello":
-            log("   (unexpected second hello ignored)")
+            # The host sends a new hello when its smart-commands setting changes.
+            self.host_interprets = bool(msg.get("interpret"))
+            log(f"   (host hello again: interpret={self.host_interprets})")
         elif t == "state":
             # A talk learnt only from state (joined mid-talk) opens in the mode state names.
             self._set_talk(msg["talk"], mic=msg.get("mic"))
@@ -331,6 +335,11 @@ class Client:
         elif t == "announce":
             earcon = f" [earcon {msg['earcon']}]" if "earcon" in msg else ""
             log(f"ANNOUNCE (would speak): {msg['text']!r}{earcon}")
+            # A clarifying question in a talk this client opened: its next phrase is the reply
+            # (PROTOCOL.md "Commands", The clarifying question).
+            if msg.get("ask") and self.talk and self.gate is not None and self.gate.role == "opener":
+                self.gate.ask(now_ms())
+                log("   (a question: the next phrase is sent as the reply)")
         elif t == "music.load":
             self.durations[msg["id"]] = msg["durationMs"]
             self._start_download(msg)
@@ -379,7 +388,8 @@ class Client:
         elif open_:
             # The live earcon plays now (the peer has none). A talk seen only through `state`
             # (joined mid-talk) has no known opener, so this phone is not it.
-            self.gate = FirstPhraseGate("opener" if by == "client" else "other", now_ms())
+            self.gate = FirstPhraseGate("opener" if by == "client" else "other", now_ms(),
+                                        interpret=self.host_interprets)
             self.player.stop()  # both sides pause music locally during talk
             if self.sender:
                 self.sender.begin_session()
@@ -419,16 +429,21 @@ class Client:
     def _hear(self, phrase: str) -> None:
         """A phrase the on-device ASR recognised on the talk microphone (PROTOCOL.md "Commands"):
         only the first non-empty one in a talk this client opened, within 8 s of the live
-        earcon, is a command, and only if it parses."""
+        earcon, is a command, and only if it parses, or the host interprets (its hello), in
+        which case it is sent whatever it is and the host decides."""
         if self.talk and self.talk_mic == "host":
             log(f"hear: {phrase!r} skipped: host-mic talk, the host recognises commands; nothing sent")
             return
         if not self.talk or self.gate is None:
             log("hear: no talk open; commands are spoken inside a talk, nothing sent")
             return
+        replying = self.gate.asked_ms is not None  # the host asked a question
         text = self.gate.phrase(phrase, now_ms())
         if text is None:
             log(f"hear: {phrase!r} is conversation ({self.gate.why}), not sent")
+        elif replying:
+            # The reply is the host's to understand: not parsed here, volume words included.
+            self.send({"t": "command.text", "text": text, "lang": self.args.lang})
         elif parse_command(text)["action"] in VOLUME_ACTIONS:
             # Volume is local and, like every command, ends the talk it was spoken in: the phone
             # that heard it closes the talk itself (PROTOCOL.md "Commands", Effect on the talk).

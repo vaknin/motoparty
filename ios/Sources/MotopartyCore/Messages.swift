@@ -96,13 +96,18 @@ public struct Hello: Codable, Equatable, Sendable {
     public var name: String
     public var voicePort: Int?
     public var httpPort: Int?
+    /// Host only: it interprets unparsed first phrases (PROTOCOL.md
+    /// "Commands", Interpretation). Absent = false.
+    public var interpret: Bool?
 
-    public init(proto: Int = Hello.currentProto, role: Role, name: String, voicePort: Int? = nil, httpPort: Int? = nil) {
+    public init(proto: Int = Hello.currentProto, role: Role, name: String, voicePort: Int? = nil, httpPort: Int? = nil,
+                interpret: Bool? = nil) {
         self.proto = proto
         self.role = role
         self.name = name
         self.voicePort = voicePort
         self.httpPort = httpPort
+        self.interpret = interpret
     }
 }
 
@@ -271,7 +276,10 @@ public struct MusicEdit: Codable, Equatable, Sendable {
 public struct Announce: Codable, Equatable, Sendable {
     public var text: String
     public var earcon: Earcon?
-    public init(text: String, earcon: Earcon? = nil) { self.text = text; self.earcon = earcon }
+    /// Only `true`: `text` is a clarifying question (PROTOCOL.md "Commands",
+    /// The clarifying question).
+    public var ask: Bool?
+    public init(text: String, earcon: Earcon? = nil, ask: Bool? = nil) { self.text = text; self.earcon = earcon; self.ask = ask }
 }
 
 public struct HostState: Codable, Equatable, Sendable {

@@ -1,0 +1,260 @@
+{
+ "_doc": "Interpreter answer → command text, question or conversation. See PROTOCOL.md 'Commands', Interpretation and The clarifying question. answer = the text the model returned (a string, to be parsed as JSON); expect = the command text to execute, null = conversation, or {ask, fallback} = a question to ask (ask: the question, whitespace collapsed and trimmed, 1..askMaxChars code points; fallback: the command text of its kind/query, or null). The query goes through the normalisation of 'Commands'. A queue answer maps to 'queue [next|instead] [<count>] <kind> <query>' or '… similar' (where: next/instead, else none; count: an integer 1..queueMaxCount, else left out).",
+ "interpretTimeoutMs": 3000,
+ "interpretUpNext": 5,
+ "askMaxChars": 80,
+ "answerMs": 10000,
+ "answerGraceMs": 2000,
+ "queueMaxCount": 50,
+ "cases": [
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "play artist moby"
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"song\",\"query\":\"Blinding Lights The Weeknd\"}",
+   "expect": "play song blinding lights the weeknd"
+  },
+  {
+   "answer": "{\"action\":\"play\",\"query\":\"Bohemian Rhapsody\"}",
+   "expect": "play song bohemian rhapsody"
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"mixtape\",\"query\":\"AC/DC\"}",
+   "expect": "play song ac dc"
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"album\",\"query\":\"What’s Going On\"}",
+   "expect": "play album what's going on"
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"playlist\",\"query\":\"  80s   Rock! \"}",
+   "expect": "play playlist 80s rock"
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"שלמה ארצי\"}",
+   "expect": "play artist שלמה ארצי"
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"?!\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"artist\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":7}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"pause\"}",
+   "expect": "pause"
+  },
+  {
+   "answer": "{\"action\":\"resume\"}",
+   "expect": "resume"
+  },
+  {
+   "answer": "{\"action\":\"next\",\"kind\":\"song\",\"query\":\"ignored\"}",
+   "expect": "next"
+  },
+  {
+   "answer": "{\"action\":\"previous\"}",
+   "expect": "previous"
+  },
+  {
+   "answer": "{\"action\":\"shuffle\"}",
+   "expect": "shuffle"
+  },
+  {
+   "answer": "{\"action\":\"volumeUp\"}",
+   "expect": "volume up"
+  },
+  {
+   "answer": "{\"action\":\"volumeDown\"}",
+   "expect": "volume down"
+  },
+  {
+   "answer": "{\"action\":\"nowplaying\"}",
+   "expect": "what is playing"
+  },
+  {
+   "answer": "{\"action\":\"end\"}",
+   "expect": "over"
+  },
+  {
+   "answer": "{\"action\":\"none\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"dance\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"PLAY\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":null}",
+   "expect": null
+  },
+  {
+   "answer": "[{\"action\":\"pause\"}]",
+   "expect": null
+  },
+  {
+   "answer": "\"pause\"",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"pause\"",
+   "expect": null
+  },
+  {
+   "answer": "",
+   "expect": null
+  },
+  {
+   "answer": "Sure! {\"action\":\"pause\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"Which Moby album?\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": {
+    "ask": "Which Moby album?",
+    "fallback": "play artist moby"
+   }
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"  What would you\\n like to hear? \"}",
+   "expect": {
+    "ask": "What would you like to hear?",
+    "fallback": null
+   }
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"Which one?\",\"query\":\"Queen\"}",
+   "expect": {
+    "ask": "Which one?",
+    "fallback": "play song queen"
+   }
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"Which one?\",\"kind\":\"album\",\"query\":\"?!\"}",
+   "expect": {
+    "ask": "Which one?",
+    "fallback": null
+   }
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"איזה אלבום של שלמה ארצי?\",\"kind\":\"artist\",\"query\":\"שלמה ארצי\"}",
+   "expect": {
+    "ask": "איזה אלבום של שלמה ארצי?",
+    "fallback": "play artist שלמה ארצי"
+   }
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+   "expect": {
+    "ask": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "fallback": null
+   }
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "play artist moby"
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"   \",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "play artist moby"
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"kind\":\"album\",\"query\":\"Play Moby\"}",
+   "expect": "play album play moby"
+  },
+  {
+   "answer": "{\"action\":\"ask\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":7}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"kind\":\"album\",\"query\":\"Play Moby\"}",
+   "expect": "queue album play moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"where\":\"end\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "queue artist moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"where\":\"next\",\"kind\":\"song\",\"query\":\"Natural Blues Moby\"}",
+   "expect": "queue next song natural blues moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"where\":\"next\",\"count\":3,\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "queue next 3 artist moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"where\":\"instead\",\"kind\":\"similar\"}",
+   "expect": "queue instead similar"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"kind\":\"similar\",\"query\":\"ignored\",\"count\":5}",
+   "expect": "queue 5 similar"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"query\":\"Porcelain\"}",
+   "expect": "queue song porcelain"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"where\":\"sometime\",\"count\":0,\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "queue artist moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"count\":51,\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "queue artist moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"count\":2.5,\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "queue artist moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"count\":\"3\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "expect": "queue artist moby"
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"where\":\"next\"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"queue\",\"kind\":\"album\",\"query\":\"  \"}",
+   "expect": null
+  },
+  {
+   "answer": "{\"action\":\"play\",\"kind\":\"similar\",\"query\":\"Moby\"}",
+   "expect": "play song moby"
+  },
+  {
+   "answer": "{\"action\":\"ask\",\"question\":\"Which one?\",\"kind\":\"similar\"}",
+   "expect": {
+    "ask": "Which one?",
+    "fallback": null
+   }
+  }
+ ]
+}
