@@ -319,3 +319,22 @@ microphone / headset call route coming up (0.5–1.9 s measured with no headset)
 - Side finding: `temperature` is deprecated for Gemini 3.5+, and Google says to remove it
   (<https://ai.google.dev/gemini-api/docs/latest-model#sampling-parameter-deprecation>). This is not
   related to the latency.
+
+### The fix (user's choice, 2026-09-30 night): race two models, 6 s limit, no temperature
+
+- `FirstAnswer` asks `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` at once and acts on the
+  first answer. Each model has its own free quota and rate guard; a failure (503, 429, timeout)
+  on one waits for the other. The log line ends in `via 3.5-flash-lite` / `via 3.1-flash-lite`, and
+  a double failure names both reasons.
+- A reply to a clarifying question goes to 3.5 only (`CloudGemini.NO_REPLIES`). 3.1 got 49/53 on
+  `smoke.sh` (two of the misses were Google's "503 … high demand"). The other two were question
+  replies: "any" gave `play artist moby` 3 of 3 times, and "watch out for that truck" gave
+  `play album moby` 2 of 3 times. 3.1's p50 was 3.6 s that night.
+- `INTERPRET_TIMEOUT_MS` is 6000 (PROTOCOL.md, `fixtures/interpret.json`, peer). Nothing is said
+  while the host waits (the user declined a spoken "one moment").
+- `temperature` was removed from the request and from `smoke.sh`. Not re-checked on 3.5 yet: its
+  quota was used up; the daily reset is at 10:00 Israel time. Run the full `smoke.sh` once then.
+- On the Pixel (release build, laptop peer as passenger): "play porcelain by moby" → Porcelain,
+  "play something by movie" → Moby, "who sings this" → "Porcelain by Moby". Time from phrase to
+  action: 1.7 / 2.9 / 3.4 s. Which model won is unknown: wireless debugging dropped, so there is
+  no logcat.

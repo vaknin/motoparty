@@ -87,6 +87,7 @@ import com.kivan.motoparty.trigger.TriggerSource
 import com.kivan.motoparty.trigger.Triggers
 import com.kivan.motoparty.voicecmd.Announcer
 import com.kivan.motoparty.voicecmd.CloudGemini
+import com.kivan.motoparty.voicecmd.FirstAnswer
 import com.kivan.motoparty.voicecmd.Interpreter
 import com.kivan.motoparty.voicecmd.TalkRecognizer
 import kotlinx.coroutines.CancellationException
@@ -145,7 +146,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     /** Understands phrases the grammar does not parse; null in a build with no Gemini API key. */
     private val interpreter: Interpreter? = BuildConfig.GEMINI_API_KEY.takeIf { it.isNotEmpty() }?.let { key ->
         fun raw(id: Int) = context.resources.openRawResource(id).bufferedReader().use { it.readText() }.trimEnd()
-        CloudGemini(http, key, raw(R.raw.interpret_prompt), raw(R.raw.interpret_schema), clock)
+        val prompt = raw(R.raw.interpret_prompt)
+        val schema = raw(R.raw.interpret_schema)
+        FirstAnswer(
+            CloudGemini.MODELS.map { model -> model.removePrefix("gemini-") to CloudGemini(http, model, key, prompt, schema, clock) },
+            noReplies = CloudGemini.NO_REPLIES.map { it.removePrefix("gemini-") }.toSet(),
+        )
     }
     /** PROTOCOL.md "Commands", *Interpretation*: smart commands are on and there is a key. */
     private val interprets: Boolean get() = interpreter != null && settings.value.smartCommands
@@ -1153,7 +1159,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 else -> ""
             }
             val of = if (reply != null) " (reply to \"${reply.text}\")" else ""
-            Hub.log("interpret: \"$text\"${if (fromClient) " (client)" else ""}$of → $what in ${clock() - t0} ms$note")
+            val by = (answer as? Interpreter.Text)?.by?.let { " via ${it.removePrefix("gemini-")}" }.orEmpty()
+            Hub.log("interpret: \"$text\"${if (fromClient) " (client)" else ""}$of → $what in ${clock() - t0} ms$by$note")
             when {
                 stale -> Unit
                 ask != null -> ask(Question(session, fromClient, text, ask.question, ask.fallback))

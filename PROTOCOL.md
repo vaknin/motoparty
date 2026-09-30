@@ -534,7 +534,7 @@ text, parsed or not).
 
 **What the host does with an unparsed candidate.** It asks the interpreter, giving it the text,
 its language tag, the current track (`"<title> – <artist>"` or none, and its album when the host knows it) and up to
-`INTERPRET_UP_NEXT` = 5 upcoming titles, and waits at most **`INTERPRET_TIMEOUT_MS` = 3000 ms**.
+`INTERPRET_UP_NEXT` = 5 upcoming titles, and waits at most **`INTERPRET_TIMEOUT_MS` = 6000 ms**.
 The talk stays open and nothing is said while it waits. The answer is one JSON object,
 `{"action": …, "kind"?: …, "query"?: …, "question"?: …, "where"?: …, "count"?: …}`, mapped to a command text of the grammar
 (or, for `ask`, to a question: next section):

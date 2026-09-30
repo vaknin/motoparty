@@ -3,7 +3,6 @@ package com.kivan.motoparty.voicecmd
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.boolean
-import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -19,13 +18,13 @@ class CloudGeminiTest {
     @Test
     fun requestBodyIsTheInteractionsShape() {
         val body = Json.parseToJsonElement(
-            CloudGemini.requestBody("PROMPT", schema, "put on \"moby\"", "en-US", "Honey – Moby", listOf("Porcelain")),
+            CloudGemini.requestBody("gemini-x", "PROMPT", schema, "put on \"moby\"", "en-US", "Honey – Moby", listOf("Porcelain")),
         ).jsonObject
-        assertEquals(CloudGemini.MODEL, body["model"]!!.jsonPrimitive.content)
+        assertEquals("gemini-x", body["model"]!!.jsonPrimitive.content)
         assertEquals("PROMPT", body["system_instruction"]!!.jsonPrimitive.content)
         assertFalse(body["store"]!!.jsonPrimitive.boolean)
         val config = body["generation_config"]!!.jsonObject
-        assertEquals(0, config["temperature"]!!.jsonPrimitive.int)
+        assertNull(config["temperature"])
         assertEquals("minimal", config["thinking_level"]!!.jsonPrimitive.content)
         val format = body["response_format"]!!.jsonObject
         assertEquals("application/json", format["mime_type"]!!.jsonPrimitive.content)
@@ -44,7 +43,7 @@ class CloudGeminiTest {
     @Test
     fun aReplyCarriesTheQuestion() {
         val asked = Interpreter.Asked("play an album by moby", "Which Moby album?")
-        val body = Json.parseToJsonElement(CloudGemini.requestBody("P", schema, "any", "en-US", null, emptyList(), asked)).jsonObject
+        val body = Json.parseToJsonElement(CloudGemini.requestBody("gemini-x", "P", schema, "any", "en-US", null, emptyList(), asked)).jsonObject
         val input = Json.parseToJsonElement(body["input"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content).jsonObject
         assertEquals("any", input["phrase"]!!.jsonPrimitive.content)
         assertEquals("play an album by moby", input["asked"]!!.jsonObject["phrase"]!!.jsonPrimitive.content)
@@ -53,7 +52,7 @@ class CloudGeminiTest {
 
     @Test
     fun nothingPlayingIsNull() {
-        val body = Json.parseToJsonElement(CloudGemini.requestBody("P", schema, "next one", "en-US", null, emptyList())).jsonObject
+        val body = Json.parseToJsonElement(CloudGemini.requestBody("gemini-x", "P", schema, "next one", "en-US", null, emptyList())).jsonObject
         val input = Json.parseToJsonElement(body["input"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content).jsonObject
         assertEquals(JsonNull, input["playing"])
         assertTrue(input["upNext"]!!.jsonArray.isEmpty())

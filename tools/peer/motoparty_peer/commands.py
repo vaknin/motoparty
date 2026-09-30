@@ -176,7 +176,7 @@ class FirstPhraseGate:
         return cmd
 
 
-INTERPRET_TIMEOUT_MS = 3000
+INTERPRET_TIMEOUT_MS = 6000
 INTERPRET_UP_NEXT = 5
 _INTERPRETED = {
     "pause": "pause", "resume": "resume", "next": "next", "previous": "previous",

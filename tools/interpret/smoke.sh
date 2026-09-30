@@ -33,7 +33,7 @@ one() {
     code=$(jq -n --arg model "$model" --rawfile prompt "$raw/interpret_prompt.txt" --arg input "$input" \
         --slurpfile schema "$raw/interpret_schema.json" \
         '{model: $model, system_instruction: $prompt, input: [{type: "text", text: $input}],
-          generation_config: {temperature: 0, thinking_level: "minimal"},
+          generation_config: {thinking_level: "minimal"},
           response_format: {type: "text", mime_type: "application/json", schema: $schema[0]},
           store: false}' |
         curl -sS --max-time 20 -X POST https://generativelanguage.googleapis.com/v1beta/interactions \

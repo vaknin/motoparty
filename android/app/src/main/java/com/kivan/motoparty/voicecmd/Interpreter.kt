@@ -1,8 +1,12 @@
 package com.kivan.motoparty.voicecmd
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.selects.select
+
 /**
  * Understands a phrase the grammar does not parse (PROTOCOL.md "Commands", *Interpretation*).
- * One back end today, [CloudGemini]; Gemini Nano on the phone was ruled out (LLM-COMMANDS.md).
+ * [CloudGemini] per model, raced by [FirstAnswer]; Gemini Nano on the phone was ruled out (LLM-COMMANDS.md).
  */
 fun interface Interpreter {
     /**
@@ -16,9 +20,42 @@ fun interface Interpreter {
     data class Asked(val phrase: String, val question: String)
 
     sealed interface Answer
-    data class Text(val text: String) : Answer
+    /** [by] names the back end that answered, for the log. */
+    data class Text(val text: String, val by: String? = null) : Answer
     /** [why] is for the log: "timeout", "rate limited", "HTTP 500", … */
     data class Failed(val why: String) : Answer
+}
+
+/**
+ * Asks every back end at once and returns the first [Interpreter.Text]; the others are cancelled.
+ * When all fail, the reasons are joined in back-end order, each under its back end's name. Each back end keeps its own
+ * time limit and rate guard. A reply to a question goes only to the back ends not named in
+ * [noReplies].
+ */
+class FirstAnswer(
+    private val all: List<Pair<String, Interpreter>>,
+    private val noReplies: Set<String> = emptySet(),
+) : Interpreter {
+    override suspend fun interpret(phrase: String, lang: String, playing: String?, album: String?, upNext: List<String>, asked: Interpreter.Asked?): Interpreter.Answer =
+        coroutineScope {
+            val backends = if (asked == null) all else all.filterNot { it.first in noReplies }
+            var pending = backends.map { (name, backend) ->
+                name to async { backend.interpret(phrase, lang, playing, album, upNext, asked) }
+            }
+            val failures = mutableMapOf<String, String>()
+            while (pending.isNotEmpty()) {
+                val (name, answer) = select { pending.forEach { (name, call) -> call.onAwait { name to it } } }
+                pending = pending.filterNot { it.first == name }
+                when (answer) {
+                    is Interpreter.Text -> {
+                        pending.forEach { it.second.cancel() }
+                        return@coroutineScope answer
+                    }
+                    is Interpreter.Failed -> failures[name] = answer.why
+                }
+            }
+            Interpreter.Failed(backends.joinToString("; ") { (name, _) -> "$name: ${failures[name]}" })
+        }
 }
 
 /**

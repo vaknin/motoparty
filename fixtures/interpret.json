@@ -1,6 +1,6 @@
 {
  "_doc": "Interpreter answer → command text, question or conversation. See PROTOCOL.md 'Commands', Interpretation and The clarifying question. answer = the text the model returned (a string, to be parsed as JSON); expect = the command text to execute, null = conversation, or {ask, fallback} = a question to ask (ask: the question, whitespace collapsed and trimmed, 1..askMaxChars code points; fallback: the command text of its kind/query, or null). The query goes through the normalisation of 'Commands'. A queue answer maps to 'queue [next|instead] [<count>] <kind> <query>' or '… similar' (where: next/instead, else none; count: an integer 1..queueMaxCount, else left out).",
- "interpretTimeoutMs": 3000,
+ "interpretTimeoutMs": 6000,
  "interpretUpNext": 5,
  "askMaxChars": 80,
  "answerMs": 10000,

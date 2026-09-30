@@ -12,7 +12,7 @@ import kotlinx.serialization.json.longOrNull
  */
 object Interpretation {
     /** How long the host waits for the interpreter before the phrase counts as conversation. */
-    const val INTERPRET_TIMEOUT_MS = 3_000L
+    const val INTERPRET_TIMEOUT_MS = 6_000L
     /** Upcoming titles given to the interpreter as context. */
     const val INTERPRET_UP_NEXT = 5
     /** The longest question the host will say, in code points. */
