@@ -1,4 +1,43 @@
+import pytest
+
+from conftest import load_fixture
 from motoparty_peer.jitter import FEC, FRAME, PLC, SILENCE, JitterBuffer
+
+VEC = load_fixture("jitter.json")
+
+
+def _tag(d) -> str:
+    if d.kind == FRAME:
+        return f"play {d.seq}"
+    if d.kind == FEC:
+        return f"fec {d.seq}"
+    return "conceal" if d.kind == PLC else "silence"
+
+
+@pytest.mark.parametrize("case", VEC["cases"], ids=[c["name"] for c in VEC["cases"]])
+def test_fixture_case(case):
+    """fixtures/jitter.json: the vectors shared with the Android and iOS buffers."""
+    jb = JitterBuffer()
+    at = 0
+    for i, step in enumerate(case["steps"]):
+        assert step["at"] >= at, f"step {i}: at goes back"
+        at = step["at"]
+        where = f"step {i} at {at}"
+        if "insert" in step:
+            seq, ts = step["insert"]
+            jb.push(seq, ts, seq.to_bytes(2, "big"), at)
+        if "keepalive" in step:
+            jb.push_keepalive(step["keepalive"], at)
+        if "pull" in step:
+            assert _tag(jb.pull(at)) == step["pull"], where
+        e = step.get("expect", {})
+        assert set(e) <= {"targetMs", "underruns", "shed"}, where
+        got = {"targetMs": jb.target_ms, "underruns": jb.stats.underruns, "shed": jb.stats.shed}
+        assert {k: got[k] for k in e} == e, where
+
+
+def test_fixture_has_the_cases():
+    assert len(VEC["cases"]) >= 12
 
 F = 320
 
@@ -7,7 +46,7 @@ class Sim:
     """Drives a JitterBuffer with a 20 ms pull clock and scheduled arrivals."""
 
     def __init__(self, seq0=100, ts0=10_000, t0=0):
-        self.jb = JitterBuffer(t0)
+        self.jb = JitterBuffer()
         self.now = t0
         self.seq0, self.ts0 = seq0, ts0
         self.arrivals = []  # (time, kind, seq, ts, payload)
@@ -52,7 +91,7 @@ def test_in_order_stream_plays_everything_at_target_latency():
     sim.run(2100)
     assert sim.played() == [f"p{i}" for i in range(100)]
     s = sim.jb.stats
-    assert (s.fec, s.plc, s.late, s.underruns) == (0, 0, 0, 0)
+    assert (s.fec, s.plc, s.shed, s.underruns) == (0, 3, 0, 0)  # 3 = concealment at the end
     assert sim.jb.target_ms == 40
     first = next(t for t, d in sim.out if d.kind == FRAME)
     assert 20 < first <= 60  # frame 0 arrived at t=0; playout starts once 40 ms are buffered
@@ -68,7 +107,7 @@ def test_single_loss_is_recovered_with_fec_from_successor():
     idx = next(k for k, d in enumerate(ds) if d.kind == FEC)
     assert ds[idx].payload == b"p11"  # FEC for frame 10 comes from packet 11
     assert ds[idx - 1].payload == b"p9" and ds[idx + 1].payload == b"p11"
-    assert sim.jb.stats.fec == 1 and sim.jb.stats.plc == 0
+    assert sim.jb.stats.fec == 1 and sim.jb.stats.plc == 3  # 3 = end-of-stream concealment
 
 
 def test_burst_loss_plc_then_fec():
@@ -82,8 +121,7 @@ def test_burst_loss_plc_then_fec():
     seq = ks[ks.index(FRAME) + i9 + 1 : ks.index(FRAME) + i9 + 5]
     assert seq == [PLC, PLC, FEC, FRAME]
     s = sim.jb.stats
-    # at 40 ms depth packet 13 is not there yet when frame 10 is due: those count as starved
-    assert s.fec == 1 and s.plc + s.starved - 3 == 2  # (3 = end-of-stream concealment)
+    assert s.fec == 1 and s.plc - 3 == 2  # (3 = end-of-stream concealment)
 
 
 def test_dtx_gap_is_silence_not_loss():
@@ -95,7 +133,10 @@ def test_dtx_gap_is_silence_not_loss():
         sim.send((60 + k) * 20, 10 + k, frame_index=60 + k)
     sim.run(1500)
     s = sim.jb.stats
-    assert s.fec == 0 and s.plc == 0 and s.underruns == 0 and s.late == 0
+    # at most 3 conceals when each spurt runs dry, then silence; the gap itself is not loss
+    assert s.fec == 0 and s.plc == 6 and s.underruns == 0 and s.shed == 0
+    ks = sim.kinds()
+    assert ks[ks.index(PLC) : ks.index(PLC) + 4] == [PLC, PLC, PLC, SILENCE]
     assert sim.played() == [f"p{i}" for i in list(range(10)) + list(range(60, 70))]
     assert sim.jb.target_ms == 40
 
@@ -110,52 +151,8 @@ def test_keepalives_do_not_count_as_loss():
     for k in range(5):
         sim.send(2200 + k * 20, 7 + k, frame_index=110 + k)
     sim.run(2600)
-    assert sim.jb.stats.plc == 0 and sim.jb.stats.fec == 0
+    assert sim.jb.stats.plc == 6 and sim.jb.stats.fec == 0  # 3 conceals per spurt end
     assert sim.played()[-5:] == [f"p{110 + k}" for k in range(5)]
-
-
-def test_stall_is_underrun_reanchors_and_target_decays():
-    sim = Sim()
-    steady(sim, 20)
-    # Wi-Fi stall: packets 20..25 are held up and arrive together 150 ms late
-    for i in range(20, 26):
-        sim.send(20 * 20 + 150, i)
-    for i in range(26, 60):
-        sim.send(i * 20, i)
-    sim.run(1500)
-    s = sim.jb.stats
-    assert s.underruns == 1 and s.late == 1
-    assert sim.jb.target_ms == 60
-    # re-anchored on the late direct successor: nothing was lost, only delayed
-    assert sim.played() == [f"p{i}" for i in range(60)]
-    assert s.fec == 0 and s.plc == 0
-    # 10 s without another underrun -> back to 40
-    sim.run(1500 + 10_100)
-    assert sim.jb.target_ms == 40
-
-
-def test_single_late_packet_after_fec_is_dropped_and_raises_target():
-    sim = Sim()
-    steady(sim, 20)
-    sim.send(20 * 20 + 150, 20)  # only packet 20 is late; 21 arrives on time
-    for i in range(21, 40):
-        sim.send(i * 20, i)
-    sim.run(1200)
-    s = sim.jb.stats
-    assert s.fec == 1  # frame 20 was recovered from packet 21's FEC before 20 turned up
-    assert s.late == 1 and s.underruns == 1 and sim.jb.target_ms == 60
-    assert "p20" not in sim.played()
-    assert s.stretched == 1  # the extra 20 ms is inserted at the next silence
-
-
-def test_target_is_clamped():
-    jb = JitterBuffer(0)
-    for n in range(20):
-        jb._underrun(n)
-    assert jb.target_ms == 200
-    for k in range(1, 30):
-        jb.pull(k * 10_000 + 20)
-    assert jb.target_ms == 40
 
 
 def test_reordering_within_buffer():
@@ -170,22 +167,13 @@ def test_reordering_within_buffer():
     assert sim.jb.stats.underruns == 0
 
 
-def test_duplicates_dropped():
-    sim = Sim()
-    steady(sim, 10)
-    sim.send(45, 2)
-    sim.run(400)
-    assert sim.played() == [f"p{i}" for i in range(10)]
-    assert sim.jb.stats.duplicates == 1
-
-
 def test_seq_and_ts_wraparound():
     sim = Sim(seq0=65530, ts0=(1 << 32) - 5 * F)
     steady(sim, 30)
     sim.send(30 * 20, 30)
     sim.run(800)
     assert sim.played() == [f"p{i}" for i in range(31)]
-    assert sim.jb.stats.plc == 0 and sim.jb.stats.fec == 0
+    assert sim.jb.stats.plc == 3 and sim.jb.stats.fec == 0
 
 
 def test_lone_packet_still_plays():
@@ -195,19 +183,63 @@ def test_lone_packet_still_plays():
     assert sim.played() == ["p0"]
 
 
-def test_excess_depth_is_trimmed():
+def test_late_packet_is_an_underrun_dropped_and_the_target_decays():
     sim = Sim()
-    # 6 frames arrive at once (burst after a stall), then a steady stream: depth ~120 ms
-    for i in range(6):
+    steady(sim, 20)
+    sim.send(20 * 20 + 150, 20)  # only packet 20 is late; 21 arrives on time
+    for i in range(21, 600):
+        sim.send(i * 20, i)
+    sim.run(1200)
+    s = sim.jb.stats
+    assert s.fec == 1  # frame 20 was recovered from packet 21's FEC before 20 turned up
+    assert s.underruns == 1 and sim.jb.target_ms == 60
+    assert "p20" not in sim.played()
+    sim.run(20 * 20 + 150 + 10_100)  # 10 s without another underrun -> back to 40
+    assert sim.jb.target_ms == 40 and s.underruns == 1
+
+
+def test_target_is_clamped():
+    jb = JitterBuffer()
+    t, seq = 0, 0
+    for spurt in range(12):  # each spurt: frame 1 is recovered by FEC, then turns up late
+        base = spurt * 100 * F
+        for k in (0, 2):
+            jb.push(seq + k, base + k * F, b"x", t)
+        t += 200
+        kinds = [jb.pull(t + 20 * n).kind for n in range(3)]
+        assert kinds == [FRAME, FEC, FRAME]
+        assert jb.push(seq + 1, base + F, b"late", t + 61) == "late"
+        seq += 3
+        t += 1000
+    assert jb.target_ms == 200 and jb.stats.underruns == 12
+    for k in range(1, 30):
+        jb.pull(t + k * 10_000)
+    assert jb.target_ms == 40
+
+
+def test_duplicate_of_a_queued_packet_is_ignored():
+    sim = Sim()
+    steady(sim, 10)
+    sim.send(45, 2)
+    sim.run(400)
+    assert sim.played() == [f"p{i}" for i in range(10)]
+    assert sim.jb.stats.underruns == 0
+
+
+def test_burst_backlog_is_shed_at_spurt_start():
+    sim = Sim()
+    for i in range(6):  # 6 frames arrive at once, then a steady stream
         sim.send(0, i)
     for i in range(6, 200):
         sim.send((i - 5) * 20, i)
     sim.run(4200)
-    assert sim.jb.stats.trimmed >= 2
-    assert sim.jb.depth_ms <= sim.jb.target_ms + 20
+    s = sim.jb.stats
+    assert s.shed == 5 and s.underruns == 0 and s.fec == 0
+    assert sim.played()[:2] == ["p5", "p6"]  # the newest 40 ms of the burst are kept
+    assert sim.jb.target_ms == 40
 
 
-def test_random_jitter_and_loss_accounts_for_every_frame():
+def test_random_jitter_and_loss_keeps_order_and_bounds():
     import random
 
     rnd = random.Random(7)
@@ -221,12 +253,11 @@ def test_random_jitter_and_loss_accounts_for_every_frame():
         sim.send(i * 20 + delay, i)
     sim.run(1500 * 20 + 500)
     s = sim.jb.stats
-    played = set(int(p[1:]) for p in sim.played())
-    assert played.isdisjoint(lost)
-    # every frame is either played, recovered (FEC/PLC), or dropped as late/trimmed
-    assert len(played) + s.fec + s.plc + s.starved >= 1500 - s.late - s.trimmed - 5
+    order = [int(p[1:]) for p in sim.played()]
+    assert set(order).isdisjoint(lost)
+    assert order == sorted(order) and len(order) == len(set(order))
+    # every frame sent was played, shed, or dropped as late
+    assert len(order) + s.shed + s.underruns + s.reanchors >= 1500 - len(lost) - 5
     assert 40 <= sim.jb.target_ms <= 200
     assert s.fec > 0 and s.underruns > 0
-    # order is preserved
-    order = [int(p[1:]) for p in sim.played()]
-    assert order == sorted(order)
+    assert s.max_depth_ms <= 400

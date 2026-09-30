@@ -10,12 +10,13 @@ enum LinkStatus: Equatable {
     case connecting(String)
     case connected(String)
 
-    var label: String {
+    /// `lastHost`: the rider's phone by the name it last had.
+    func label(lastHost: String?) -> String {
         switch self {
         case .idle: "Idle"
-        case .searching: "Searching for host…"
-        case .connecting(let name): "Connecting to \(name)…"
-        case .connected(let name): "Connected to \(name)"
+        case .searching: LinkWording.searching(lastHost: lastHost)
+        case .connecting(let name): LinkWording.connecting(name)
+        case .connected(let name): LinkWording.connected(name)
         }
     }
 
@@ -35,6 +36,14 @@ struct ResultList: Equatable {
     var requested: Bool { requestId != nil }
 }
 
+/// Numbers only Settings → Diagnostics reads, kept out of `AppModel` so that a
+/// new round trip or drift value redraws nothing else (audit UI4).
+final class LinkStats: ObservableObject {
+    @Published fileprivate(set) var rttMs: Double?
+    @Published fileprivate(set) var driftMs: Double?
+    @Published fileprivate(set) var audioRoute = ""
+}
+
 /// Owns every component and implements the client side of PROTOCOL.md:
 /// discovery → control → voice socket; talk and music flows; commands
 /// spoken inside a talk.
@@ -42,26 +51,50 @@ struct ResultList: Equatable {
 final class AppModel: ObservableObject {
     // MARK: Published UI state
     @Published private(set) var link: LinkStatus = .idle {
-        // The app owns the volume keys only while connected (2026-09-29):
-        // a press is an app volume step, a hold of volume up toggles talk.
-        didSet { volumeKey.isArmed = link.isConnected }
+        // The app owns the volume keys while connected (2026-09-29): a press
+        // is an app volume step, a hold of volume up toggles talk. They stay
+        // armed through a short link loss (`VolumeKeyArming`, audit H9).
+        didSet { updateVolumeKeyArming() }
     }
     @Published private(set) var talkOpen = false
-    @Published private(set) var talkRequested = false
+    /// The open talk's "live" earcon has played: its microphone (host-mic:
+    /// its playback) is up. Until then the button says "Connecting…".
+    @Published private(set) var talkLive = false
+    /// When the open talk went live, for the running timer on TALK.
+    @Published private(set) var talkLiveSince: Date?
+    /// TALK was pressed and the host has not decided yet (at most
+    /// `TalkPress.timeoutMs`; a second press takes the request back).
+    @Published private(set) var talkRequested = false {
+        didSet { if talkRequested != oldValue { armTalkRequestTimeout() } }
+    }
     @Published private(set) var hostState: HostState?
     @Published private(set) var nowPlaying: MusicLoad? {
         didSet { if nowPlaying?.id != oldValue?.id { musicStatusTracker.setCurrent(nowPlaying?.id) } }
     }
     @Published private(set) var musicPlaying = false
-    @Published private(set) var downloading: String?
-    /// "Loading…" / "Paused for talk" under now playing (`MusicStatus`).
+    /// "Downloading song…" / "Paused for talk" under now playing (`MusicStatus`).
     @Published private(set) var musicStatus: MusicStatus = .none
-    @Published private(set) var lastHeard: String?
-    @Published private(set) var lastAnnouncement: String?
-    @Published private(set) var problem: String?
-    @Published private(set) var rttMs: Double?
-    @Published private(set) var driftMs: Double?
-    @Published private(set) var audioRoute = ""
+    /// The command this phone heard, and the host's last announcement: each
+    /// shown for `Notice.transientLineMs`, then gone (audit UI1).
+    @Published private(set) var lastHeard: String? {
+        didSet { expireLine(lastHeard, "heard") { $0.lastHeard = nil } }
+    }
+    @Published private(set) var lastAnnouncement: String? {
+        didSet { expireLine(lastAnnouncement, "announcement") { $0.lastAnnouncement = nil } }
+    }
+    /// The problem line on Ride: dismissed by the user, or cleared by the
+    /// next success of what it is about (`Notice.isCleared`).
+    @Published private(set) var problem: Notice?
+    /// The passenger refused a permission: Ride shows a card with "Open
+    /// Settings". Talk still works with the rider's microphone set.
+    @Published private(set) var micDenied = false
+    @Published private(set) var speechDenied = false
+    /// The rider's phone, by the name it last had ("Looking for …").
+    @Published private(set) var lastHostName: String?
+    /// The headset went away while music could play: this phone keeps its
+    /// music silent (never the pocket loudspeaker) until a headset is back or
+    /// the passenger presses Play here. The host's music is not touched.
+    @Published private(set) var musicHeldForRoute = false
     /// The app volume level (`AppVolume`, 0...`maxLevel`): what talk, music
     /// and cues play at while linked, and where the next link starts. The
     /// system volume reads 15/16 while linked, so this is the only true one.
@@ -70,6 +103,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var searchResults = ResultList()
     /// What the newest search looked for: songs are played, the rest browsed.
     @Published private(set) var searchedKind: SearchKind = .songs
+    /// The words of the newest search ("Nothing found for …", Try again).
+    @Published private(set) var searchedQuery = ""
     /// Songs of the album or playlist being browsed, and which one it is.
     @Published private(set) var collectionResults = ResultList()
     @Published private(set) var browsedCollection: ResultItem?
@@ -79,6 +114,7 @@ final class AppModel: ObservableObject {
     }
 
     let settings = AppSettings()
+    let stats = LinkStats()
 
     // MARK: Components
     private let clock = HostClock()
@@ -95,11 +131,11 @@ final class AppModel: ObservableObject {
     private lazy var volumeKey = VolumeKey(localVolume: localVolume)
     private let cache = TrackCache()
     /// The player runs ahead of the host timeline by the output delay it has to
-    /// cover: what the audio session measures for the current route plus the
-    /// user's own trim (PROTOCOL.md, "Music flow" step 4).
+    /// cover: the user's own trim (PROTOCOL.md, "Music flow" step 4) plus,
+    /// while the setting says so, what the audio session measures for the
+    /// current route (audit M2).
     private lazy var player = SyncedPlayer(clock: clock) { [weak self] in
-        guard let self else { return 0 }
-        return self.session.outputLatencyMs + self.settings.latencyTrimMs
+        self?.outputDelay() ?? OutputDelay(outputLatencyMs: 0, trimMs: 0, compensate: false)
     }
     private let nowPlayingCenter = NowPlaying()
     /// Speech recognition on the talk's own mic (PROTOCOL.md "Commands").
@@ -130,6 +166,8 @@ final class AppModel: ObservableObject {
     /// The host's current play anchor (from music.play or state), if playing.
     private var currentPlay: MusicPlay?
     private var started = false
+    /// The host whose clock the estimate in `clock` belongs to.
+    private var clockHostName: String?
     /// We have told the host we cannot open the mic for this talk; cleared by
     /// its `talk.close` or by the next TALK press.
     private var micUnavailable = false
@@ -149,9 +187,31 @@ final class AppModel: ObservableObject {
     private var talkOpener: Role?
     /// How this phone takes part in the open talk (PROTOCOL.md "Host-mic
     /// talk"), fixed at its open; `.ownMic` while no talk is open.
-    private var talkMode: TalkMode = .ownMic
+    @Published private(set) var talkMode: TalkMode = .ownMic
     /// Last `music.search` / `music.browse` id; every request takes the next.
     private var lastRequestId = 0
+    private var arming = VolumeKeyArming()
+    private var armingTimer: Timer?
+    private var talkRequestedAtMs: Double = 0
+    private var talkRequestTimer: Timer?
+    /// The address of the current or last link, probed first after a link
+    /// loss (PROTOCOL.md "Discovery" step 5), and when that link came up.
+    private var lastLinkedAddress: String?
+    private var connectedAtMs: Double = 0
+    /// The switch back to the media session, held while the "end" earcon
+    /// plays on the talk route (audit M10).
+    private var mediaRestore: DispatchWorkItem?
+    /// A `music.play` arrived during that hold: start once the session is back.
+    private var musicWaitsForMediaRoute = false
+    /// A `music.next` that came while the start of its `music.play` was still
+    /// waiting (download, the end-earcon hold): queued right after that start.
+    private var heldNext: MusicNext?
+    /// Where the host parked the current track (`music.pause`, a paused
+    /// `state.music`); nil while it plays along `currentPlay`.
+    private var parkedAtMs: Double?
+    private var lineTimers: [String: Timer] = [:]
+    /// Voids the output-delay re-reads of an earlier route switch.
+    private var rereadGeneration = 0
 
     // MARK: - Lifecycle
 
@@ -162,24 +222,21 @@ final class AppModel: ObservableObject {
         do {
             try session.activate(.media)
         } catch {
-            problem = "Audio session: \(error.localizedDescription)"
+            problem = Notice(.audio, "Audio session: \(error.localizedDescription)")
         }
         keepAlive.start()
         volumeLevel = settings.appVolumeLevel
         history = settings.browseHistory
+        lastHostName = settings.lastHostName
         volumeKey.armLevel = volumeLevel
         volumeKey.start()
         // The volume slider needs the window and a layout pass: make it now,
         // long before the first park (the window is up by the next turn).
         DispatchQueue.main.async { [weak self] in self?.localVolume.prepare() }
-        audioRoute = session.outputName
+        noteAudioRoute()
         // Ask for permissions at home, not on the road.
-        session.requestRecordPermission { [weak self] granted in
-            if !granted { self?.problem = "Microphone permission denied: talk works only with the host's mic" }
-        }
-        Transcriber.requestAuthorization { [weak self] granted in
-            if !granted { self?.problem = "Speech recognition not authorised: voice commands disabled" }
-        }
+        session.requestRecordPermission { [weak self] _ in self?.refreshPermissions() }
+        Transcriber.requestAuthorization { [weak self] _ in self?.refreshPermissions() }
         statsTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.refreshStats()
         }
@@ -187,6 +244,10 @@ final class AppModel: ObservableObject {
     }
 
     func reconnect() {
+        // The user asks: a host set aside for its protocol version gets
+        // another try (it may have been updated).
+        discovery.unblock()
+        clearProblem(on: .reconnectAsked)
         control?.stop(sendBye: true)
         linkLost(reason: "manual reconnect")
     }
@@ -194,7 +255,7 @@ final class AppModel: ObservableObject {
     private func wireCallbacks() {
         discovery.onFound = { [weak self] candidate in self?.connect(to: candidate) }
         discovery.onWrongProto = { [weak self] name, proto in
-            self?.problem = "\(name) speaks protocol \(proto), this app speaks \(Hello.currentProto): update one of them"
+            self?.showProtoMismatch("\(name) speaks protocol \(proto), this app speaks \(Hello.currentProto): update one of them. Reconnect in Settings tries it again")
         }
 
         nowPlayingCenter.onButton = { [weak self] button in self?.remoteButton(button) }
@@ -207,7 +268,7 @@ final class AppModel: ObservableObject {
         volumeKey.onGains = { [weak self] gains in self?.applyGains(gains) }
         volumeKey.onLevel = { [weak self] level in
             guard let self else { return }
-            self.volumeLevel = level
+            if self.volumeLevel != level { self.volumeLevel = level }
             self.settings.appVolumeLevel = level
         }
         session.onMuteGesture = { [weak self] in
@@ -227,7 +288,24 @@ final class AppModel: ObservableObject {
         // (Android F7 — never a fixed delay).
         voiceEngine.onLive = { [weak self] in self?.playLiveCue(fallback: false) }
 
-        player.onDrift = { [weak self] drift in self?.driftMs = drift }
+        player.onDrift = { [weak self] drift in
+            guard let self else { return }
+            // Whole milliseconds are all Diagnostics shows.
+            let rounded = drift.rounded()
+            if self.stats.driftMs != rounded { self.stats.driftMs = rounded }
+        }
+        // The queued track took over (PROTOCOL.md "Music flow" step 6),
+        // slightly before the host's state / music.play says so, or without
+        // them when the link is down.
+        player.onAdvance = { [weak self] id, anchor in
+            guard let self else { return }
+            self.currentPlay = MusicPlay(id: id, positionMs: anchor.positionMs, atHostTimeMs: anchor.atHostTimeMs)
+            self.parkedAtMs = nil
+            self.musicStatusTracker.play(id)
+            if self.nowPlaying?.id != id, let load = self.loads[id] { self.nowPlaying = load }
+            self.updateNowPlaying()
+        }
+        player.onQueueFailed = { [weak self] in self?.startMusicIfPossible() }
 
         transcriber.onPhrase = { [weak self] phrase in self?.heard(phrase) }
 
@@ -248,9 +326,28 @@ final class AppModel: ObservableObject {
 
     // MARK: - Link
 
-    private func startDiscovery() {
+    private func startDiscovery(lastAddress: String? = nil) {
         link = .searching
-        discovery.start(preferredName: settings.lastHostName)
+        discovery.start(preferredName: settings.lastHostName, lastAddress: lastAddress)
+    }
+
+    private func updateVolumeKeyArming() {
+        let now = MonotonicClock.nowMs()
+        let searching: Bool
+        switch link {
+        case .searching, .connecting: searching = true
+        case .idle, .connected: searching = false
+        }
+        armingTimer?.invalidate()
+        armingTimer = nil
+        if let expireAtMs = arming.link(connected: link.isConnected, searching: searching, nowMs: now) {
+            armingTimer = Timer.scheduledTimer(withTimeInterval: max(0, expireAtMs - now) / 1000 + 0.01,
+                                               repeats: false) { [weak self] _ in
+                guard let self, self.arming.expire(nowMs: MonotonicClock.nowMs()) else { return }
+                self.volumeKey.isArmed = false
+            }
+        }
+        if volumeKey.isArmed != arming.armed { volumeKey.isArmed = arming.armed }
     }
 
     private func connect(to candidate: HostCandidate) {
@@ -260,14 +357,22 @@ final class AppModel: ObservableObject {
             voicePort = txt.voicePort
             httpPort = txt.httpPort
         }
-        // A new connection may be a different host (or a restarted one):
-        // its clock and its view of our cache start from scratch.
-        clock.reset()
+        // A new connection's view of our cache starts from scratch. The clock
+        // window is kept for the same host (PROTOCOL.md "Clock"; a rebooted
+        // one steps by far more than the reset threshold) and dropped for
+        // another.
+        noteClockHost(candidate.name)
         readySent = []
         let client = ControlClient(endpoint: candidate.endpoint, name: settings.deviceName, clock: clock)
         client.delegate = self
         control = client
         client.start()
+    }
+
+    private func noteClockHost(_ name: String) {
+        guard name != clockHostName else { return }
+        clockHostName = name
+        clock.reset()
     }
 
     private func startVoiceSocket() {
@@ -282,11 +387,16 @@ final class AppModel: ObservableObject {
 
     private func linkLost(reason: String) {
         Log.app.info("link lost: \(reason, privacy: .public)")
+        // A link that held is looked for again at once; one that fell right
+        // away (or never came up) waits a second, so a host that accepts and
+        // drops cannot make this spin.
+        let held = link.isConnected && MonotonicClock.nowMs() - connectedAtMs >= 1_000
         control = nil
+        // The voice engine first: its capture queue sends on the socket.
+        if talkOpen { closeTalkLocally() }
         voice?.stop()
         voice = nil
         hostAddress = nil
-        if talkOpen { closeTalkLocally() }
         talkRequested = false
         talkOpener = nil
         talkOpenPending = false
@@ -298,9 +408,11 @@ final class AppModel: ObservableObject {
         failPending(&collectionResults, "Link lost")
         // Music keeps playing locally along the last anchor (the host does the same).
         link = .searching
+        let lastAddress = lastLinkedAddress
+        if held { return startDiscovery(lastAddress: lastAddress) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            guard let self, self.control == nil else { return }
-            self.startDiscovery()
+            guard let self, self.control == nil, !self.link.isConnected, self.link != .idle else { return }
+            self.startDiscovery(lastAddress: lastAddress)
         }
     }
 
@@ -310,21 +422,44 @@ final class AppModel: ObservableObject {
 
     // MARK: - Incoming messages
 
+    private func showProtoMismatch(_ text: String) {
+        problem = Notice(.link, text)
+    }
+
+    /// PROTOCOL.md "Control channel": the host speaks another protocol
+    /// version. Shown, and that host is left alone until the user taps
+    /// Reconnect; discovery goes on for other hosts.
+    private func protoMismatch(_ message: ControlMessage) {
+        let name: String
+        let theirs: String
+        if case .hello(let hello) = message {
+            name = hello.name
+            theirs = "speaks protocol \(hello.proto)"
+        } else {
+            name = hostName
+            theirs = "refused this app's protocol"
+        }
+        showProtoMismatch("\(name) \(theirs), this app speaks \(Hello.currentProto): update one of them. Reconnect in Settings tries it again")
+        Log.link.error("protocol mismatch with \(name, privacy: .public); not connecting to it again until asked")
+        discovery.block(name: name, address: hostAddress ?? lastLinkedAddress)
+        if name != hostName { discovery.block(name: hostName, address: nil) }
+        // Not the address to look for first either.
+        lastLinkedAddress = nil
+        control?.stop(sendBye: true)
+        linkLost(reason: "protocol mismatch")
+    }
+
     private func handle(_ message: ControlMessage) {
+        if ProtoMismatch.isMismatch(message) { return protoMismatch(message) }
         switch message {
         case .hello(let hello):
             guard hello.role == .host else { return }
-            guard hello.proto == Hello.currentProto else {
-                problem = "\(hello.name) speaks protocol \(hello.proto), this app speaks \(Hello.currentProto): update one of them"
-                Log.link.error("hello.proto \(hello.proto) != \(Hello.currentProto); dropping the link")
-                control?.stop(sendBye: true)
-                control = nil
-                link = .idle
-                return
-            }
             hostName = hello.name
+            noteClockHost(hello.name)
             settings.lastHostName = hello.name
+            if lastHostName != hello.name { lastHostName = hello.name }
             link = .connected(hello.name)
+            clearProblem(on: .connected)
             let newVoice = hello.voicePort ?? LinkDefaults.voicePort
             httpPort = hello.httpPort ?? LinkDefaults.httpPort
             if newVoice != voicePort || voice == nil {
@@ -355,25 +490,45 @@ final class AppModel: ObservableObject {
             // Also re-sent (current + next) right after a client joins.
             loads[load.id] = load
             musicStatusTracker.load(load.id)
-            if nowPlaying?.id == load.id { nowPlaying = load }
+            if nowPlaying?.id == load.id, nowPlaying != load {
+                nowPlaying = load
+                // The album (and any corrected title) reaches the lock screen.
+                updateNowPlaying()
+            }
             prefetch(load)
         case .musicPlay(let play):
             currentPlay = play
-            musicPlaying = true
+            parkedAtMs = nil
+            heldNext = nil
+            assign(\.musicPlaying, true)
             musicStatusTracker.play(play.id)
             if nowPlaying?.id != play.id { nowPlaying = loads[play.id] ?? nowPlaying }
-            startMusicIfPossible()
+            startMusicIfPossible(source: .message)
+            // Also when the track is still downloading or the route holds it:
+            // the lock screen follows the host's timeline (audit UI6).
+            updateNowPlaying()
         case .musicPause(let pause):
+            // Also the end of the queue: the host parks the last track at 0,
+            // and it stays loaded here, paused at 0.
             currentPlay = nil
-            musicPlaying = false
+            parkedAtMs = Double(pause.positionMs)
+            heldNext = nil
+            assign(\.musicPlaying, false)
             musicStatusTracker.pause(pause.id)
             player.pause(atMs: pause.positionMs)
             updateNowPlaying()
+        case .musicNext(let next):
+            // Queued behind the playing track when it is here and decodable
+            // (the cache only keeps checked files); otherwise it starts on
+            // its music.play, as before (PROTOCOL.md "Music flow" step 6).
+            heldNext = queueNext(next) || currentPlay == nil || talkOpen ? nil : next
         case .musicStop:
             currentPlay = nil
-            musicPlaying = false
+            parkedAtMs = nil
+            heldNext = nil
+            assign(\.musicPlaying, false)
             musicStatusTracker.stop()
-            nowPlaying = nil
+            assign(\.nowPlaying, nil)
             player.stop()
             updateNowPlaying()
         case .announce(let announce):
@@ -389,7 +544,8 @@ final class AppModel: ObservableObject {
     }
 
     private func apply(_ state: HostState) {
-        hostState = state
+        // Most states repeat the last one: only a real change redraws (UI4).
+        assign(\.hostState, state)
         // Talk state is authoritative on the host; heal missed messages.
         if !state.talk { talkOpenPending = false }
         // The host holds its music from its talk decision on, before this
@@ -401,14 +557,20 @@ final class AppModel: ObservableObject {
         // `mic` says, exactly as from talk.open.
         if state.talk != talkOpen { state.talk ? openTalkLocally(TalkMode(state: state)) : closeTalkLocally() }
 
+        // Before anything else: a state that is not the playing current or
+        // queued track takes the queued one out (PROTOCOL.md "Music flow" 6).
+        player.hostState(musicId: state.music?.id, playing: state.music?.playing ?? false)
+        if state.music?.playing != true { heldNext = nil }
+
         guard let music = state.music else {
             if currentPlay != nil || player.currentId != nil {
                 currentPlay = nil
                 player.stop()
             }
-            musicPlaying = false
+            parkedAtMs = nil
+            assign(\.musicPlaying, false)
             musicStatusTracker.stop()
-            nowPlaying = nil
+            assign(\.nowPlaying, nil)
             updateNowPlaying()
             return
         }
@@ -421,10 +583,12 @@ final class AppModel: ObservableObject {
             musicStatusTracker.load(music.id)
             prefetch(load)
         }
-        nowPlaying = loads[music.id]
-        history.sawCurrent(BrowseHistory.Track(music))
-        musicPlaying = music.playing
+        assign(\.nowPlaying, loads[music.id])
+        var seen = history
+        if seen.sawCurrent(BrowseHistory.Track(music)) { history = seen }
+        assign(\.musicPlaying, music.playing)
         musicStatusTracker.hostState(id: music.id, playing: music.playing)
+        parkedAtMs = music.playing ? nil : Double(music.positionMs)
         if music.playing {
             let play = MusicPlay(id: music.id, positionMs: music.positionMs, atHostTimeMs: music.atHostTimeMs)
             currentPlay = play
@@ -441,12 +605,10 @@ final class AppModel: ObservableObject {
     private func prefetch(_ load: MusicLoad) {
         guard let hostAddress else { return }
         if !cache.isCached(load.id) {
-            downloading = load.title
             musicStatusTracker.downloadStarted(load.id)
         }
         cache.fetch(id: load.id, host: hostAddress, port: httpPort, path: load.path) { [weak self] outcome in
             guard let self else { return }
-            if self.downloading == load.title { self.downloading = nil }
             if case .ready = outcome {
                 self.musicStatusTracker.downloadFinished(load.id, ok: true)
             } else {
@@ -465,22 +627,108 @@ final class AppModel: ObservableObject {
     }
 
     /// Plays `currentPlay` if the track is cached and nothing needs the mic.
-    private func startMusicIfPossible() {
+    /// `source`: `.message` only for the `music.play` message itself, which
+    /// also takes a queued track back; every re-application is `.state`.
+    private func startMusicIfPossible(source: GaplessTracker.PlaySource = .state) {
         guard let play = currentPlay, !talkOpen else { return }
+        // Held for the route: only a headset (or Play on this phone) ends it.
+        // Asked here too, in case no route change announced the headset.
+        if musicHeldForRoute, session.hasHeadphones { musicHeldForRoute = false }
+        guard !musicHeldForRoute else { return updateNowPlaying() }
         guard cache.isCached(play.id) else {
             if let load = loads[play.id] { prefetch(load) }
             return
         }
-        player.load(id: play.id, url: cache.localURL(for: play.id))
-        player.play(anchor: MusicAnchor(play), durationMs: loads[play.id]?.durationMs)
+        // The "end" earcon still has the talk session: start on the media
+        // one (the anchor is resumeLeadMs ahead, so nothing is lost).
+        guard mediaRestore == nil else {
+            musicWaitsForMediaRoute = true
+            return
+        }
+        player.play(id: play.id, url: cache.localURL(for: play.id), anchor: MusicAnchor(play),
+                    durationMs: loads[play.id]?.durationMs, source: source)
+        // The host sends music.next right after a music.play (talk end,
+        // mid-track join): one that came before this start could happen.
+        if let next = heldNext {
+            heldNext = nil
+            _ = queueNext(next)
+        }
         updateNowPlaying()
     }
 
+    /// False when the player has nothing playing or starting to queue behind.
+    private func queueNext(_ next: MusicNext) -> Bool {
+        let ready = !talkOpen && !musicHeldForRoute && cache.isCached(next.id)
+        return player.queueNext(next, url: ready ? cache.localURL(for: next.id) : nil,
+                                durationMs: loads[next.id]?.durationMs)
+    }
+
+    private func outputDelay() -> OutputDelay {
+        OutputDelay(outputLatencyMs: session.outputLatencyMs, trimMs: settings.latencyTrimMs,
+                    compensate: settings.compensateOutputLatency, route: session.describe)
+    }
+
+    /// For the click-track session that decides audit M2.
+    private func logOutputDelay(_ when: String) {
+        let delay = outputDelay()
+        let target = player.targetPositionMs.map { "\(Int($0)) ms" } ?? "none"
+        Log.music.info("output delay \(when, privacy: .public): outputLatency \(delay.outputLatencyMs, format: .fixed(precision: 1)) ms (\(delay.compensate ? "counted" : "not counted", privacy: .public)), trim \(Int(delay.trimMs)) ms, ahead by \(Int(delay.ms)) ms, target \(target, privacy: .public), route \(delay.route, privacy: .public)")
+    }
+
+    /// Right after the session switches back to media, `outputLatency` can
+    /// still be the old (HFP) route's. Read it again once the route has had
+    /// time to settle, and let the player fix a start planned on the old one.
+    private func rereadOutputDelayWhenSettled() {
+        rereadGeneration += 1
+        let generation = rereadGeneration
+        logOutputDelay("at the switch to media")
+        for seconds in [1.0, 2.5, 5.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+                guard let self, generation == self.rereadGeneration, !self.talkOpen else { return }
+                self.logOutputDelay("+\(seconds) s")
+                self.player.rereadOutputDelay()
+            }
+        }
+    }
+
+    /// The lock screen and Control Center: the host's timeline, not the local
+    /// player's (which is not there yet while a track downloads).
     private func updateNowPlaying() {
-        let load = nowPlaying
-        nowPlayingCenter.update(title: load?.title, artist: load?.artist, album: load?.album,
-                                durationMs: load?.durationMs, positionMs: player.positionMs,
-                                playing: musicPlaying && !talkOpen, talking: talkOpen)
+        let track = nowPlaying
+        let art = hostState?.music.flatMap { $0.id == track?.id ? $0.art : nil }
+        nowPlayingCenter.update(LockScreenInfo(track: track, art: art, talking: talkOpen, riderName: hostName,
+                                               positionMs: trackPositionMs() ?? 0,
+                                               playing: musicPlaying && !musicHeldForRoute))
+    }
+
+    /// Where the current track is on the host's timeline; nil with no track.
+    private func trackPositionMs() -> Double? {
+        guard let track = nowPlaying else { return nil }
+        let anchor = currentPlay.flatMap { $0.id == track.id ? MusicAnchor($0) : nil }
+        return PlaybackPosition.ms(anchor: anchor, hostNowMs: clock.hostNowMs(),
+                                   parkedMs: parkedAtMs ?? player.positionMs, durationMs: track.durationMs)
+    }
+
+    /// Rejoins the host's timeline after a local suspend (interruption,
+    /// media reset, trim change), unless talk or the route holds the music.
+    private func resumeMusic() {
+        guard currentPlay != nil, !talkOpen, !musicHeldForRoute else { return }
+        player.resume()
+    }
+
+    /// The passenger asked for music on this phone: whatever the route is.
+    private func releaseRouteHold() {
+        guard musicHeldForRoute else { return }
+        Log.audio.info("music: route hold released by the user")
+        musicHeldForRoute = false
+        startMusicIfPossible()
+    }
+
+    /// The Ride screen's play/pause button. While the route holds the music
+    /// it is a Play for this phone only; the host keeps playing as it was.
+    func playPauseButton() {
+        if musicHeldForRoute, musicPlaying { return releaseRouteHold() }
+        musicControl(musicPlaying ? .pause : .resume)
     }
 
     // MARK: - Talk
@@ -491,12 +739,36 @@ final class AppModel: ObservableObject {
             earcons.play("error")
             return
         }
-        if talkOpen {
+        switch TalkPress.action(talkOpen: talkOpen, requested: talkRequested) {
+        case .close:
             requestTalkClose()
-        } else {
+        case .cancelRequest:
+            // Pressed again before the host decided (PROTOCOL.md "Talk flow"
+            // step 1): the host, if it opened the talk meanwhile, closes it.
+            talkRequested = false
+            requestTalkClose()
+        case .request:
             talkRequested = true
             micUnavailable = false
             send(.talkOpen(TalkOpen(by: .client)))
+        }
+    }
+
+    /// A request the host never answers is dropped after `TalkPress.timeoutMs`
+    /// (the button is TALK again); any answer, or a second press, ends the wait.
+    private func armTalkRequestTimeout() {
+        talkRequestTimer?.invalidate()
+        talkRequestTimer = nil
+        guard talkRequested else { return }
+        talkRequestedAtMs = MonotonicClock.nowMs()
+        talkRequestTimer = Timer.scheduledTimer(withTimeInterval: TalkPress.timeoutMs / 1000 + 0.01,
+                                                repeats: false) { [weak self] _ in
+            guard let self, self.talkRequested,
+                  TalkPress.isExpired(requestedAtMs: self.talkRequestedAtMs, nowMs: MonotonicClock.nowMs()) else { return }
+            Log.app.info("talk request unanswered: dropped")
+            self.talkRequested = false
+            // The phone is in a pocket: say that nothing opened.
+            self.earcons.play("error")
         }
     }
 
@@ -510,7 +782,7 @@ final class AppModel: ObservableObject {
         guard talkRequested else { return }
         talkRequested = false
         earcons.play("error")
-        if reason == .unavailable { problem = "The other phone could not open its microphone" }
+        if reason == .unavailable { problem = Notice(.talk, "\(hostName) could not open its microphone") }
     }
 
     /// Host decided talk is open: pause music, switch the headset to call mode,
@@ -550,6 +822,7 @@ final class AppModel: ObservableObject {
         }
         talkOpen = true
         talkMode = .ownMic
+        cancelMediaRestore()
         Log.audio.info("talk mode: \(TalkMode.ownMic.logLabel, privacy: .public)")
         announcer.stop()
         player.suspend()
@@ -557,11 +830,14 @@ final class AppModel: ObservableObject {
         volumeKey.settle()
         do {
             try session.activate(.talk)
-            voice?.beginCapture()
+            // This talk's socket, fixed here: the capture queue must not read
+            // `voice`, which the main queue clears when the link drops.
+            let socket = voice
+            socket?.beginCapture()
             let transcriber = transcriber
             try voiceEngine.start(
-                sendAudio: { [weak self] data in self?.voice?.sendAudio(data) },
-                skipFrame: { [weak self] in self?.voice?.skipFrame() },
+                sendAudio: { data in socket?.sendAudio(data) },
+                skipFrame: { socket?.skipFrame() },
                 tee: { buffer in transcriber.append(buffer) }
             )
             session.armMuteGesture()
@@ -572,7 +848,7 @@ final class AppModel: ObservableObject {
             talkUnavailable(error.localizedDescription, weAsked: weAsked)
             return
         }
-        audioRoute = session.outputName
+        noteAudioRoute()
         updateNowPlaying()
     }
 
@@ -586,6 +862,9 @@ final class AppModel: ObservableObject {
     private func openHostMicTalk(weAsked: Bool) {
         talkOpen = true
         talkMode = .hostMic
+        // An own-mic talk that closed a moment ago may still hold the talk
+        // session for its earcon: this one runs on the media session.
+        if mediaRestore != nil { restoreMediaRoute() }
         Log.audio.info("talk mode: \(TalkMode.hostMic.logLabel, privacy: .public)")
         announcer.stop()
         player.suspend()
@@ -601,7 +880,7 @@ final class AppModel: ObservableObject {
             talkUnavailable(error.localizedDescription, weAsked: weAsked)
             return
         }
-        audioRoute = session.outputName
+        noteAudioRoute()
         updateNowPlaying()
     }
 
@@ -629,6 +908,9 @@ final class AppModel: ObservableObject {
         let why = fallback ? "fallback" : talkMode.liveSignal
         Log.audio.info("live cue: fired +\(ms) ms (\(why, privacy: .public))")
         earcons.play("live")
+        talkLive = true
+        talkLiveSince = Date()
+        clearProblem(on: .talkOpened)
         startRecognition()
     }
 
@@ -643,7 +925,7 @@ final class AppModel: ObservableObject {
     /// Tell the host — which then closes talk — and go straight back to the
     /// music session. Talk is not negotiable: this is only ever "cannot".
     private func talkUnavailable(_ why: String, weAsked: Bool) {
-        problem = talkMode == .hostMic ? "Could not play the talk: \(why)" : "Could not open the mic: \(why)"
+        problem = Notice(.talk, talkMode == .hostMic ? "Could not play the talk: \(why)" : "Could not open the mic: \(why)")
         Log.audio.error("talk unavailable: \(why, privacy: .public)")
         micUnavailable = true
         cancelLiveCue()
@@ -652,6 +934,9 @@ final class AppModel: ObservableObject {
         talkRequested = false
         talkOpen = false
         talkMode = .ownMic
+        endTalkLive()
+        // The permission may be what failed: the card says what to do.
+        refreshPermissions()
         session.disarmMuteGesture()
         stopRecognition()
         voiceEngine.stop()
@@ -663,30 +948,64 @@ final class AppModel: ObservableObject {
         // after any other talk (PROTOCOL.md "Talk flow" step 4).
     }
 
+    /// How long the talk session is kept for the "end" earcon (190 ms) after
+    /// an own-mic talk.
+    private static let endCueHold: TimeInterval = 0.22
+
     /// Host decided talk is over: back to A2DP. The host resumes music with
     /// music.play (resumeLeadMs covers the profile switch).
-    private func closeTalkLocally() {
+    ///
+    /// The "end" earcon of an own-mic talk plays on the talk route, which is
+    /// up, and the session goes back to media right after it (audit M10):
+    /// played after the switch it fell into the ~1 s the buds take to bring
+    /// A2DP back. Waiting for A2DP instead would put the cue on top of the
+    /// resuming music; this costs 0.22 s of the host's 1.5 s resume lead and
+    /// moves no anchor. `cue: false` (an interruption, a media reset): no
+    /// earcon can play, switch at once.
+    private func closeTalkLocally(cue: Bool = true) {
         talkRequested = false
         talkOpener = nil
         guard talkOpen else { return }
+        let ownMic = talkMode == .ownMic
         talkOpen = false
         talkMode = .ownMic
+        endTalkLive()
         cancelLiveCue()
         session.disarmMuteGesture()
         stopRecognition()
         voiceEngine.stop()
-        restoreMediaRoute()
-        earcons.play("end")
+        if cue, ownMic {
+            earcons.play("end")
+            let work = DispatchWorkItem { [weak self] in self?.restoreMediaRoute() }
+            mediaRestore = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.endCueHold, execute: work)
+        } else {
+            // A host-mic talk never left the media session.
+            restoreMediaRoute()
+            if cue { earcons.play("end") }
+        }
         updateNowPlaying()
     }
 
+    private func cancelMediaRestore() {
+        mediaRestore?.cancel()
+        mediaRestore = nil
+        musicWaitsForMediaRoute = false
+    }
+
     private func restoreMediaRoute() {
+        let musicWaits = musicWaitsForMediaRoute
+        cancelMediaRestore()
+        defer {
+            rereadOutputDelayWhenSettled()
+            if musicWaits { startMusicIfPossible() }
+        }
         volumeKey.settle()
         do { try session.activate(.media) } catch {
             Log.audio.error("media route failed: \(error.localizedDescription, privacy: .public)")
         }
         keepAlive.start()
-        audioRoute = session.outputName
+        noteAudioRoute()
     }
 
     // MARK: - Commands inside talk
@@ -760,19 +1079,23 @@ final class AppModel: ObservableObject {
 
     /// Lock screen, Control Center, or a headset: music only. The earbuds sit
     /// inside the helmet, so no button starts or ends a talk (2026-09-29).
+    /// Pause pauses and Play only resumes (user decision U-D1, 2026-09-30):
+    /// a bud taken out of the ear pauses the ride's music, and one put back
+    /// in while it plays changes nothing.
     private func remoteButton(_ button: NowPlaying.Button) {
         Log.app.info("remote button: \(String(describing: button), privacy: .public), talk=\(self.talkOpen)")
         switch button {
-        case .playPause: musicControl(musicPlaying ? .pause : .resume)
-        // Buds send "pause" when taken out of the ear (a helmet coming off):
-        // that must not stop the ride's music.
-        case .pause: break
+        case .playPause: playPauseButton()
+        case .play: musicControl(.resume)
+        case .pause: musicControl(.pause)
         case .next: musicControl(.next)
         case .previous: musicControl(.previous)
         }
     }
 
     func musicControl(_ action: MusicAction) {
+        // Play pressed on this phone means play here, headset or not.
+        if action == .resume { releaseRouteHold() }
         send(.musicControl(MusicControl(action: action)))
     }
 
@@ -787,6 +1110,7 @@ final class AppModel: ObservableObject {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         searchedKind = kind
+        searchedQuery = query
         if link.isConnected { history.searched(kind, query: query) }
         request(&searchResults, .musicSearch(MusicSearch(id: nextRequestId(), kind: kind, query: query)))
     }
@@ -813,6 +1137,7 @@ final class AppModel: ObservableObject {
     func enqueue(_ mode: EnqueueMode, tracks: [EnqueueTrack], art: String? = nil) {
         let message = MusicEnqueue(mode: mode, tracks: tracks, art: art).fitted()
         guard !message.tracks.isEmpty else { return }
+        if mode == .now { releaseRouteHold() }
         send(.musicEnqueue(message))
     }
 
@@ -828,6 +1153,7 @@ final class AppModel: ObservableObject {
     /// Changes the upcoming queue. `index`/`id` name `state.queue[index]` for
     /// jump and remove; the host ignores the edit if the queue moved since.
     func editQueue(_ op: QueueEditOp, index: Int? = nil, id: String? = nil) {
+        if op == .jump { releaseRouteHold() }
         send(.musicEdit(MusicEdit(op: op, index: index, id: id)))
     }
 
@@ -876,13 +1202,24 @@ final class AppModel: ObservableObject {
     // MARK: - Audio session events
 
     private func interruptionBegan() {
-        // Phone call, Siri, alarm… the system has stopped our audio.
+        // Phone call, Siri, alarm… the system has stopped our audio, the
+        // silent engine included: stop it for real, so that the end of the
+        // interruption starts it again (a locked phone is suspended without).
         player.suspend()
         if talkOpen {
             // The mic is gone after talk opened (PROTOCOL.md "Talk flow" step 4).
             requestTalkClose(.unavailable)
-            closeTalkLocally()
+            closeTalkLocally(cue: false)
+            // A state{talk:true} already on its way must not reopen the talk
+            // into the call; the host's talk.close clears this.
+            micUnavailable = true
+        } else {
+            // A talk closed a moment ago: its held switch back to media is
+            // dropped, `interruptionEnded` makes it.
+            cancelMediaRestore()
         }
+        // After the talk teardown, which starts it.
+        keepAlive.stop()
     }
 
     private func interruptionEnded(_ shouldResume: Bool) {
@@ -893,58 +1230,149 @@ final class AppModel: ObservableObject {
             session.reactivate()
             return
         }
+        micUnavailable = false
         restoreMediaRoute()
-        if shouldResume, currentPlay != nil { player.resume() }
+        if shouldResume { resumeMusic() }
     }
 
     private func routeChanged(_ reason: AVAudioSession.RouteChangeReason) {
-        audioRoute = session.outputName
+        noteAudioRoute()
         volumeKey.settle()
         switch reason {
         case .oldDeviceUnavailable:
-            // Headset gone: don't blast music out of the speaker.
-            if !session.hasHeadphones { player.suspend() }
+            // Headset gone: don't blast music out of the speaker, now or at
+            // the host's next state / music.play.
+            if !session.hasHeadphones {
+                player.suspend()
+                if !musicHeldForRoute { Log.audio.info("music: held, the headset is gone") }
+                musicHeldForRoute = true
+                updateNowPlaying()
+            }
         case .newDeviceAvailable:
-            if currentPlay != nil, !talkOpen { player.resume() }
+            if !musicHeldForRoute { resumeMusic() }
         default:
-            break
+            // The route the output latency was read for may be this one now.
+            if !talkOpen { player.rereadOutputDelay() }
         }
+        endRouteHoldIfHeadset()
+    }
+
+    /// A headset is back: catch up to the host's current anchor (not the
+    /// player's own, which is from before the hold).
+    private func endRouteHoldIfHeadset() {
+        guard musicHeldForRoute, session.hasHeadphones else { return }
+        Log.audio.info("music: headset back, hold ended")
+        musicHeldForRoute = false
+        startMusicIfPossible()
+        updateNowPlaying()
     }
 
     private func mediaServicesReset() {
         Log.audio.error("media services were reset; rebuilding audio")
+        // Every player and engine made before the reset is dead (Apple:
+        // dispose of them and make new ones, audit M11). The voice engine
+        // builds a new AVAudioEngine at every talk anyway.
         stopRecognition()
         voiceEngine.stop()
+        announcer.rebuild()
+        earcons.reset()
+        player.rebuild()
         keepAlive.rebuild()
         if talkOpen {
             // The host is the authority on talk: tell it, as after an
             // interruption, instead of leaving it in a talk whose mic here
             // is gone until someone presses again.
             requestTalkClose(.unavailable)
-            closeTalkLocally()
+            closeTalkLocally(cue: false)
+            // As in `interruptionBegan`: no reopening from a stale state.
+            micUnavailable = true
         } else {
             restoreMediaRoute()
         }
-        if currentPlay != nil { player.resume() }
+        // The new player has nothing loaded: play the host's last anchor
+        // again (nothing, if the host had paused or a talk holds the music).
+        startMusicIfPossible()
     }
 
     private func refreshStats() {
-        rttMs = clock.rttMs
-        audioRoute = session.outputName
+        // Whole milliseconds are all Diagnostics shows; an unchanged value
+        // publishes nothing (audit UI4).
+        let rtt = clock.rttMs.map { $0.rounded() }
+        if stats.rttMs != rtt { stats.rttMs = rtt }
+        noteAudioRoute()
+        endRouteHoldIfHeadset()
+    }
+
+    private func noteAudioRoute() {
+        let name = session.outputName
+        if stats.audioRoute != name { stats.audioRoute = name }
     }
 
     // MARK: - UI helpers
 
-    /// Current track position in ms, from the host anchor when synced.
+    /// Assigns only a changed value: `@Published` announces every assignment,
+    /// equal or not, and every tab listens (audit UI4).
+    private func assign<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<AppModel, T>, _ value: T) {
+        if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
+    }
+
+    /// Takes `text` (if it was just set) off the screen after a few seconds.
+    private func expireLine(_ text: String?, _ key: String, clear: @escaping (AppModel) -> Void) {
+        lineTimers[key]?.invalidate()
+        lineTimers[key] = nil
+        guard text != nil else { return }
+        lineTimers[key] = Timer.scheduledTimer(withTimeInterval: Notice.transientLineMs / 1000,
+                                               repeats: false) { [weak self] _ in
+            if let self { clear(self) }
+        }
+    }
+
+    private func clearProblem(on event: Notice.Event) {
+        if let problem, problem.isCleared(by: event) { self.problem = nil }
+    }
+
+    /// The ✕ on the problem line.
+    func dismissProblem() {
+        if problem != nil { problem = nil }
+    }
+
+    private func endTalkLive() {
+        if talkLive { talkLive = false }
+        if talkLiveSince != nil { talkLiveSince = nil }
+    }
+
+    /// What the permissions card shows. Also called when the app comes back
+    /// to the foreground (from the Settings app, say).
+    func refreshPermissions() {
+        assign(\.micDenied, session.recordPermission == .denied)
+        assign(\.speechDenied, Transcriber.isDenied)
+    }
+
+    /// The name the link pill and Settings show for the link's state.
+    var linkLabel: String { link.label(lastHost: lastHostName) }
+
+    /// The search that failed or found nothing, once more.
+    func retrySearch() {
+        search(searchedKind, query: searchedQuery)
+    }
+
+    /// Current track position in ms on the host's timeline (its play anchor
+    /// when synced), for the Ride card and the mini player.
     func displayPositionMs() -> Double? {
-        guard let music = hostState?.music else { return nil }
-        guard music.playing, let hostNow = clock.hostNowMs() else { return Double(music.positionMs) }
-        return max(0, min(Double(music.durationMs), music.anchor.expectedPositionMs(hostNowMs: hostNow)))
+        trackPositionMs()
     }
 
     func adjustTrim(by deltaMs: Double) {
         settings.latencyTrimMs = max(-500, min(1_000, settings.latencyTrimMs + deltaMs))
-        if currentPlay != nil, player.isPlaying { player.resume() }
+        if player.isPlaying { resumeMusic() }
+    }
+
+    /// Settings → "Compensate output latency" (audit M2); a playing track
+    /// re-syncs to it, as for the trim.
+    func setCompensateOutputLatency(_ on: Bool) {
+        settings.compensateOutputLatency = on
+        logOutputDelay("setting changed")
+        if player.isPlaying { resumeMusic() }
     }
 }
 
@@ -954,6 +1382,8 @@ extension AppModel: ControlClientDelegate {
     func controlDidConnect(_ client: ControlClient, hostAddress: String?) {
         guard client === control else { return }
         self.hostAddress = hostAddress
+        if let hostAddress { lastLinkedAddress = hostAddress }
+        if !link.isConnected { connectedAtMs = MonotonicClock.nowMs() }
         link = .connected(hostName)
         startVoiceSocket()
     }

@@ -120,6 +120,30 @@ class SyncController(
     private val held: Boolean get() = holds > 0
 
     /**
+     * How far ahead of now an anchor has to be for this phone to be audible *at* it instead of
+     * seeking past it (PROTOCOL.md "Music flow" step 3): the output start delay [apply] will use
+     * ([cold] as there; a cold start is never assumed quicker than a warm one), the time its seek
+     * needs, and a margin for the start job to get going. Never under [MIN_START_LEAD_MS].
+     */
+    fun startLeadMs(cold: Boolean = false): Long =
+        maxOf(MIN_START_LEAD_MS, maxOf(startLatencyMs, if (cold) coldStartLatencyMs else 0L) + PREPARE_MS + START_MARGIN_MS)
+
+    /**
+     * The player has gone on to the track queued behind the last one by itself (gapless,
+     * PROTOCOL.md "Music flow" step 6) and [a] is the timeline it is on from now: take the anchor
+     * without pausing, seeking or restarting anything. The drift checks start over against [a].
+     */
+    fun adopt(a: Anchor) {
+        anchor = a
+        cancelJob()
+        if (!a.playing || held) return
+        job = scope.launch {
+            delay(EARLY_CHECK_MS)
+            check(null)
+        }
+    }
+
+    /**
      * Put the player on [a]. [cold] marks a start whose audio route has just changed, so it uses
      * (and learns) [coldStartLatencyMs] instead of [startLatencyMs].
      */
@@ -143,6 +167,9 @@ class SyncController(
             // later point on the same timeline.
             val lead = if (cold) coldStartLatencyMs else startLatencyMs
             val startAt = maxOf(a.atHostTimeMs, hostNow() + lead + PREPARE_MS)
+            // Not the rule since 2026-09-30 (the host's own anchors allow for [startLeadMs]); still
+            // so for a mid-track join, a player reloaded after an error, a release after a hold.
+            if (startAt > a.atHostTimeMs) log("start past the anchor by ${startAt - a.atHostTimeMs} ms")
             player.pause()
             player.seekTo(a.expectedAt(startAt) + trimMs())
             delay(startAt - lead - hostNow())
@@ -373,6 +400,10 @@ class SyncController(
         const val NUDGE_DONE_AFTER_MS = 1_000L
         private const val SEEK_ABOVE_MS = 1_000L
         private const val PREPARE_MS = 250L
+        /** From the anchor being set to the start job reading the clock; see [startLeadMs]. */
+        private const val START_MARGIN_MS = 50L
+        /** PROTOCOL.md "Music flow" step 3: the lead of a `music.play` is never under this. */
+        const val MIN_START_LEAD_MS = 300L
         /** Drift is spread over this long: 80 ms asks for 0.992 for 10 s. */
         private const val NUDGE_WINDOW_MS = 10_000f
         /** PROTOCOL.md: at most ±2 %. A 1 s drift then takes ~50 s, which two riders never notice. */

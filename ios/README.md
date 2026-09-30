@@ -14,7 +14,10 @@ Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            Messages (all control messages, Codable), Framing (u32, 64 KiB cap),
                            ClockSync, VoicePacket/VoiceSequencer, JitterBuffer, Opus wrapper,
                            MusicAnchor/DriftController, LinkMath (sweep, liveness, TXT),
-                           HostSelection (discovery: probe backoff, last-host preference), Earcons (WAV synth),
+                           HostSelection (discovery: probe backoff, last-address probe, last-host
+                           preference), Earcons (WAV synth),
+                           Gapless (GaplessTracker for `music.next`, OutputDelay, TalkPress,
+                           VolumeKeyArming),
                            CommandParser (the grammar, run here too because volume is local;
                            FirstPhraseGate, the first-phrase rule and its 8 s window),
                            AppVolume + VolumeKeyGate (the app owns the volume keys while linked:
@@ -46,7 +49,11 @@ module.
 keep dead services (e.g. `peer-test-*`) for up to 75 min. `Discovery` probes every result in
 parallel (3 s connect incl. resolution, then 1 s for the host's `hello`; the probe sends
 nothing) and, from 3 s after start, the /24 alongside it. A failed candidate is skipped for
-10 s; Bonjour candidates are re-probed every 2 s. Only a valid host `hello` ends discovery; if
+10 s, or 1 s when the connection was refused (a host that is restarting is not listening yet);
+Bonjour candidates are re-probed every 2 s. After a link loss discovery starts at once (it
+waited 1 s until 2026-09-30; it still does when the link never held for a second) and also
+probes the address of the lost link, now and every second, whatever the backoff says
+(`probe last address <ip>: ok`, `discovery: host <name> via last`). Only a valid host `hello` ends discovery; if
 several answer within 300 ms, the last linked host (`lastHostName` in UserDefaults) wins. The
 log shows `probe <name>: ok|timeout|refused|not a host` and `discovery: host <name> via
 bonjour|sweep` (sweep logs only addresses that answered, plus one line per pass).
@@ -101,7 +108,7 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 140 tests: fixtures, command parser + first-phrase gate, app volume +
+swift test            # 142 tests: fixtures, command parser + first-phrase gate, app volume +
                       # volume-key gate, talk mode (host-mic), music status line,
                       # search history, jitter buffer, Opus, drift controller
 ```
@@ -247,11 +254,13 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   only (decided with the user 2026-09-20): iOS cannot draw over other apps, and nothing in
   `ios/` tries to. The passenger's triggers are the app's own buttons, the headset controls and
   holding volume up (below).
-- **Screens:** three tabs. **Ride** has the link pill (host name and round trip), the
+- **Screens:** three tabs. **Ride** has the link pill (the Pixel's name, or what the link is
+  doing), a permissions card and a dismissible problem line when there is one, the
   now-playing card (cover from `state.music.art`, progress, previous / play-pause / next as
-  `music.control`), the downloading line, a compact "Voice commands" list (the same as the
-  Pixel's: say one first after pressing TALK, then it's just talk), TALK, and the last
-  command heard / announced / problem lines; the gear opens Settings (latency trim, headset buttons, link details).
+  `music.control`, "Up next"), the "Voice commands" chips (the same commands as the
+  Pixel's, foldable: say one first after pressing TALK, then it's just talk), and, pinned at
+  the bottom, TALK with the app volume; the gear opens Settings (music sync offset, speech
+  language, link status, Diagnostics). See "2026-09-30 audit round 3" below.
   **Search** sends `music.search` (Songs / Albums / Playlists); a song tap is
   `music.enqueue{mode:"now"}` with that track, its ⋯ menu (or a swipe) is Play next / Add to
   queue. An album or playlist opens a detail screen (`music.browse`) with Play / Add to queue;
@@ -277,6 +286,9 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   least 100 ms per buffer. Frames flagged by `OPUS_GET_IN_DTX` are not sent. Playback goes
   jitter buffer → Opus → AVAudioSourceNode. On `talk.close` the app switches back to
   `.playback` (A2DP), and the host resumes music with `music.play`.
+  A second TALK press (or volume-up hold) before the host decided sends
+  `talk.close{by:client, reason:trigger}` and the button is TALK again; a request unanswered
+  for 5 s is dropped, with the error earcon (2026-09-30, audit P7, `MotopartyCore.TalkPress`).
 - **Host-mic talk** (PROTOCOL.md "Host-mic talk", 2026-09-29). When the host's
   `talk.open` carries `mic:"host"` (its Hollyland Lark A1 receiver captures both riders), the
   iPhone opens **no microphone**: `TalkMode.hostMic` (MotopartyCore) decides it once at the
@@ -345,13 +357,24 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   before the mic was live never beeps. Android's SCO/`MicLive` conditions are deliberately
   **not** ported: iOS gives no equivalent route signal, and the sink's first buffer is the
   honest one this platform has.
-- **Jitter buffer backlog cap.** Besides the adaptive target of PROTOCOL.md ("Voice"), `pull`
-  holds at most `maxTargetMs + backlogSlackMs` = 400 ms = 20 frames, the same hard cap as
-  Android's `MAX_MS + BACKLOG_SLACK_MS`. A burst the output never drained (a route switch, a
-  Wi-Fi stall) used to sit there as up to 2 s of delay until the next pause; now the oldest
-  frames go and the playout cursor moves right behind the last one dropped (`lastSeq`, `nextTs`),
-  so they are not counted as loss and the following frame plays in the same spurt. Only
-  `stats.dropped` records them. The 100-packet insert cap stays, exactly as on Android.
+- **Jitter buffer (2026-09-30, audit L1/L2).** `MotopartyCore/JitterBuffer.swift` is now the
+  same algorithm as Android's `core/JitterBuffer.kt`, and `fixtures/jitter.json` (17 cases,
+  `JitterFixtureTests`) pins both. New against the old Swift buffer:
+  - *Shedding* (PROTOCOL.md "Shedding a backlog"): at spurt start the oldest frames go until
+    the queue spans the target; during a spurt the smallest depth over 50 frames due decides
+    (`> target + 120 ms` → the whole excess, `> target + 40 ms` → one frame). A playout stall
+    or a slow output clock no longer stays as delay until the talk ends. The 400 ms hard cap
+    (`maxTargetMs + backlogSlackMs`) stays and counts as shed too. Shed frames move `lastSeq` /
+    `nextTs` as if played: no loss, no underrun, no FEC. `stats.shed` counts them;
+    `stats.dropped` is only the 100-packet insert cap now.
+  - *A late first packet of a new spurt* is not an underrun (nothing queued, `ts` ≥ 2 frames
+    past the last played frame, only keepalives or too-late packets between).
+  - Ported with it, because the vectors cover them: the re-anchor after 100 ms of late packets
+    with nothing played, the restart on a `ts` more than 3 s from the playout clock (this
+    replaces the old "idle after 2 s of nothing" rule), and half a frame of `ts` tolerance.
+  - `stats.late` is every packet that arrived after its slot (the vectors' `underruns`);
+    `stats.underruns` stays the number of target raises (one per spurt at most).
+  - `talk stats:` now also logs `<n> shed` and `depth mean <ms> max <ms>`.
 - **Talk is not negotiable** (PROTOCOL.md "Talk flow"), so there is no decline button and none
   may be added. There is only *cannot*: if the record permission is denied, or activating the
   `.talk` session fails (a cellular call holds the input), or the voice engine will not start,
@@ -411,33 +434,84 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   `AVPlayer.setRate(1, time:, atHostTime:)`, converting host clock → local clock → CMClock host
   time. The player starts early by this phone's output delay —
   `AVAudioSession.outputLatency` plus the latency trim (Settings, 10 ms steps) — so the *sound*, not
-  the player, lands on the anchor.
+  the player, lands on the anchor. An anchor further ahead (the host's lead is now its own start
+  delay, up to ~1.5 s) starts exactly at it: nothing is clamped or skipped, and the drift check
+  waits until the start has passed.
   Drift is then handled by `DriftController` in MotopartyCore, the same rule as Android's
   `SyncController` (PROTOCOL.md "Music flow" step 4, because a seek on A2DP costs a fresh
   350-700 ms of lag): the position is compared with the anchor every 10 s (2 s while a
   correction runs or just after a start), and up to 80 ms of error is left alone; 80 ms - 1 s
-  is absorbed by `AVPlayer.rate = 1 - drift / 4000` clamped to 0.95...1.05 (pitch kept, the
+  is absorbed by `AVPlayer.rate = 1 - drift / 10000` clamped to 0.98...1.02 (pitch kept, the
   item's `audioTimePitchAlgorithm` is `.spectral`); above 1 s it re-seeks and the rate goes
   back to 1. A running correction is held until the error is under 40 ms, so noise around the
   80 ms boundary cannot flap the rate.
+- **Output latency (2026-09-30, audit M2):** AVPlayer's item timeline may already be the heard
+  one, which would count `outputLatency` twice. Settings → "Compensate output latency" (on = the
+  behaviour so far) switches the term off at runtime (trim only); a playing track re-syncs. For
+  the click-track session the log has, at every music start, `start <id> at <pos> ms in <lead>
+  ms; outputLatency <x> ms (counted|not counted), trim, ahead by, route`, and after every switch
+  back to media (each talk close) `output delay at the switch to media|+1.0 s|+2.5 s|+5.0 s: …,
+  target <pos>, route`. Right after a talk the session can still report the HFP route's latency:
+  at those three re-reads and at every route change the player compares the delay it planned
+  with and plans the start again (still ahead), or restarts once when it is already playing more
+  than 80 ms off (`output delay <a> → <b> ms: …`), instead of 10-20 s of rate correction.
+- **Gapless (2026-09-30, audit M5, PROTOCOL.md "Music flow" step 6):** `SyncedPlayer` is an
+  `AVQueuePlayer`. On `music.next{id, atHostTimeMs}`, with the track cached and the current one
+  playing (or starting), the item is queued behind the current one; the player changes over on
+  its own sample clock, and from then on `{id, 0, atHostTimeMs}` is the anchor
+  (`MotopartyCore.GaplessTracker`). A queue was chosen over a second player started with
+  `setRate(_:time:atHostTime:)`: the second player would land exactly on the new anchor and turn
+  whatever sync error the phone has (under 80 ms) into a gap or an overlap at every change, the
+  queue carries the error across silently and the drift rule goes on correcting it. The host's
+  `music.play{id, 0, sameAnchor}` and `state` at the change do not seek or restart, whether
+  they come after the local change or before it (if the change then does not happen within
+  1.5 s, the track is started the usual way). The queued track is dropped by pause, stop, a
+  talk, any local suspend, a `music.play` that moves the current track's timeline or names
+  another track, and replaced by a `music.next` naming another track. A `music.play` / `state`
+  that only repeats the current timeline keeps it: the current track still ends when it said.
+  Anything not ready (not cached, nothing playing) is ignored and the track starts on its
+  `music.play`, with a gap, as before. Log: `gapless: <id> queued…`, `gapless: now <id>,
+  changed <n> ms early`.
+- **The "end" earcon (2026-09-30, audit M10):** after an own-mic talk it plays on the talk route,
+  which is up, and the session goes back to media 0.22 s later; played after the switch it fell
+  into the ~1 s the buds take to bring A2DP back. (Waiting for A2DP instead, with Android's
+  pre-roll, would put the cue on the resuming music.) It costs 0.22 s of the host's 1.5 s resume
+  lead and moves no anchor; a `music.play` that arrives meanwhile starts once the media session
+  is back. A host-mic talk never left the media session, so nothing changes there; after an
+  interruption or a media reset there is no cue and no wait.
+- **Media-services reset (2026-09-30, audit M11):** every player is thrown away and made again
+  (`SyncedPlayer`'s AVQueuePlayer, the cached earcon players, the speech synthesizer, the
+  keep-alive engine; the voice engine builds a new AVAudioEngine at every talk anyway), then the
+  host's last anchor is played again.
+- **Traffic classes (2026-09-30, audit P3):** the control connection is `serviceClass =
+  .signaling`, track downloads are `networkServiceType = .background` (voice was already
+  `.interactiveVoice`).
 - **Protocol version:** a host whose `hello.proto` is not `Hello.currentProto` (1) is refused:
   the app drops the link, shows why, and waits for Settings → Reconnect.
-- **Per connection:** a new connection resets the clock estimate (it may be another host, or a
-  restarted one) and answers each track's `music.ready` at most once (every answer makes the
+- **Clock (2026-09-30, audit P5):** the window is cleared only when a sample is off by more than
+  `500 + rtt / 2` ms (its own RTT), so one slow pong no longer throws a good estimate away
+  (`fixtures/clock.json` `stepReset`). A reconnect to the same host (by `hello` name) keeps the
+  window; another host resets it.
+- **Per connection:** a new connection answers each track's `music.ready` at most once (every answer makes the
   host re-send the anchor, which on A2DP costs a fresh seek).
 - **Track cache:** a download lands as `<id>.part.m4a` and is renamed to `<id>.m4a` only after
   AVFoundation reports it playable with a duration, so nothing plays or answers `music.ready`
   from a file that is still being checked. Leftover `.part.m4a` files are deleted at launch.
 - **Buttons:** no headset button starts or ends a talk (2026-09-29: the earbuds sit inside the
   helmet). Talk is the Ride tab's TALK button, or a hold of volume up (below). Remote commands (lock screen, Control Center, a
-  headset) control the music only: play/pause, next, previous; `pause` alone is ignored, since
-  buds send it when they leave the ear. While the mic is open the iOS 17 AirPods mute gesture
+  headset) control the music only (user decision U-D1, 2026-09-30): `pause` sends
+  `music.control pause`, `play` only ever resumes, the toggle toggles, plus next and previous.
+  Accepted cost: a bud that sends `pause` when it leaves the ear pauses the ride's music; one
+  put back in while music plays changes nothing. While the mic is open the iOS 17 AirPods mute gesture
   would mute it: `SessionController` observes
   `AVAudioApplication.inputMuteStateChangeNotification` and unmutes again with
   `setInputMuted(false)` (`setInputMuteStateChangeHandler` is macOS only), and the gesture does
   nothing else.
 - **The app owns the volume** (2026-09-29: the passenger's iPhone rides locked in a jacket
-  pocket, and its volume keys are the passenger's only trigger). While the link is up:
+  pocket, and its volume keys are the passenger's only trigger). While the link is up, and for
+  10 s of searching / connecting after it drops, so a hotspot hiccup does not disarm and re-arm
+  the keys with two volume jumps (2026-09-30, audit H9, `VolumeKeyArming`; a hold in that gap
+  gets the error earcon):
   - **Park.** The system volume is parked at 15/16 (`VolumeKeyGate.parkVolume`, one step below
     max) through `LocalVolume`'s slider, and every key reading is put straight back there, so
     both keys always move it (at 16/16 an up press would make no reading). iOS reports no key
@@ -559,10 +633,144 @@ them:
   opened works (the host recognised it) and no `heard:` line appears on the iPhone. Then
   switch the host setting off and check the next talk logs `talk mode: own mic` and goes to HFP
   as before. With no buds, the host-mic talk plays on the speaker (`out Speaker/…`).
+- **2026-09-30 audit round (built offline, none of it run on the iPhone yet):**
+  - *R1* `KeepAlive.start()` asks the engine, not its own flag, and `interruptionBegan` stops
+    it. Check: lock the phone with music paused, take a call (or hold Siri), end it, wait a
+    minute locked: the link is still up (Pixel shows the client) and a volume-up hold opens talk.
+  - *R8* Headset gone → `music: held, the headset is gone`; this phone stays silent through the
+    host's next `state` / `music.play`, the Ride button shows Play and a line says why. A
+    headset back → `music: headset back, hold ended` and the music rejoins the host's position.
+    Play on this phone (Ride button, lock screen, a tapped song, a queue jump) ends the hold and
+    plays on the speaker; music the host is already playing is not touched. Check both,
+    and that ending a talk (HFP → A2DP) never leaves the hold set (it clears itself within 1 s
+    if a route change was missed).
+  - *U-D1* Lock screen / Control Center: Pause pauses both phones, Play resumes, Play while
+    playing does nothing; take an AirPod out (pauses) and put it back (resumes, never toggles).
+  - *R7* The capture closures hold the talk's own `VoiceSocket`; `linkLost` stops the voice
+    engine before the socket. Check: drop Wi-Fi mid-talk a few times, no crash.
+  - *P6* An interruption or a media-services reset during a talk sets `micUnavailable`, so a
+    `state{talk:true}` in flight does not reopen the talk into the call. Check: a call during a
+    talk gives one `talk.close unavailable` in the Pixel log, not two, and TALK works after it.
+  - *L6* Voice processing's ducking of other audio is set to the minimum. Check: the live / end
+    earcons and an `announce` during an own-mic talk are as loud as in a host-mic talk.
+  - *L10* `.media` / `.listen` ask for 48 kHz and the default I/O buffer again. Check: after a
+    talk, `session → media` and music plays clean; drift settles as before the talk.
+  - *L1/L2* Check `talk stats:` after a few minutes of talk: `depth mean` near the jitter
+    target, `max` not stuck near 400, `shed` small; by ear, no growing delay after a route
+    switch mid-talk and no clipped first syllable after a pause.
+  - *P8* Voice keepalive tick is 250 ms (still one keepalive per second of no audio).
+- **2026-09-30 audit round 2 (built offline, none of it run on the iPhone yet):**
+  - *M5* Let two queued tracks play through: `gapless: <b> queued for host time …` during the
+    first, `gapless: now <b>, changed <n> ms early` at the change (n near 0), no `start <b>` line
+    after it, no gap by ear, and drift within 80 ms a few seconds into the second track. Then
+    pause, seek, or talk during the first track: `gapless: queued track dropped`, and the host
+    sends `music.next` again once it plays. Is `AVQueuePlayer` really gapless on these m4a files?
+  - *M1* A track started by touch begins at its first note on both phones: `start <id> at <trim>
+    ms in <lead> ms` with lead up to ~1500, and no `drift … → reseek` right after it.
+  - *M2* One session with a click track, AirPods on both phones: compare "Compensate output
+    latency" on and off (trim 0) and keep the one that lines up; note `outputLatency` and the
+    route from the `start` line. After an own-mic talk: the `output delay +1.0 s` line shows the
+    A2DP route, and either no `output delay a → b` line or exactly one.
+  - *M10* The end earcon is heard after every own-mic talk, and the music still resumes on the
+    beat (the media session is back 0.22 s later than before).
+  - *M11* Force a media-services reset (Settings → Developer → Reset Media Services) while music
+    plays: it comes back at the host's position within a few seconds, earcons and `announce`
+    work after it, TALK works.
+  - *P3* During a track download on the hotspot, TALK opens as fast as without one.
+  - *P4* Force-stop and restart the Pixel app: `probe last address <ip>: ok` and the link is back
+    within about 2 s of the host listening, not 10 s.
+  - *P7* With the host unreachable but the link not yet lost (Pixel Wi-Fi off, within 6 s):
+    TALK shows "TALK…", a second press puts it back at once; left alone it goes back after 5 s
+    with the error earcon.
+  - *H9* Toggle the Pixel's hotspot for a few seconds: no `volume key: disarmed` / `armed` pair
+    in the log, no volume HUD; off for more than 10 s: disarmed once, armed once when it is back.
+  - *M5 cancel rule (spec rewrite of Music flow 6)* `GaplessTracker` now tells a `music.play`
+    message from a `state`. A `music.play` for the current track on its unchanged anchor takes
+    the queued track out without a seek (`gapless: queued track taken back by the host`); a
+    `state` repeating that anchor keeps it. A `state` with no `music`, not playing, or on a track
+    that is neither current nor queued takes it out (`gapless: queued track dropped (state: …)`).
+    After the host's change (`state` / `music.play` naming the queued track on its anchor) a
+    `music.next` for another track waits (`gapless: <c> waits for the change`) and is queued
+    after the local change, never in place of the queued one. A `state` / `music.play` still
+    naming the old track on its old anchor right after the local change is ignored (`gapless:
+    <a> on its old anchor ignored after the change`). A `music.next` that arrives while its
+    `music.play` has not started yet (download, end-earcon hold) is queued right after that
+    start. Device checks: edit the queue during a track with a next queued (add at the end: the
+    next stays; remove the next track: `taken back`, then a new `queued` line, no seek, no
+    audible hiccup); skip during a track with a next queued: the old track stops, the old next
+    never sounds; three tracks in a row: `waits for the change` or `queued` for the third, both
+    changes without a gap; after a talk: `queued` again within a second of the restart; last
+    track of the queue ends: shown paused at 0:00, play starts it from the top.
+  - *P11* A control frame that is not well-formed UTF-8 closes the connection (checked before
+    the JSON parser, all four fixture vectors). A host that says `bye{reason:"proto"}` or sends
+    another `proto` in `hello` is shown in the problem line and left alone (no probe, no
+    connect, under its Bonjour name, its address and its `hello` name) until Settings →
+    Reconnect or an app restart; other hosts are still found. Device check: a peer host with
+    `proto` 2 (or one answering `bye proto`): one `protocol mismatch` / `not a host (proto 2)`
+    line, the red text on the Ride screen, no further probes of it in the log; Reconnect probes
+    it once more.
 - **2026-09-30 additions:** "what's playing" and "shuffle" as the first phrase are recognised
   and the host's `announce` is spoken in the talk; tapping a song (or a recently played track)
   during a talk closes the talk (end earcon, back to media mode) and the song starts; the
   Ride screen with the command list still fits without scrolling on the real iPhone; history
   survives an app restart.
+- **2026-09-30 audit round 3 (UI; nothing here has been seen on a phone: SwiftUI cannot be
+  rendered on Linux).** See the section below for what changed; check on the iPhone:
+  - Icon on the home screen (xtool copies `Icon.png` and sets `CFBundleIconFile`; if iOS shows
+    a blank icon, the legacy key is not enough and the icon needs an asset catalog).
+  - Ride: TALK pinned above the tab bar; the card's cover is large on a tall phone and small
+    beside the title on a short one; with the commands unfolded the top part scrolls and TALK
+    does not move; largest Dynamic Type still reaches everything.
+  - TALK: orange "TALK" → amber "Connecting…" with a pulsing mic from the press until the live
+    beep → red "END TALK", "Talking · 0:12" (own mic) or "Talking · rider's mic · 0:12"
+    (Lark). A tap is felt on the press; the bump at "live" is expected only in a Lark talk
+    (iOS mutes haptics while the mic records).
+  - No redraw stutter: scroll a 200-song queue while music plays and a talk opens.
+  - Queue: ✕ removes a row at once and it never comes back; two quick ✕ remove the two rows
+    pressed (not a neighbour); a tap on a row right after a ✕ plays that row; swipe-delete
+    does the same; the badge says 99+ past 99; rows show art and duration.
+  - Search: system search field in the navigation bar; Songs / Albums / Playlists scope bar
+    appears when the field is tapped; recent searches re-run; the playing song is marked and
+    not tappable under "Recently played"; an empty album says "No songs in this one".
+  - Mini player on Search and Queue (above the tab bar, not covering the last row); its tap
+    opens Ride; a LIVE chip during a talk.
+  - Lock screen: cover, title, artist; the clock matches the Pixel within a second, also for a
+    track that is still downloading; "Talking with <Pixel>" during a talk; album after the
+    `music.load`.
+  - Problem line: deny the mic in Settings → the card with "Open Settings" on Ride; a talk
+    error's red line goes on ✕ and on the next talk that opens; "Heard: …" and the
+    announcement go after ~6 s.
+  - Settings: languages by name; "Music sync offset" with its footer; Diagnostics folded.
+  - Open, unchanged: the 5 s unanswered-TALK timeout plays the error earcon; Play while the
+    music is held for "headset gone" plays on the speaker.
 - The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
   the AirPods A2DP ↔ HFP switch time.
+
+## 2026-09-30 audit round 3 (UI/UX)
+
+Built and unit-tested on Linux only (`swift test` 211, `xtool dev build -c release` clean);
+the device checklist is under "What only a real iPhone can answer".
+
+- **Decisions live in `MotopartyCore/UIModel.swift`** (tested in `UIModelTests`): `TalkPhase`
+  (TALK / Connecting… / END TALK and the caption), `LinkWording` ("Looking for <Pixel>…"),
+  `Notice` (which success clears which problem), `QueueRow` + `QueueRemovals` (row keys
+  `<id>#<occurrence>`, removals in flight, the index to send), `QueueText`, `SearchWording`,
+  `VoiceCommandChip`, `ArtURL` (googleusercontent size rewrite), `PlaybackPosition`,
+  `LockScreenInfo`, `TrackTime`.
+- **Brand:** tint `#FF7A2F`, always dark, `Icon.png` via `iconPath:` (`scripts/make-icon.sh`
+  redraws it with ImageMagick). Colours in `UI/Theme.swift` mirror Android's `Palette`.
+- **Ride** cannot overflow: a `ScrollView` above, TALK and the volume pinned with
+  `.safeAreaInset`. The round trip left the pill for Settings → Diagnostics.
+- **AppModel (UI-facing only):** `talkLive`, `talkLiveSince` and a published `talkMode`;
+  `problem` is a `Notice`; `micDenied` / `speechDenied` feed the permissions card;
+  `downloading` is gone (the status line covers it per track); "Heard" and the announcement
+  expire after 6 s; equal values are no longer re-published, and the round trip, drift and
+  route live in `LinkStats`, which only Settings → Diagnostics observes. `@Observable` was not
+  adopted (not verifiable without a device).
+- **Lock screen** (`Music/NowPlaying.swift`): cover, the host's timeline, updated on every
+  `music.load` / `music.play`, "Talking with <Pixel>" during a talk.
+- **Images:** `UI/Artwork.swift` `ArtLoader` (one memory + disk cache for rows, the card and the
+  lock screen), sized requests (144 / 288 / 544 px), fade-in.
+- **Not done:** the iOS 26 `.tabViewBottomAccessory` (the mini player is a `.safeAreaInset`
+  on every iOS), `.searchSuggestions` (the history list under the empty field does that job),
+  Live Activity (out of scope).

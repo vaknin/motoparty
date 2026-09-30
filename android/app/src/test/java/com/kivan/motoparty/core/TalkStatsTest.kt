@@ -31,8 +31,9 @@ class TalkStatsTest {
     fun lineFormatIsWhatTheBenchParses() {
         assertEquals(
             "talk stats: tx 250 sent of 300 captured (50 DTX), rx 245 received, 240 played, " +
-                "5 lost, 2 late, 3 FEC, 7 PLC, 10 keepalives, jitter target 60 ms",
-            stats(seqSpan = 260, received = 245, keepalives = 10).line(),
+                "5 lost, 2 late, 3 FEC, 7 PLC, 10 keepalives, jitter target 60 ms, " +
+                "4 shed, depth mean 52 max 380 ms",
+            stats(seqSpan = 260, received = 245, keepalives = 10).copy(shed = 4, depthMeanMs = 52, depthMaxMs = 380).line(),
         )
     }
 }

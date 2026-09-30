@@ -53,11 +53,16 @@ from .voice import VoiceProtocol
 HELP = """commands: load | play | pause | stop | talk | mic on|off (refuse talk as unavailable) |
           hostmic on|off (next talks are host-mic talks: talk.open mic:"host") |
           hear <phrase> (recognised in the talk: first phrase rule, or every phrase solo) |
+          next | previous | queue (every other --track after the current one) |
           announce <text> | state | stats | raw <json> (send unvalidated) | quit"""
 
 C2H_ONLY = {"ping", "music.ready", "music.error", "music.control", "command.text",
             "music.search", "music.browse", "music.enqueue", "music.edit"}
 MAX_QUEUE = 200  # PROTOCOL.md "Browsing" 3 and 5
+ERROR_RELOAD_MS = 2000  # PROTOCOL.md "Music flow" 3: music.load once more after a first music.error
+# Less than this before the current track ends, the next one is not announced any more (as on
+# the Android host): it then starts on its music.play, with a gap.
+GAPLESS_MIN_NOTICE_MS = 1500
 
 
 @dataclass(eq=False)
@@ -120,6 +125,14 @@ class Host:
         self.music: dict | None = None
         self.pending_ready: dict[str, asyncio.Future] = {}
         self.load_task: asyncio.Task | None = None
+        self.loop: asyncio.AbstractEventLoop | None = None
+        # PROTOCOL.md "Music flow" 5 and 6: ids this client answered music.ready for, the queue
+        # item whose music.load was sent ahead, the music.next the client holds as pending
+        # (id, atHostTimeMs), and the timer for the end of the current track.
+        self.client_ready: set[str] = set()
+        self.prefetched: str | None = None
+        self.next_sent: tuple[str, int] | None = None
+        self.end_timer: asyncio.TimerHandle | None = None
         self.voice_transport: asyncio.DatagramTransport | None = None
         self.voice_addr = None
         self.voice_seq = random.randrange(1 << 16)
@@ -205,6 +218,7 @@ class Host:
 
     def send_state(self) -> None:
         self.send(self.state())
+        self._music_changed()
 
     async def _on_connect(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         ip = writer.get_extra_info("peername")[0]
@@ -262,6 +276,8 @@ class Host:
 
     def _link_lost(self) -> None:
         log("client gone")
+        self.client_ready.clear()
+        self.prefetched = self.next_sent = None
         if self.talk:
             self._close_talk("host", "link")
 
@@ -292,7 +308,19 @@ class Host:
                 log(f"   replaces the previous client at {old.ip}")
                 self.send({"t": "bye", "reason": "replaced"}, old)
                 old.close()
+                # PROTOCOL.md "Liveness": the same client back on a new socket keeps an open
+                # talk (it acts on the state{talk:true} this connection got on connect, voice
+                # follows its next packet); anyone else ends it.
+                if self.talk:
+                    if old.name == c.name:
+                        log(f"talk kept: {c.name!r} reconnected")
+                    else:
+                        self._close_talk("host", "link")
             log(f"client {c.name!r} at {c.ip} is now the client")
+            # a new connection has prefetched nothing and holds no music.next
+            self.client_ready.clear()
+            self.prefetched = self.next_sent = None
+            self._music_changed()
             return None
         if c is not self.current:
             log("   (from a connection that has not sent hello; ignored)")
@@ -319,11 +347,18 @@ class Host:
                 log("   talk already closed")
                 self.send_state()
         elif t in ("music.ready", "music.error"):
+            if t == "music.ready":
+                self.client_ready.add(msg["id"])
+            else:
+                self.client_ready.discard(msg["id"])
             fut = self.pending_ready.get(msg["id"])
             if fut and not fut.done():
                 fut.set_result(msg)
+            elif msg["id"] == self.prefetched:
+                log(f"   ({t} for the prefetched next track)")
             else:
                 log(f"   ({t} for {msg['id']!r}, which is not being loaded)")
+            self._music_changed()  # the next track just became ready: music.next
         elif t == "music.control":
             self._music_control(msg["action"])
         elif t == "command.text":
@@ -353,6 +388,7 @@ class Host:
         role = "solo" if self.current is None else "opener" if by == "host" or self.talk_mic else "other"
         self.gate = FirstPhraseGate(role, now)
         self.no_resume = False
+        self.next_sent = None  # a talk cancels the client's pending music.next
         if self.music and self.music["playing"]:
             self._freeze_music(now)
             self.resume_after_talk = True
@@ -382,6 +418,7 @@ class Host:
         else:
             self.no_resume = False
         self.send(self.state(), quiet=self.current is None)
+        self._music_changed()  # music.next again after the resume's music.play
 
     # ------------------------------------------------------------------ voice
 
@@ -442,6 +479,80 @@ class Host:
         if t.art:
             self.music["art"] = t.art
         self.send({"t": "music.play", "id": t.id, "positionMs": pos, "atHostTimeMs": at})
+        self.next_sent = None  # any music.play but the one of the change cancels a pending music.next
+
+    @staticmethod
+    def _load_msg(t: TrackInfo) -> dict:
+        load = {"t": "music.load", "id": t.id, "path": t.path, "title": t.title, "artist": t.artist}
+        if t.album:
+            load["album"] = t.album
+        load["durationMs"] = t.duration_ms
+        return load
+
+    def _music_changed(self) -> None:
+        """PROTOCOL.md "Music flow" 5 and 6, after anything that may have changed the music, the
+        queue or what the client has ready: prefetch the next queue item, announce it with
+        music.next (or take an announcement back), and arm the end of the current track."""
+        m = self.music
+        if m and self.queue and self.current is not None and self.queue[0].id != self.prefetched:
+            self.prefetched = self.queue[0].id
+            self.send(self._load_msg(self.queue[0]))
+        # The track's end by its anchor. durationMs is the file's own (mvhd) duration.
+        playing = bool(m and m["playing"] and not self.talk and not self._loading() and m["durationMs"] > 0)
+        end = m["atHostTimeMs"] + m["durationMs"] - m["positionMs"] if playing else 0
+        want = None
+        if playing and self.current is not None and self.queue and self.queue[0].id in self.client_ready:
+            want = (self.queue[0].id, end)
+            if want != self.next_sent and end - now_ms() < GAPLESS_MIN_NOTICE_MS:
+                want = None  # too late to announce: it starts on its music.play, with a gap
+        if want != self.next_sent:
+            if want is not None:
+                self.send({"t": "music.next", "id": want[0], "atHostTimeMs": want[1]})
+            elif m and m["playing"] and not self.talk and self.current is not None:
+                # Take it back: the current track's music.play, anchor unchanged (no seek).
+                log(f"music: taking music.next {self.next_sent[0]} back")
+                self.send({"t": "music.play", "id": m["id"], "positionMs": m["positionMs"],
+                           "atHostTimeMs": m["atHostTimeMs"]})
+            self.next_sent = want
+        if self.end_timer is not None:
+            self.end_timer.cancel()
+            self.end_timer = None
+        if playing and self.loop is not None:
+            self.end_timer = self.loop.call_later(max(0, end - now_ms()) / 1000, self._track_ended)
+
+    def _track_ended(self) -> None:
+        """The current track ran out by its anchor: change to the next queue item (without a gap
+        when it was announced), or park the last one at its start."""
+        self.end_timer = None
+        m, t = self.music, self.track
+        if not m or not m["playing"] or t is None or self._loading():
+            return
+        end = m["atHostTimeMs"] + m["durationMs"] - m["positionMs"]
+        if not self.queue:
+            # PROTOCOL.md "Music flow" 3 (2026-09-30): the last track is parked, not stopped.
+            log(f"music: end of the queue; {t.id} parked at 0")
+            m.update(playing=False, positionMs=0, atHostTimeMs=now_ms())
+            self.next_sent = None
+            self.send({"t": "music.pause", "id": t.id, "positionMs": 0})
+            self.send_state()
+            return
+        self.history.append(t)
+        nxt = self.queue.pop(0)
+        if self.next_sent != (nxt.id, end):
+            log(f"music: {t.id} ended; {nxt.id} was not announced, loading it (gap)")
+            self._start(nxt)
+            self.send_state()
+            return
+        log(f"music: {t.id} ended; gapless change to {nxt.id} at {end}")
+        self.track = nxt
+        self.music = {"id": nxt.id, "title": nxt.title, "artist": nxt.artist, "playing": True,
+                      "positionMs": 0, "atHostTimeMs": end, "durationMs": nxt.duration_ms}
+        if nxt.art:
+            self.music["art"] = nxt.art
+        self.next_sent = None  # the client changed over: nothing pending any more
+        self.send(self.state())
+        self.send({"t": "music.play", "id": nxt.id, "positionMs": 0, "atHostTimeMs": end})
+        self._music_changed()  # music.load of the following track, and its music.next if ready
 
     async def _load_and_play(self) -> None:
         t = self.track
@@ -449,14 +560,21 @@ class Host:
         fut = self.loop.create_future()
         self.pending_ready[t.id] = fut
         try:
-            load = {"t": "music.load", "id": t.id, "path": t.path, "title": t.title, "artist": t.artist}
-            if t.album:
-                load["album"] = t.album
-            load["durationMs"] = t.duration_ms
-            self.send(load)
+            self.send(self._load_msg(t))
             t0 = now_ms()
             try:
                 reply = await asyncio.wait_for(fut, READY_TIMEOUT_MS / 1000)
+                if reply["t"] == "music.error" and not reply["message"].startswith("not decodable"):
+                    # PROTOCOL.md "Music flow" 3: once more after 2 s; a second error, or 8 s
+                    # since the first load without music.ready, and the host plays alone.
+                    log(f"music: client error {reply['message']!r}; sending music.load again in "
+                        f"{ERROR_RELOAD_MS / 1000:g} s")
+                    await asyncio.sleep(ERROR_RELOAD_MS / 1000)
+                    fut = self.loop.create_future()
+                    self.pending_ready[t.id] = fut
+                    self.send(self._load_msg(t))
+                    left = max(0.0, (t0 + READY_TIMEOUT_MS - now_ms()) / 1000)
+                    reply = await asyncio.wait_for(fut, left)
                 if reply["t"] == "music.ready":
                     log(f"music: client ready after {now_ms() - t0} ms")
                 else:
@@ -479,6 +597,8 @@ class Host:
             else:
                 # after a talk, not before the headset is back in media mode (PROTOCOL.md "Talk flow" 4)
                 self._play_from(0, max(now + PLAY_LEAD_MS, self.media_at))
+            if self.load_task is asyncio.current_task():
+                self.load_task = None  # loaded: the state below may announce the next track
             self.send_state()
         finally:
             if self.pending_ready.get(t.id) is fut:
@@ -502,6 +622,7 @@ class Host:
         if not self.music or not self.music["playing"]:
             return False
         pos = self._freeze_music(now_ms())
+        self.next_sent = None
         self.send({"t": "music.pause", "id": self.music["id"], "positionMs": pos})
         self.send_state()
         return True
@@ -520,6 +641,7 @@ class Host:
     def _stop(self) -> None:
         self.music = None
         self.resume_after_talk = False
+        self.next_sent = None
         self.send({"t": "music.stop"})
         self.send_state()
 
@@ -767,6 +889,12 @@ class Host:
                 self._pause() or log("nothing playing")
             elif cmd == "stop":
                 self._stop()
+            elif cmd in ("next", "previous"):
+                self._music_control(cmd)
+            elif cmd == "queue":
+                self.queue = [t for t in self.library if t is not self.track][:MAX_QUEUE]
+                log(f"queue: {[t.title for t in self.queue]}")
+                self.send_state()
             elif cmd == "talk":
                 if self.talk:
                     self._close_talk("host", "trigger")

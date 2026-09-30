@@ -3,7 +3,8 @@ import MotopartyCore
 import SwiftUI
 
 /// Search the host's catalog: songs play (or queue), albums and playlists
-/// open a track list (PROTOCOL.md "Browsing").
+/// open a track list (PROTOCOL.md "Browsing"). The system's search field and
+/// scope bar; with an empty field, the recent searches and recently played.
 struct SearchView: View {
     @EnvironmentObject private var model: AppModel
     @State private var query = ""
@@ -12,46 +13,21 @@ struct SearchView: View {
     var body: some View {
         NavigationStack {
             results
-                .safeAreaInset(edge: .top, spacing: 0) { header }
                 .navigationTitle("Search")
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: ResultItem.self) { CollectionView(collection: $0) }
+                .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
+                            prompt: Text(SearchWording.prompt))
+                .searchScopes($kind, activation: .onSearchPresentation) {
+                    ForEach(SearchKind.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .onSubmit(of: .search) { model.search(kind, query: query) }
+                .onChange(of: kind) { _, newKind in model.search(newKind, query: query) }
+                .autocorrectionDisabled()
         }
     }
 
     private var connected: Bool { model.link.isConnected }
-
-    private var header: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search YouTube Music", text: $query)
-                    .submitLabel(.search)
-                    .autocorrectionDisabled()
-                    .onSubmit { model.search(kind, query: query) }
-                if !query.isEmpty {
-                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Clear")
-                }
-            }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 48)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            Picker("Kind", selection: $kind) {
-                ForEach(SearchKind.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: kind) { _, newKind in model.search(newKind, query: query) }
-
-            if !connected { NotConnectedHint() }
-        }
-        .disabled(!connected)
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(.bar)
-    }
 
     @ViewBuilder
     private var results: some View {
@@ -62,27 +38,43 @@ struct SearchView: View {
         } else if list.loading {
             ProgressView("Searching…").frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = list.error {
-            ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
+            ContentUnavailableView {
+                Label(error, systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(SearchWording.retryHint)
+            } actions: {
+                Button { model.retrySearch() } label: {
+                    Text("Try again").frame(minWidth: 120, minHeight: 32)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!connected || model.searchedQuery.isEmpty)
+            }
         } else if list.items.isEmpty {
             if list.requested {
-                ContentUnavailableView("No results", systemImage: "magnifyingglass",
+                ContentUnavailableView(SearchWording.nothingFound(model.searchedQuery), systemImage: "magnifyingglass",
                                        description: Text("Try other words."))
             } else {
-                ContentUnavailableView("Search YouTube Music", systemImage: "music.magnifyingglass",
-                                       description: Text("Songs play right away; albums and playlists open."))
+                ContentUnavailableView {
+                    Label(SearchWording.emptyTitle, systemImage: "music.magnifyingglass")
+                } description: {
+                    Text(connected ? SearchWording.emptyDetail : "\(model.linkLabel) Music can be browsed once linked.")
+                }
             }
         } else {
             List {
+                if !connected {
+                    NotConnectedHint().listRowSeparator(.hidden)
+                }
                 ForEach(Array(list.items.enumerated()), id: \.offset) { _, item in
                     Group {
                         if model.searchedKind == .songs {
-                            SongRow(item: item,
+                            SongRow(item: item, isCurrent: item.ref == model.nowPlaying?.id,
                                     onPlay: { model.enqueue(.now, songs: [item]) },
                                     onEnqueue: { model.enqueue($0, songs: [item]) })
                         } else {
                             NavigationLink(value: item) {
                                 ResultRow(item: item,
-                                          subtitle: TimeText.joined(item.artist, item.count.map { "\($0) songs" }))
+                                          subtitle: TrackTime.joined([item.artist, item.count.map(QueueText.songs)]))
                             }
                         }
                     }
@@ -100,20 +92,24 @@ extension SearchView {
     /// played tracks (tap plays now). Kept on this phone only.
     private func historyList(_ history: BrowseHistory) -> some View {
         List {
+            if !connected {
+                NotConnectedHint().listRowSeparator(.hidden)
+            }
             if !history.searches.isEmpty {
                 Section {
                     ForEach(history.searches, id: \.self) { entry in
                         Button { rerun(entry) } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
                                 Text(entry.query).lineLimit(1)
                                 Spacer(minLength: 0)
                                 Text(entry.kind.label).font(.caption).foregroundStyle(.secondary)
                             }
-                            .frame(minHeight: 36)
+                            .frame(minHeight: 40)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(RowButtonStyle())
                         .disabled(!connected)
                     }
                 } header: {
@@ -123,26 +119,16 @@ extension SearchView {
                         Button("Clear") { model.clearRecentSearches() }
                             .font(.subheadline)
                             .textCase(nil)
+                            .accessibilityLabel("Clear recent searches")
                     }
                 }
             }
             if !history.played.isEmpty {
                 Section("Recently played") {
                     ForEach(history.played, id: \.id) { track in
-                        Button { model.playAgain(track) } label: {
-                            HStack(spacing: 12) {
-                                Artwork(url: track.art, size: 48)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(track.title).font(.body.weight(.medium)).lineLimit(1)
-                                    Text(TimeText.joined(track.artist, TimeText.clock(Double(track.durationMs))))
-                                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.vertical, 4)
-                            .contentShape(Rectangle())
+                        PlayedRow(track: track, isCurrent: track.id == model.nowPlaying?.id) {
+                            model.playAgain(track)
                         }
-                        .buttonStyle(.plain)
                         .disabled(!connected)
                     }
                 }
@@ -153,7 +139,7 @@ extension SearchView {
     }
 
     /// Puts the entry back in the box and searches it; a kind change searches
-    /// through the picker's `onChange`.
+    /// through the scope's `onChange`.
     private func rerun(_ entry: BrowseHistory.Search) {
         query = entry.query
         if kind == entry.kind {
@@ -164,22 +150,63 @@ extension SearchView {
     }
 }
 
+/// A recently played track: a tap plays it now. The one that is playing is
+/// marked and not a button (a tap would restart it, and end a talk: UI10).
+private struct PlayedRow: View {
+    let track: BrowseHistory.Track
+    let isCurrent: Bool
+    let play: () -> Void
+    @State private var tapped = 0
+
+    var body: some View {
+        Button {
+            play()
+            tapped += 1
+        } label: {
+            HStack(spacing: 12) {
+                Artwork(url: track.art, size: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.title).font(.body.weight(.medium)).lineLimit(1)
+                        .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                    Text(TrackTime.joined([isCurrent ? "Now playing" : nil, track.artist,
+                                           TrackTime.clock(Double(track.durationMs))]))
+                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if isCurrent {
+                    Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint).accessibilityHidden(true)
+                }
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(RowButtonStyle())
+        .disabled(isCurrent)
+        .sensoryFeedback(.success, trigger: tapped)
+    }
+}
+
 /// Art thumbnail, title and one line of detail.
 private struct ResultRow: View {
     let item: ResultItem
     let subtitle: String
     var fallbackArt: String?
+    var isCurrent = false
 
     var body: some View {
         HStack(spacing: 12) {
             Artwork(url: item.art ?? fallbackArt, size: 48)
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).font(.body.weight(.medium)).lineLimit(1)
+                    .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
                 if !subtitle.isEmpty {
                     Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
+            if isCurrent {
+                Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint).accessibilityLabel("Now playing")
+            }
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
@@ -191,30 +218,33 @@ private struct ResultRow: View {
 private struct SongRow: View {
     let item: ResultItem
     var fallbackArt: String?
+    var isCurrent = false
     let onPlay: () -> Void
     let onEnqueue: (EnqueueMode) -> Void
     @State private var tapped = 0
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             Button { tap(onPlay) } label: {
                 ResultRow(item: item,
-                          subtitle: TimeText.joined(item.artist, item.durationMs.map { TimeText.clock(Double($0)) }),
-                          fallbackArt: fallbackArt)
+                          subtitle: TrackTime.joined([item.artist, item.durationMs.map { TrackTime.clock(Double($0)) }]),
+                          fallbackArt: fallbackArt, isCurrent: isCurrent)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowButtonStyle())
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Plays it now")
             Menu {
                 Button { tap { onEnqueue(.next) } } label: { Label("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") }
                 Button { tap { onEnqueue(.end) } } label: { Label("Add to queue", systemImage: "text.append") }
             } label: {
-                Image(systemName: "ellipsis.circle").font(.title2).frame(width: 44, height: 44).contentShape(Rectangle())
+                Image(systemName: "ellipsis.circle").font(.title2).frame(width: 48, height: 48).contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("More")
+            .accessibilityLabel("More options for \(item.title)")
         }
         .swipeActions(edge: .leading) {
             Button { tap { onEnqueue(.next) } } label: { Label("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") }
-                .tint(.orange)
+                .tint(Brand.orange)
         }
         .swipeActions(edge: .trailing) {
             Button { tap { onEnqueue(.end) } } label: { Label("Add to queue", systemImage: "text.append") }
@@ -234,6 +264,7 @@ private struct SongRow: View {
 struct CollectionView: View {
     let collection: ResultItem
     @EnvironmentObject private var model: AppModel
+    @State private var tapped = 0
 
     /// The collection's songs, once the host has answered for this one.
     private var list: ResultList {
@@ -254,12 +285,29 @@ struct CollectionView: View {
                 } else if let error = list.error {
                     ContentUnavailableView {
                         Label(error, systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(SearchWording.retryHint)
                     } actions: {
-                        Button("Try again") { model.browse(collection) }.disabled(!connected)
+                        Button("Try again") { model.browse(collection) }
+                            .buttonStyle(.bordered)
+                            .disabled(!connected)
+                    }
+                    .listRowSeparator(.hidden)
+                } else if list.items.isEmpty {
+                    // Answered, and there is nothing in it (audit UI9).
+                    if list.requested {
+                        ContentUnavailableView {
+                            Label(SearchWording.emptyCollection, systemImage: "music.note.list")
+                        } actions: {
+                            Button("Try again") { model.browse(collection) }
+                                .buttonStyle(.bordered)
+                                .disabled(!connected)
+                        }
+                        .listRowSeparator(.hidden)
                     }
                 } else {
                     ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
-                        SongRow(item: item, fallbackArt: collection.art,
+                        SongRow(item: item, fallbackArt: collection.art, isCurrent: item.ref == model.nowPlaying?.id,
                                 onPlay: { model.enqueue(.now, songs: Array(list.items[index...]), from: collection) },
                                 onEnqueue: { model.enqueue($0, songs: [item], from: collection) })
                     }
@@ -270,6 +318,7 @@ struct CollectionView: View {
         .listStyle(.plain)
         .navigationTitle(collection.title)
         .navigationBarTitleDisplayMode(.inline)
+        .sensoryFeedback(.success, trigger: tapped)
         .task(id: collection) {
             // Coming back to the same collection keeps its songs.
             if model.browsedCollection != collection || model.collectionResults.error != nil
@@ -281,21 +330,30 @@ struct CollectionView: View {
 
     private func header(_ list: ResultList) -> some View {
         VStack(spacing: 10) {
-            Artwork(url: collection.art, size: 200)
+            Artwork(url: collection.art, size: 200, cornerRadius: 16)
                 .shadow(radius: 8, y: 4)
             Text(collection.title)
                 .font(.title2.bold())
                 .multilineTextAlignment(.center)
-            let detail = TimeText.joined(collection.artist, list.items.isEmpty ? nil : "\(list.items.count) songs")
+            let detail = TrackTime.joined([collection.artist, list.items.isEmpty ? nil : QueueText.songs(list.items.count)])
             if !detail.isEmpty {
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
             }
             HStack(spacing: 12) {
-                Button { model.enqueue(.now, songs: list.items, from: collection) } label: {
-                    Label("Play", systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: 36)
+                Button {
+                    model.enqueue(.now, songs: list.items, from: collection)
+                    tapped += 1
+                } label: {
+                    Label("Play", systemImage: "play.fill")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Brand.onOrange)
+                        .frame(maxWidth: .infinity, minHeight: 36)
                 }
                 .buttonStyle(.borderedProminent)
-                Button { model.enqueue(.end, songs: list.items, from: collection) } label: {
+                Button {
+                    model.enqueue(.end, songs: list.items, from: collection)
+                    tapped += 1
+                } label: {
                     Label("Add to queue", systemImage: "text.append").frame(maxWidth: .infinity, minHeight: 36)
                 }
                 .buttonStyle(.bordered)

@@ -41,6 +41,18 @@ Unit tests read `../fixtures` through the `motoparty.fixtures` system property t
 fixtures), jitter buffer, talk state machine, `ControlServer` over loopback sockets (hello/state,
 ping/pong, replacement, 6 s liveness, oversize frame), and `TrackServer` (Range, 404s).
 
+## Release build
+
+`./gradlew assembleRelease` builds a shrunk (R8, `-dontobfuscate`) arm64 APK, about 8 MB, at
+`app/build/outputs/apk/release/app-release.apk`. It is signed with `motoparty-release.jks` and
+`keystore.properties` in this folder (both git-ignored; **back them up**, without them no update
+can be installed over a release build). Without a keystore the build is unsigned. The one-liner that
+creates them is in the comment at the top of `app/build.gradle.kts`.
+
+The release signature differs from debug and the applicationId is the same, so installing it over a
+debug build needs `adb uninstall com.kivan.motoparty` first, which wipes settings, trims, history,
+the track cache and permissions.
+
 ## Permissions
 
 Runtime (the app asks on first launch; or grant by hand):
@@ -66,7 +78,7 @@ type (it cannot be claimed from the background).
 | `LinkHost` | Wires everything; the one place protocol decisions are made (main thread) |
 | `link/` | `Discovery` (NSD `_motoparty._tcp`, TXT proto/voice/http), `ControlServer` (TCP 47800), `VoiceSocket` (UDP 47801), `TalkController` (talk authority; ends on a trigger or link loss) |
 | `audio/` | `Opus` (JNI), `VoiceEngine` (AudioRecord VOICE_COMMUNICATION 16 kHz → Opus → UDP; UDP → jitter → Opus FEC/PLC → AudioTrack), `AudioRouter` (MODE_IN_COMMUNICATION + `setCommunicationDevice`), `Earcons` (generated tones), `LiveCue` (when the "live" beep may play: first captured frame **and** the SCO link up, fallback timer 2.5 s), `ScoWatch`/`AudioModeWatch` (Bluetooth SCO link state and audio mode, cached off Main) |
-| `music/` | `Catalog` (NewPipeExtractor, YouTube Music search, Opus itag-251 resolve with AAC itag-140 fallback), `OkHttpDownloader`, `TrackCache` (1 GiB LRU, ranged download, prefetch; `tracks-opus/` and, after a client's "not decodable", `tracks/` for AAC), `Remux` + `OpusDops` (WebM Opus → MP4, packet copy; fixes Media3's little-endian `dOps`), `TrackServer` (hand-rolled HTTP on 47802), `Player` (ExoPlayer + MediaSession; outside transport controls go through `MusicController`), `SyncController` (scheduled start with learned start-up latency, 10 s drift check, speed nudge 80 ms–1 s, re-seek > 1 s, latency trim), `MusicController` (queue, load/ready/play, talk pause/resume) |
+| `music/` | `Catalog` (NewPipeExtractor, YouTube Music search, Opus itag-251 resolve with AAC itag-140 fallback), `OkHttpDownloader`, `TrackCache` (1 GiB LRU, ranged download, prefetch; `tracks-opus/` and, after a client's "not decodable", `tracks/` for AAC), `Remux` + `OpusDops` (WebM Opus → MP4, packet copy with Media3's `MatroskaExtractor` and `Mp4Muxer`, not the slow platform `MediaExtractor`; fixes Media3's little-endian `dOps`), `TrackServer` (hand-rolled HTTP on 47802), `Player` (ExoPlayer + MediaSession; outside transport controls go through `MusicController`), `SyncController` (scheduled start with learned start-up latency, 10 s drift check, speed nudge 80 ms–1 s, re-seek > 1 s, latency trim), `MusicController` (queue, load/ready/play, talk pause/resume) |
 | `voicecmd/` | `TalkRecognizer` (in-talk commands: on-device SpeechRecognizer fed the talk's own capture through a pipe — `audio/PcmTee`, never blocks the capture thread — segmented session, falls back to the default service; API 33+), `Announcer` (TTS + earcons, on the media route or, in a talk, the call route) |
 | `overlay/OverlayService` | Draggable TYPE_APPLICATION_OVERLAY with one TALK button (120×120 dp), colour = state; drag onto the X at the bottom to hide (sets `overlayEnabled=false`, back via the notification's "Show buttons") |
 | `trigger/` | `Triggers`: one stream fed by overlay, headset buttons, notification and UI |

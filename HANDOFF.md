@@ -11,6 +11,39 @@ was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Andro
 F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
 and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
+## Do now (2026-09-30: implement the audit)
+
+`AUDIT.md` is the full finding list of a seven-agent read-only scan of `7cedc94` (bugs, voice
+latency, music, UI/UX on both phones), with stable IDs, the three user decisions it produced
+(lock-screen Pause works; Pixel buds dropping pauses the music; no link auth for now) and a
+three-round implementation plan (1 ride-breaking bugs + voice latency, 2 music, 3 UI/UX). The
+user approved implementing it, in rounds or in parallel. **State on 2026-09-30, late (everything uncommitted, nothing installed, device-unverified):**
+- Round 1: done, coordinator-tested.
+- Round 2: done and coordinator-tested on Android (403 tests / 0 fail / 5 skipped, lint 0 errors)
+  and iOS (`swift test` 182, release build clean), incl. the integration (cache priorities wired,
+  gapless cancel rule in PROTOCOL.md Music flow 6, P11 in spec + `fixtures/control/framing.json`).
+  The Python peer is done too (coordinator-run: see count below; fake host with gapless, `bye proto`, P4/P7 mirror);
+  its report, if it finished, is `~/.cache/claude-handoff/motoparty-round2/peer.md`; re-run
+  `cd tools/peer && .venv/bin/python -m pytest -q` (292 + 1 skipped before its work).
+- Round 3 (UI/UX both phones, H5 release build, H10 bumps, L9 partly) is built and
+  coordinator-tested: android 450 tests / 0 fail / 5 skipped, lint 0 errors, `assembleDebug` OK;
+  `swift test` 211 + release build clean; peer 325 + 1 skipped. Agent reports:
+  `~/.cache/claude-handoff/motoparty-round3/{android-ui,android-system,ios-ui}.md`. Not yet done by
+  the coordinator: `assembleRelease` re-run, looking at all Roborazzi screenshots (3 of 27 seen,
+  they look right), round-3 sections in `AUDIT.md` Status / `android/HANDOFF.md` / component
+  table, the agents' cross-file requests, and any install.
+- 2026-09-30, later: the release build is on the Pixel (debug uninstalled with the user's OK), and
+  the 5–10 s tap-to-sound wait is fixed (`AUDIT.md` Status "Tap-to-sound fix": Media3 demux +
+  batching muxer in `music/Remux.kt`, parallel pre-resolve, `MusicController.insert`). Android
+  454 tests / 0 fail / 5 skipped, lint 0 errors, `assembleRelease` OK. With the phone locked the
+  app can be driven from `tools/peer` (`search songs …`, `enqueue now <n>`). Still open: checks
+  that need the screen (`android/HANDOFF.md` "Audit round 3"), the iPhone (not installed; the new
+  MP4 layout is unplayed by AVPlayer), L8 leftovers.
+- The Pixel is reachable over wireless adb (user's go-ahead 2026-09-30; read
+  `~/.config/system-notes.md` "adb over Wi-Fi" first). Next: install the debug build and run the
+  solo checks of `android/HANDOFF.md` "Audit round 1/2". The iPhone install is on hold (user).
+`AUDIT.md` "Status" has the ID list. The sections below are the state before the audit and still hold.
+
 ## Read first
 
 1. `~/.claude/plans/dynamic-bubbling-lemon.md`: the wired-helmet-mic plan, Stages A–E. **Stage A is

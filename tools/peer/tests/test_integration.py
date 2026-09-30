@@ -688,3 +688,81 @@ def test_client_joining_a_host_mic_talk_learns_it_from_state(tmp_path):
         if client:
             client.stop()
         host.stop()
+
+
+class RawClient:
+    """A bare control connection: lets a test reconnect under a chosen name, which the client
+    CLI (it reconnects by itself once replaced) cannot do deterministically."""
+
+    def __init__(self, port: int, name: str) -> None:
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        self.hello = self.read()
+        self.state = self.read()
+        self.send({"t": "hello", "proto": 1, "role": "client", "name": name})
+
+    def send(self, msg: dict) -> None:
+        body = json.dumps(msg).encode()
+        self.sock.sendall(len(body).to_bytes(4, "big") + body)
+
+    def _exactly(self, n: int) -> bytes:
+        buf = b""
+        while len(buf) < n:
+            chunk = self.sock.recv(n - len(buf))
+            if not chunk:
+                raise EOFError
+            buf += chunk
+        return buf
+
+    def read(self) -> dict:
+        return json.loads(self._exactly(int.from_bytes(self._exactly(4), "big")))
+
+    def close(self) -> None:
+        self.sock.close()
+
+
+def test_same_name_reconnect_keeps_the_talk_and_another_name_closes_it(tmp_path):
+    """PROTOCOL.md "Liveness": a hello replacing a connection whose client had the same name
+    does not close an open talk; a different name closes it with "link"."""
+    cp, vp, hp = free_port(), free_port(socket.SOCK_DGRAM), free_port()
+    host = Proc("host", "--no-mdns", "--bind", "127.0.0.1", "--port", str(cp), "--voice-port", str(vp),
+                "--http-port", str(hp), "--name", "Test Host")
+    socks = []
+    try:
+        host.expect(r"control tcp/\d+ voice udp/\d+ http tcp/\d+")
+        a = RawClient(cp, "Pillion")
+        socks.append(a)
+        assert a.hello["t"] == "hello" and a.state == {"t": "state", "talk": False, "queue": []}
+        host.expect("client 'Pillion' at 127.0.0.1 is now the client")
+        a.send({"t": "talk.open", "by": "client"})
+        assert a.read()["t"] == "talk.open"
+        assert a.read()["talk"] is True
+
+        # the same client on a new socket, while the host still holds the old one
+        b = RawClient(cp, "Pillion")
+        socks.append(b)
+        assert b.state["talk"] is True  # what the client acts on
+        assert a.read() == {"t": "bye", "reason": "replaced"}
+        host.expect("talk kept: 'Pillion' reconnected")
+        b.send({"t": "ping", "id": 1, "t0": 5})
+        assert b.read()["t"] == "pong"  # nothing was sent in between: no talk.close, no state
+        assert "TALK CLOSED" not in host.output()
+        # the talk is still the host's to close, and the close goes to the new connection
+        b.send({"t": "talk.close", "by": "client", "reason": "trigger"})
+        assert b.read() == {"t": "talk.close", "by": "client", "reason": "trigger"}
+        assert b.read()["talk"] is False
+        b.send({"t": "talk.open", "by": "client"})
+        assert b.read()["t"] == "talk.open"
+        assert b.read()["talk"] is True
+
+        # someone else takes over: the talk ends with "link"
+        c = RawClient(cp, "Stranger")
+        socks.append(c)
+        assert c.state["talk"] is True
+        assert b.read() == {"t": "bye", "reason": "replaced"}
+        assert c.read() == {"t": "talk.close", "by": "host", "reason": "link"}
+        assert c.read() == {"t": "state", "talk": False, "queue": []}
+        host.expect(r"TALK CLOSED \(by host, link\)")
+    finally:
+        for s in socks:
+            s.close()
+        host.stop()

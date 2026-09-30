@@ -15,8 +15,8 @@ public enum MusicStatus: Equatable, Sendable {
     public var text: String? {
         switch self {
         case .none: nil
-        case .loading: "Loading…"
-        case .pausedForTalk: "Paused for talk"
+        case .loading: "Downloading song…"
+        case .pausedForTalk: "Paused for talk — plays when the talk ends"
         }
     }
 }

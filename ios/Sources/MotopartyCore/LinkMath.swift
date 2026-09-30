@@ -19,7 +19,16 @@ public enum LinkDefaults {
     public static let sweepTimeoutMs = 400
     /// …then (sweep and Bonjour probes) how long to wait for the host's `hello`.
     public static let probeHelloTimeoutMs = 1_000
+    /// A voice keepalive goes out once nothing was sent for this long…
     public static let keepaliveIntervalMs = 1_000
+    /// …checked on this tick (the host's cadence), so a gap never nears 2 s.
+    public static let keepaliveTickMs = 250
+
+    /// Whether a keepalive is due on a tick: nothing (audio or keepalive)
+    /// was sent for `keepaliveIntervalMs`.
+    public static func keepaliveDue(nowMs: Double, lastSentMs: Double) -> Bool {
+        nowMs - lastSentMs >= Double(keepaliveIntervalMs)
+    }
 }
 
 /// Fallback discovery: every other address of the client's own IPv4 /24.

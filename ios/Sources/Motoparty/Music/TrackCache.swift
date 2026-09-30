@@ -33,6 +33,8 @@ final class TrackCache {
         config.allowsCellularAccess = false // the host is on Wi-Fi; never pay for LAN data
         config.waitsForConnectivity = false
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        // Below the control channel and the voice on the hotspot (audit P3).
+        config.networkServiceType = .background
         session = URLSession(configuration: config)
     }
 

@@ -40,6 +40,7 @@ val Message.wireType: String
         is MusicError -> "music.error"
         is MusicPlay -> "music.play"
         is MusicPause -> "music.pause"
+        is MusicNext -> "music.next"
         is MusicStop -> "music.stop"
         is MusicControl -> "music.control"
         is CommandText -> "command.text"

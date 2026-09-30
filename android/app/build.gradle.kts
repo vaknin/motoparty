@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -9,6 +11,25 @@ val opusSource = file("src/main/cpp/opus/CMakeLists.txt")
 check(opusSource.exists()) {
     "Missing ${opusSource.relativeTo(rootDir)}. Run tools/fetch_opus.sh first (see README.md)."
 }
+
+// Release signing (H5). The repository is public, so neither the keystore nor its passwords are in
+// it: they come from android/keystore.properties (git-ignored) or, failing that, from
+// ~/.gradle/gradle.properties (`motoparty.storeFile`, `.storePassword`, `.keyAlias`,
+// `.keyPassword`). Without them `assembleRelease` still builds, unsigned; `assembleDebug` never
+// looks at any of this. To create both files once (run in android/; keep a copy of the two files
+// somewhere safe — an update can only be installed over a build signed with the same key):
+//
+//   P=$(openssl rand -hex 16) && keytool -genkeypair -keystore motoparty-release.jks \
+//     -alias motoparty -keyalg RSA -keysize 4096 -validity 10000 -storepass "$P" -keypass "$P" \
+//     -dname "CN=Motoparty" && printf 'storeFile=motoparty-release.jks\nstorePassword=%s\nkeyAlias=motoparty\nkeyPassword=%s\n' \
+//     "$P" "$P" > keystore.properties && chmod 600 keystore.properties motoparty-release.jks
+val keystoreProperties = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.isFile) f.inputStream().use(::load)
+}
+fun signingValue(name: String): String? =
+    keystoreProperties.getProperty(name) ?: providers.gradleProperty("motoparty.$name").orNull
+val releaseStoreFile = signingValue("storeFile")?.let { rootProject.file(it) }?.takeIf { it.isFile }
 
 android {
     namespace = "com.kivan.motoparty"
@@ -36,9 +57,25 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = signingValue("storePassword")
+                keyAlias = signingValue("keyAlias")
+                keyPassword = signingValue("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 in full mode: shrinks and optimises (the debuggable, unshrunk Compose of the debug
+            // build is visibly less smooth). Names are kept, see proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -107,6 +144,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
     implementation(libs.media3.muxer)
+    implementation(libs.media3.extractor)
     implementation(libs.okhttp)
     implementation(libs.newpipe.extractor)
     implementation(libs.coil.compose)

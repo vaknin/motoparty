@@ -118,19 +118,24 @@ final class JitterBufferTests: XCTestCase {
         XCTAssertEqual(jb.stats.lost, 0)
     }
 
-    func testStallMakesLatePacketsUnderrunOnceAndKeepsSlots() {
+    func testStallThenBurstIsOneUnderrunThenANewSpurt() {
         var jb = JitterBuffer()
         // Frames 5..9 get stuck and arrive together at t=300, after their
-        // slots (150..230). Frames 15.. arrive on time and keep their slots.
-        let arrivals = steady(0..<5) + (5..<10).map { a($0, 300) } + steady(15..<20, from: 300)
+        // slots (150..230). Frame 5 is late: one underrun, target 60. Frame 6
+        // is two frames past the last played one with only the late seq 5
+        // between: a new spurt (PROTOCOL.md "A talk spurt starts…"), which
+        // plays a target after it arrived instead of being thrown away.
+        let arrivals = steady(0..<5) + (5..<10).map { a($0, 300) }
         let actions = run(&jb, arrivals, to: 500)
-        XCTAssertEqual(jb.stats.late, 5)
-        XCTAssertEqual(jb.stats.underruns, 1, "one raise per spurt")
+        XCTAssertEqual(jb.stats.late, 1)
+        XCTAssertEqual(jb.stats.underruns, 1)
         XCTAssertEqual(jb.targetMs, 60)
-        XCTAssertEqual(decoded(actions), [0, 1, 2, 3, 4, 15, 16, 17, 18, 19])
-        // Latency did not creep: frame 15 plays at its original slot, 50 + 15*20.
-        let i15 = actions.firstIndex(of: .decode(payload(15)))!
-        XCTAssertEqual(Double(i15) * 20 + 10, 350)
+        // 6..9 span 60 ms = the raised target: nothing to shed.
+        XCTAssertEqual(jb.stats.shed, 0)
+        XCTAssertEqual(decoded(actions), [0, 1, 2, 3, 4, 6, 7, 8, 9])
+        let i6 = actions.firstIndex(of: .decode(payload(6)))!
+        XCTAssertEqual(Double(i6) * 20 + 10, 370) // first pull ≥ 300 + 60
+        XCTAssertEqual(jb.stats.spurts, 2)
     }
 
     func testRaisedTargetAppliesAtNextSpurt() {
@@ -223,63 +228,62 @@ final class JitterBufferTests: XCTestCase {
         XCTAssertEqual(decoded(actions), [0, 1, 2])
     }
 
-    func testGoesIdleAfterLongSilenceAndReanchors() {
+    func testRestartedSenderStartsOver() {
         var jb = JitterBuffer()
         run(&jb, [a(0, 0)], to: 2_200)
-        XCTAssertTrue(jb.isIdle)
-        // A new talkspurt from a restarted sender (seq/ts reset) plays fine.
-        let actions = run(&jb, [a(7, 3_000, seq: 0, ts: 0)], pullFrom: 3_010, to: 3_070)
+        // A restarted sender: a ts more than 3 s from the playout clock and
+        // an unrelated seq. The buffer starts over and plays it.
+        let actions = run(&jb, [a(7, 3_000, seq: 40_000, ts: 5_000_000)], pullFrom: 3_010, to: 3_070)
         XCTAssertEqual(decoded(actions), [7])
-    }
-
-    func testEarlyBurstPlaysAtSlotsWithoutDrops() {
-        var jb = JitterBuffer()
-        // 10 frames arrive at once (e.g. after Wi-Fi power save): early
-        // packets just wait for their slots.
-        let actions = run(&jb, (0..<10).map { a($0, 0) }, to: 300)
-        XCTAssertEqual(decoded(actions), Array(0..<10))
-        XCTAssertEqual(jb.stats.dropped, 0)
         XCTAssertEqual(jb.stats.late, 0)
     }
 
-    func testBacklogOverCapIsTrimmedAndCursorFollows() {
+    func testBurstAtSpurtStartKeepsOnlyTheTarget() {
         var jb = JitterBuffer()
-        // 30 frames (600 ms) land in one burst: over the 400 ms hard cap
-        // (maxTargetMs + backlogSlackMs), so the oldest 10 go and the playout
-        // cursor jumps behind them instead of the delay being carried along.
-        let actions = run(&jb, (0..<30).map { a($0, 0) }, to: 440)
-        XCTAssertEqual(jb.stats.dropped, 10)
-        XCTAssertEqual(decoded(actions), Array(10..<30))
-        // nextTs/lastSeq moved with the drop: the next frame is a plain decode
-        // in the same spurt, and nothing dropped is counted as loss.
+        // 10 frames arrive at once (e.g. after Wi-Fi power save): the spurt
+        // starts with no more than the target queued (3 frames span 40 ms).
+        let actions = run(&jb, (0..<10).map { a($0, 0) }, to: 300)
+        XCTAssertEqual(decoded(actions), [7, 8, 9])
+        XCTAssertEqual(jb.stats.shed, 7)
+        // Shed frames are neither loss nor underruns.
+        XCTAssertEqual(jb.stats.late, 0)
         XCTAssertEqual(jb.stats.lost, 0)
-        XCTAssertEqual(jb.stats.concealed, 0)
+        XCTAssertEqual(jb.stats.fec, 0)
+        XCTAssertEqual(jb.targetMs, 40)
         XCTAssertEqual(jb.stats.spurts, 1)
-        XCTAssertEqual(jb.bufferedPackets, 0)
     }
 
-    func testTrimmedBacklogKeepsSilenceGapASilenceGap() {
+    func testShedBacklogKeepsSilenceGapASilenceGap() {
         var jb = JitterBuffer()
         // 10 frames, then (contiguous seq) a spurt 90 frames of silence later,
-        // all arriving at once. The cap drops exactly the first 10, so `lastSeq`
-        // must end on frame 9: otherwise the gap looks like 10 lost packets.
+        // all arriving at once. Shedding moves `lastSeq` with it: the frames
+        // left are not a loss after a gap.
         let arrivals = (0..<10).map { a($0, 0) } + (10..<30).map { a($0, 0, ts: (90 + $0) * 320) }
         let actions = run(&jb, arrivals, to: 440)
-        XCTAssertEqual(jb.stats.dropped, 10)
-        XCTAssertEqual(decoded(actions), Array(10..<30))
+        XCTAssertEqual(jb.stats.shed, 27)
+        XCTAssertEqual(decoded(actions), [27, 28, 29])
         XCTAssertEqual(jb.stats.lost, 0)
-        XCTAssertEqual(jb.stats.concealed, 0)
-        XCTAssertEqual(jb.stats.spurts, 2, "the frame after the gap starts a new spurt")
+        XCTAssertEqual(jb.stats.fec, 0)
+        XCTAssertEqual(jb.stats.spurts, 1)
     }
 
-    func testBacklogAtCapIsNotTrimmed() {
+    func testStallMidSpurtIsShedWithinAWindow() {
         var jb = JitterBuffer()
-        // Exactly 400 ms buffered: at the cap, not over it — nothing is dropped.
-        let actions = run(&jb, (0..<20).map { a($0, 0) }, to: 440)
-        XCTAssertEqual(jb.stats.dropped, 0)
-        XCTAssertEqual(decoded(actions), Array(0..<20))
+        // A steady stream, but the output takes nothing from 1000 to 1700 ms.
+        let arrivals = steady(0..<250)
+        run(&jb, arrivals.filter { $0.at <= 1_000 }, to: 1_000)
+        XCTAssertEqual(jb.stats.shed, 0)
+        let rest = arrivals.filter { $0.at > 1_000 }
+        run(&jb, rest, pullFrom: 1_710, to: 3_000)
+        // Hard cap at once, the rest of the excess at the end of the window;
+        // a second later the depth is the target's again.
+        XCTAssertGreaterThan(jb.stats.shed, 30)
+        XCTAssertLessThanOrEqual(jb.bufferedPackets * 20, 80)
+        XCTAssertEqual(jb.stats.late, 0)
         XCTAssertEqual(jb.stats.lost, 0)
-        XCTAssertEqual(jb.stats.spurts, 1)
+        XCTAssertEqual(jb.targetMs, 40)
+        XCTAssertGreaterThanOrEqual(jb.stats.maxDepthMs, 400)
+        XCTAssertGreaterThan(jb.stats.meanDepthMs, 40)
     }
 
     func testEmptyBufferDuringSilenceIsNotUnderrun() {
@@ -301,5 +305,58 @@ final class JitterBufferTests: XCTestCase {
         XCTAssertEqual(jb.targetMs, 40)
         XCTAssertTrue(jb.isIdle)
         XCTAssertEqual(jb.pull(nowMs: 400), .silence)
+    }
+}
+
+/// `fixtures/jitter.json`: the vectors shared with the Android buffer.
+final class JitterFixtureTests: XCTestCase {
+    private func describe(_ action: PlayoutAction) -> String {
+        func seq(_ d: Data) -> Int { Int(d[0]) << 8 | Int(d[1]) }
+        switch action {
+        case .silence: return "silence"
+        case .conceal: return "conceal"
+        case .decode(let d): return "play \(seq(d))"
+        case .decodeFEC(let d): return "fec \(seq(d))"
+        }
+    }
+
+    func testEveryCase() throws {
+        let fixture = try Fixtures.json("jitter.json")
+        let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
+        XCTAssertFalse(cases.isEmpty)
+        for c in cases {
+            let name = try XCTUnwrap(c["name"] as? String)
+            let steps = try XCTUnwrap(c["steps"] as? [[String: Any]])
+            var jb = JitterBuffer()
+            var failures = 0
+            for (i, step) in steps.enumerated() {
+                let at = try XCTUnwrap(step["at"] as? NSNumber).doubleValue
+                let here = "\(name), step \(i) at \(Int(at))"
+                if let insert = step["insert"] as? [NSNumber] {
+                    let seq = UInt16(truncatingIfNeeded: insert[0].int64Value)
+                    let ts = UInt32(truncatingIfNeeded: insert[1].int64Value)
+                    // Packets are identified by seq: it is the payload.
+                    jb.insert(seq: seq, ts: ts, payload: Data([UInt8(seq >> 8), UInt8(seq & 0xFF)]), nowMs: at)
+                } else if let keepalive = step["keepalive"] as? NSNumber {
+                    jb.noteKeepalive(seq: UInt16(truncatingIfNeeded: keepalive.int64Value))
+                } else if let pull = step["pull"] as? String {
+                    let got = describe(jb.pull(nowMs: at))
+                    XCTAssertEqual(got, pull, here)
+                    if got != pull { failures += 1 }
+                } else if let expect = step["expect"] as? [String: Any] {
+                    // `underruns` there = packets that arrived after their
+                    // slot, which is `late` here (`underruns` = target raises).
+                    let have = ["targetMs": jb.targetMs, "underruns": jb.stats.late, "shed": jb.stats.shed]
+                    for (key, value) in expect {
+                        let want = try XCTUnwrap(value as? NSNumber, here).intValue
+                        XCTAssertEqual(try XCTUnwrap(have[key], "unknown expect key \(key)"), want, "\(here): \(key)")
+                    }
+                } else {
+                    XCTFail("\(here): unknown step")
+                }
+                // One wrong pull puts the rest of the case off: stop there.
+                if failures > 0 { break }
+            }
+        }
     }
 }

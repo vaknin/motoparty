@@ -150,7 +150,7 @@ final class MusicStatusTests: XCTestCase {
 
     func testText() {
         XCTAssertNil(MusicStatus.none.text)
-        XCTAssertEqual(MusicStatus.loading.text, "Loading…")
-        XCTAssertEqual(MusicStatus.pausedForTalk.text, "Paused for talk")
+        XCTAssertEqual(MusicStatus.loading.text, "Downloading song…")
+        XCTAssertEqual(MusicStatus.pausedForTalk.text, "Paused for talk — plays when the talk ends")
     }
 }

@@ -180,6 +180,10 @@ final class VoiceEngine {
             let input = engine.inputNode
             usesInput = true
             try input.setVoiceProcessingEnabled(true)
+            // Voice processing ducks all other audio by default (iOS 17+),
+            // and that includes this app's own earcons and announcements.
+            input.voiceProcessingOtherAudioDuckingConfiguration =
+                .init(enableAdvancedDucking: false, duckingLevel: .min)
             inFormat = input.outputFormat(forBus: 0)
         }
 
@@ -301,7 +305,7 @@ final class VoiceEngine {
         let out = route.outputs.map { "\($0.portType.rawValue)/\($0.portName)" }.joined(separator: "+")
         let inp = route.inputs.map { "\($0.portType.rawValue)/\($0.portName)" }.joined(separator: "+")
         let peakOutI16 = Int((min(1, peakOut) * 32_767).rounded())
-        Log.audio.info("talk stats: \(self.mode.rawValue, privacy: .public), tx \(t.sent, privacy: .public) sent of \(t.captured, privacy: .public) captured (\(t.dtx, privacy: .public) DTX), rx \(stats.received, privacy: .public) received, \(stats.played, privacy: .public) played, \(stats.lost, privacy: .public) lost, \(stats.late, privacy: .public) late, \(stats.fec, privacy: .public) FEC, \(stats.concealed, privacy: .public) PLC, jitter target \(target, privacy: .public) ms, out \(out.isEmpty ? "none" : out, privacy: .public), in \(inp.isEmpty ? "none" : inp, privacy: .public), peak in \(t.peak, privacy: .public), peak out \(peakOutI16, privacy: .public), \(self.gainDescription, privacy: .public)")
+        Log.audio.info("talk stats: \(self.mode.rawValue, privacy: .public), tx \(t.sent, privacy: .public) sent of \(t.captured, privacy: .public) captured (\(t.dtx, privacy: .public) DTX), rx \(stats.received, privacy: .public) received, \(stats.played, privacy: .public) played, \(stats.lost, privacy: .public) lost, \(stats.late, privacy: .public) late, \(stats.fec, privacy: .public) FEC, \(stats.concealed, privacy: .public) PLC, \(stats.shed, privacy: .public) shed, jitter target \(target, privacy: .public) ms, depth mean \(stats.meanDepthMs, privacy: .public) max \(stats.maxDepthMs, privacy: .public) ms, out \(out.isEmpty ? "none" : out, privacy: .public), in \(inp.isEmpty ? "none" : inp, privacy: .public), peak in \(t.peak, privacy: .public), peak out \(peakOutI16, privacy: .public), \(self.gainDescription, privacy: .public)")
         // No mic, no trace (a host-mic talk captures nothing here).
         if duplex, !t.traceLogged { logMicTrace(t) }
     }

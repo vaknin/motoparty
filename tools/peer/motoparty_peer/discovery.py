@@ -34,6 +34,7 @@ HELLO_TIMEOUT = 1.0  # spec: after connecting, a candidate has 1 s to send the h
 SWEEP_HELLO_TIMEOUT = HELLO_TIMEOUT
 FAIL_BACKOFF = 10.0  # spec: a failed candidate is not probed again for 10 s
 PREFER_GRACE = 0.25  # not in the spec: how long "at once" is when waiting for the preferred host
+LAST_PROBE_INTERVAL = 1.0  # spec (Discovery 5): the last host address is probed every second
 RETRY_TICK = 0.5  # how often Bonjour candidates whose backoff ran out are probed again
 
 _VIRTUAL_IF_PREFIXES = ("lo", "docker", "br-", "veth", "virbr", "vnet", "podman", "cni", "flannel")
@@ -168,13 +169,18 @@ def client_hello(name: str) -> dict:
     return {"t": "hello", "proto": PROTO_VERSION, "role": "client", "name": name}
 
 
+class ProtoMismatch(ProtocolError):
+    """The host speaks another ``proto`` (PROTOCOL.md "Control channel"): not a candidate to
+    retry; the client does not connect to it again until the user asks."""
+
+
 def check_host_hello(msg: dict) -> None:
     if msg.get("t") != "hello":
         raise ProtocolError(f"expected hello first, got {msg.get('t')!r}")
     if msg["role"] != "host":
         raise ProtocolError(f"peer says role {msg['role']!r}, expected 'host'")
     if msg["proto"] != PROTO_VERSION:
-        raise ProtocolError(f"peer speaks proto {msg['proto']}, we speak {PROTO_VERSION}")
+        raise ProtoMismatch(f"peer speaks proto {msg['proto']}, we speak {PROTO_VERSION}")
 
 
 @dataclass(slots=True)
@@ -253,7 +259,7 @@ class Found:
     ip: str
     port: int
     hello: dict
-    via: str  # "bonjour" | "sweep"
+    via: str  # "bonjour" | "sweep" | "last"
     bonjour: BonjourResult | None = None
 
 
@@ -285,8 +291,14 @@ class Discovery:
     browser: BrowserFactory | None = None  # default: a real zeroconf Browser
     log: Callable[[str], None] = lambda _m: None
     failed: dict[tuple[str, int], float] = field(default_factory=dict)  # key -> monotonic time of failure
+    # Discovery 5: the address last linked to; probed at once and every second, no back-off.
+    last: tuple[str, int] | None = None
+    # Hosts with another proto (or that said bye{reason:"proto"}): never probed again.
+    blocked: set[tuple[str, int]] = field(default_factory=set)
 
     def backed_off(self, ip: str, port: int) -> bool:
+        if (ip, port) in self.blocked:
+            return True
         t = self.failed.get((ip, port))
         return t is not None and time.monotonic() - t < self.backoff
 
@@ -309,6 +321,10 @@ class Discovery:
                         hello = await probe(*key, self.sweep_connect_timeout, self.hello_timeout)
                 else:
                     hello = await probe(*key, self.bonjour_connect_timeout, self.hello_timeout)
+            except ProtoMismatch as e:
+                self.blocked.add(key)
+                self.log(f"discovery: {key[0]}:{key[1]} is not usable: {e}; not probed again")
+                return
             except _PROBE_ERRORS as e:
                 self.mark_failed(*key)
                 if via == "bonjour":
@@ -342,6 +358,15 @@ class Discovery:
                 for key, res in list(bonjour.items()):
                     start_probe(key, "bonjour", res)
 
+        async def last_prober() -> None:
+            while (key := self.last) is not None and key not in self.blocked:
+                if key not in probing:  # exempt from the back-off
+                    probing.add(key)
+                    t = asyncio.create_task(run_probe(key, "last", None))
+                    tasks.add(t)
+                    t.add_done_callback(tasks.discard)
+                await asyncio.sleep(LAST_PROBE_INTERVAL)
+
         async def sweeper() -> None:
             await asyncio.sleep(self.sweep_delay)
             while True:
@@ -355,6 +380,9 @@ class Discovery:
         browser = None
         helpers = [asyncio.create_task(sweeper())]
         try:
+            if self.last is not None:
+                self.log(f"discovery: probing the last host address {self.last[0]}:{self.last[1]} every second")
+                helpers.append(asyncio.create_task(last_prober()))
             if self.mdns:
                 self.log("discovery: browsing _motoparty._tcp")
 

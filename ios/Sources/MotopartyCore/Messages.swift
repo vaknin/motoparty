@@ -13,6 +13,7 @@ public enum ControlMessage: Equatable, Sendable {
     case musicError(MusicError)
     case musicPlay(MusicPlay)
     case musicPause(MusicPause)
+    case musicNext(MusicNext)
     case musicStop
     case musicControl(MusicControl)
     case commandText(CommandText)
@@ -39,6 +40,7 @@ public enum ControlMessage: Equatable, Sendable {
         case .musicError: "music.error"
         case .musicPlay: "music.play"
         case .musicPause: "music.pause"
+        case .musicNext: "music.next"
         case .musicStop: "music.stop"
         case .musicControl: "music.control"
         case .commandText: "command.text"
@@ -177,6 +179,14 @@ public struct MusicPause: Codable, Equatable, Sendable {
     public init(id: String, positionMs: Int64) { self.id = id; self.positionMs = positionMs }
 }
 
+/// Track `id` starts at position 0 at `atHostTimeMs`, when the current track
+/// ends by its anchor, so the two play without a gap (PROTOCOL.md "Music flow" 6).
+public struct MusicNext: Codable, Equatable, Sendable {
+    public var id: String
+    public var atHostTimeMs: Int64
+    public init(id: String, atHostTimeMs: Int64) { self.id = id; self.atHostTimeMs = atHostTimeMs }
+}
+
 public struct MusicControl: Codable, Equatable, Sendable {
     public var action: MusicAction
     public init(action: MusicAction) { self.action = action }
@@ -292,8 +302,12 @@ public struct HostState: Codable, Equatable, Sendable {
         public var id: String
         public var title: String
         public var artist: String
-        public init(id: String, title: String, artist: String) {
+        public var durationMs: Int64?
+        /// Cover image URL, when the host sends one.
+        public var art: String?
+        public init(id: String, title: String, artist: String, durationMs: Int64? = nil, art: String? = nil) {
             self.id = id; self.title = title; self.artist = artist
+            self.durationMs = durationMs; self.art = art
         }
     }
 
@@ -334,9 +348,26 @@ public enum ControlCodecError: Error, Equatable {
 public enum ControlCodec {
     private struct Empty: Codable {}
 
+    /// Well-formed UTF-8 only: no stray or truncated sequences, no encoded
+    /// surrogates, no overlong forms.
+    public static func isValidUTF8(_ data: Data) -> Bool {
+        var decoder = UTF8()
+        var bytes = data.makeIterator()
+        while true {
+            switch decoder.decode(&bytes) {
+            case .scalarValue: continue
+            case .emptyInput: return true
+            case .error: return false
+            }
+        }
+    }
+
     /// Decodes one JSON object. Unknown `t` → `.unknown`; unknown fields are
     /// ignored. Throws `ControlCodecError` (see `closesConnection`).
     public static func decode(_ data: Data) throws -> ControlMessage {
+        // Checked here, strictly: a JSON parser may accept ill-formed UTF-8
+        // or put U+FFFD in its place (PROTOCOL.md "Control channel").
+        guard isValidUTF8(data) else { throw ControlCodecError.invalidJSON }
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
@@ -365,6 +396,7 @@ public enum ControlCodec {
         case "music.error": return .musicError(try d(MusicError.self))
         case "music.play": return .musicPlay(try d(MusicPlay.self))
         case "music.pause": return .musicPause(try d(MusicPause.self))
+        case "music.next": return .musicNext(try d(MusicNext.self))
         case "music.stop": return .musicStop
         case "music.control": return .musicControl(try d(MusicControl.self))
         case "command.text": return .commandText(try d(CommandText.self))
@@ -396,6 +428,7 @@ public enum ControlCodec {
         case .musicError(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .musicPlay(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .musicPause(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicNext(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .musicStop: return try encoder.encode(Tagged(t: t, payload: Empty()))
         case .musicControl(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .commandText(let p): return try encoder.encode(Tagged(t: t, payload: p))

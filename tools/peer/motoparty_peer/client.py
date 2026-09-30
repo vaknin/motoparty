@@ -37,6 +37,11 @@ HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase r
 
 MUSIC_CONTROL = {"pause": "pause", "resume": "resume", "next": "next", "previous": "previous"}
 
+# PROTOCOL.md "Talk flow" 1: a talk.open request the host has not answered is dropped after 5 s.
+TALK_REQUEST_TIMEOUT_MS = 5000
+# How long after its own gapless change the peer waits for the host's music.play before warning.
+CHANGE_CONFIRM_MS = 2000
+
 # Volume is local (PROTOCOL.md "Commands"): these buttons never reach the wire.
 LOCAL_VOLUME = {"vol+": "volumeUp", "vol-": "volumeDown"}
 
@@ -47,6 +52,7 @@ class Client:
         self.name = args.name or socket.gethostname()
         self.audio = not args.no_audio
         self.clock = ClockEstimator()
+        self.clock_host: str | None = None  # name of the host the clock window belongs to
         self.conn: discovery.Connection | None = None
         no_mdns = bool(getattr(args, "no_mdns", False))
         # PROTOCOL.md "Discovery"; kept across reconnects (backoff table, last host linked).
@@ -81,6 +87,20 @@ class Client:
         self.req_album: str | None = None  # collection title when browsing one
         self.results: list[dict] = []
         self.queue: list[dict] = []
+        # Talk flow 1: the timer of a talk.open request the host has not decided yet
+        self.talk_request: asyncio.TimerHandle | None = None
+        self.got_bye = False
+        # Music flow 6 bookkeeping (the peer has no gapless player: it logs what a client does).
+        # anchor: the music.play this client is playing on; pending_next: the accepted
+        # music.next (id, atHostTimeMs); changed: the change made on our own clock that the
+        # host's music.play has not confirmed yet.
+        self.cur_id: str | None = None
+        self.anchor: tuple[str, int, int] | None = None
+        self.pending_next: tuple[str, int] | None = None
+        self.next_timer: asyncio.TimerHandle | None = None
+        self.changed: tuple[str, int] | None = None
+        self.changed_timer: asyncio.TimerHandle | None = None
+        self.durations: dict[str, int] = {}
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -100,9 +120,14 @@ class Client:
                 if conn is None:
                     continue
                 await self._session(conn)
-                if not self.quitting:
-                    log("link down; restarting discovery in 1 s")
+                if self.quitting:
+                    break
+                if self.args.host or self.got_bye:
+                    log("link down; reconnecting in 1 s")
                     await asyncio.sleep(1)
+                else:
+                    # PROTOCOL.md "Discovery" 5: the last host address is probed at once
+                    log("link down; restarting discovery")
         except asyncio.CancelledError:
             if not self.quitting:
                 raise
@@ -136,16 +161,38 @@ class Client:
                 if txt.get("proto") != "1":
                     log(f"warning: TXT proto={txt.get('proto')!r}, expected '1'")
             self.discovery.prefer = conn.hello["name"]  # the last host linked wins a tie next time
+            self.discovery.last = (conn.ip, conn.port)  # Discovery 5: probed first after a link loss
             return conn
+        except discovery.ProtoMismatch as e:
+            self._proto_refused(a.host or found.ip, a.port if a.host else found.port, str(e))
+            return None
         except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ProtocolError) as e:
             log(f"connect failed: {type(e).__name__}: {e}")
             await asyncio.sleep(2)
             return None
 
+    def _proto_refused(self, ip: str, port: int, why: str) -> None:
+        """PROTOCOL.md "Control channel": a host with another proto is shown and not connected
+        to again until the user asks: no reconnect loop. With --host that is the only host, so
+        the client stops; with discovery the address is never probed again."""
+        log(f"!! PROTOCOL VERSION MISMATCH with {ip}:{port}: {why}; not connecting to this host again")
+        self.discovery.blocked.add((ip, port))
+        if self.discovery.last == (ip, port):
+            self.discovery.last = None
+        if self.args.host:
+            log("stopping (restart the peer to try again)")
+            self.quitting = True
+
     async def _session(self, conn: discovery.Connection) -> None:
         self.conn = conn
+        self.got_bye = False
         self.last_rx = now_ms()
         self.http_port = conn.hello["httpPort"]
+        # PROTOCOL.md "Clock": a reconnect to the same host keeps the window.
+        if self.clock_host not in (None, conn.hello["name"]):
+            log(f"clock: different host ({conn.hello['name']!r}), window cleared")
+            self.clock.clear()
+        self.clock_host = conn.hello["name"]
         log(f"connected to {conn.ip}:{conn.port}")
         log("<<", js(conn.hello))
         loop = self.loop
@@ -169,6 +216,10 @@ class Client:
             for t in tasks:
                 t.cancel()
             self._set_talk(False, quiet=True)
+            self._drop_request()
+            self._cancel_next("the link going down")
+            self._forget_change()
+            self.anchor = self.cur_id = None
             self.conn = None
             conn.writer.close()
             transport.close()
@@ -253,6 +304,7 @@ class Client:
             # A talk learnt only from state (joined mid-talk) opens in the mode state names.
             self._set_talk(msg["talk"], mic=msg.get("mic"))
             self.queue = msg["queue"]
+            self._state_vs_next(msg.get("music"))
         elif t == "music.results":
             self._results(msg)
         elif t == "talk.open":
@@ -273,19 +325,30 @@ class Client:
             if msg["reason"] == "unavailable" and not self.talk:
                 log(f"   TALK REFUSED by {msg['by']}: microphone unavailable "
                     f"(talk never opened, state.talk stays false) [earcon error]")
+            self._drop_request()
             self._set_talk(False)
         elif t == "announce":
             earcon = f" [earcon {msg['earcon']}]" if "earcon" in msg else ""
             log(f"ANNOUNCE (would speak): {msg['text']!r}{earcon}")
         elif t == "music.load":
+            self.durations[msg["id"]] = msg["durationMs"]
             self._start_download(msg)
         elif t == "music.play":
             await self._music_play(msg)
+        elif t == "music.next":
+            self._music_next(msg)
         elif t in ("music.pause", "music.stop"):
+            self._cancel_next(t)
+            self._forget_change()
+            self.anchor = None
+            self.cur_id = msg.get("id")
             self.player.stop()
             log(f"music: {t.split('.')[1]} (local player stopped)")
         elif t == "bye":
             log(f"host said bye ({msg.get('reason', 'no reason')})")
+            self.got_bye = True
+            if msg.get("reason") == "proto" and self.conn is not None:
+                self._proto_refused(self.conn.ip, self.conn.port, "the host said bye{reason:'proto'}")
             return "close"
         else:
             log(f"   (unexpected {t!r} from host, ignored)")
@@ -300,6 +363,11 @@ class Client:
         if open_ and self.mic_unavailable and mic != "host":
             return  # we refused; never open the mic, whatever state the host broadcasts
         self.talk = open_
+        if open_:
+            self._drop_request()  # the host decided
+            self._cancel_next("a talk")
+            self._forget_change()
+            self.anchor = None  # music is paused for the talk; the host sends music.play after it
         if open_ and mic == "host":
             # Receive only: music paused, voice played, media mode kept; the keepalive task
             # goes on sending keepalives, and nothing is recognised or sent as a command.
@@ -322,6 +390,30 @@ class Client:
             self.talk_mic = None
             if not quiet:
                 log("TALK CLOSED")
+
+    def _drop_request(self) -> None:
+        if self.talk_request is not None:
+            self.talk_request.cancel()
+            self.talk_request = None
+
+    def _request_timeout(self) -> None:
+        self.talk_request = None
+        log(f"talk: request unanswered for {TALK_REQUEST_TIMEOUT_MS} ms, dropped [earcon error]")
+
+    def _talk_trigger(self) -> None:
+        """The talk trigger (stdin `talk`), PROTOCOL.md "Talk flow" 1 and 3."""
+        if self.talk:
+            self.send({"t": "talk.close", "by": "client", "reason": "trigger"})
+        elif self.talk_request is not None:
+            # A second trigger before the host's decision: the host, having opened the talk
+            # meanwhile, closes it.
+            log("talk: second trigger before the host's decision; taking the request back")
+            self._drop_request()
+            self.send({"t": "talk.close", "by": "client", "reason": "trigger"})
+        elif self.mic_unavailable:
+            log("mic is marked unavailable; not asking for talk ('unavailable' to toggle)")
+        elif self.send({"t": "talk.open", "by": "client"}):
+            self.talk_request = self.loop.call_later(TALK_REQUEST_TIMEOUT_MS / 1000, self._request_timeout)
 
     def _hear(self, phrase: str) -> None:
         """A phrase the on-device ASR recognised on the talk microphone (PROTOCOL.md "Commands"):
@@ -440,8 +532,133 @@ class Client:
         if self.conn is conn:
             self.send({"t": "music.ready", "id": id_})
 
+    # Music flow 6 (gapless). The peer's player (mpv/ffplay) cannot queue a track behind another,
+    # so this is the bookkeeping of a real client, logged: what is accepted, what cancels it,
+    # when the change happens on our clock, and whether the host's messages agree.
+
+    def _local(self, host_ms: int) -> float:
+        return self.clock.host_to_local(host_ms) if self.clock.ready else float(host_ms)
+
+    def _cancel_next(self, why: str) -> None:
+        if self.next_timer is not None:
+            self.next_timer.cancel()
+            self.next_timer = None
+        if self.pending_next is not None:
+            log(f"music.next: pending {self.pending_next[0]} CANCELLED by {why}")
+            self.pending_next = None
+
+    def _forget_change(self) -> None:
+        if self.changed_timer is not None:
+            self.changed_timer.cancel()
+            self.changed_timer = None
+        self.changed = None
+
+    def _music_next(self, msg: dict) -> None:
+        id_, at = msg["id"], msg["atHostTimeMs"]
+        if self.pending_next == (id_, at):
+            log(f"music.next: {id_} repeated unchanged, still pending")
+            return
+        if self.changed is not None:
+            # Sent after the music.play of a change we made first: it names the track after.
+            log("music.next: arrived before the music.play of our own change; it names the track after it")
+        if self.pending_next is not None and self.pending_next[0] != id_:
+            self._cancel_next("a music.next naming another track")
+        if self.anchor is None or self.talk:
+            log(f"music.next: WARNING {id_} announced while nothing is playing here "
+                f"({'a talk is open' if self.talk else 'no music.play anchor'}); not accepted, "
+                f"it starts on its music.play")
+            return
+        notes = []
+        if id_ not in self.cached:
+            notes.append("WARNING: we never answered music.ready for it")
+        dur = self.durations.get(self.anchor[0])
+        if dur:
+            off = at - (self.anchor[2] + dur - self.anchor[1])
+            notes.append(f"{off:+d} ms from the end by music.load durationMs")
+        wait = self._local(at) - now_ms()
+        if wait < 0:
+            notes.append(f"WARNING: that time is {-wait:.0f} ms in the past")
+        if self.next_timer is not None:
+            self.next_timer.cancel()
+        self.pending_next = (id_, at)
+        self.next_timer = self.loop.call_later(max(0.0, wait) / 1000, self._change_over, "own clock")
+        log(f"music.next: ACCEPTED {id_} behind {self.anchor[0]}, change at host {at} "
+            f"(in {wait:.0f} ms){'; ' if notes else ''}{'; '.join(notes)}")
+
+    def _change_over(self, via: str) -> None:
+        if self.pending_next is None:
+            return
+        id_, at = self.pending_next
+        if self.next_timer is not None:
+            self.next_timer.cancel()
+            self.next_timer = None
+        self.pending_next = None
+        self.cur_id, self.anchor = id_, (id_, 0, at)
+        log(f"music.next: CHANGE to {id_} at host {at} (by {via}); anchor is now {{{id_}, 0, {at}}}")
+        file = self.cached.get(id_)
+        if file is not None:
+            self.player.schedule(file, 0, self._local(at))
+        if via == "own clock":
+            self._forget_change()
+            self.changed = (id_, at)
+            self.changed_timer = self.loop.call_later(CHANGE_CONFIRM_MS / 1000, self._change_unconfirmed)
+            log(f"music.next: awaiting the host's state and music.play{{{id_}, 0, {at}}}")
+
+    def _change_unconfirmed(self) -> None:
+        self.changed_timer = None
+        if self.changed is not None:
+            log(f"music.next: WARNING no music.play for the change to {self.changed[0]} within "
+                f"{CHANGE_CONFIRM_MS} ms of it")
+            self.changed = None
+
+    def _play_vs_next(self, msg: dict) -> bool:
+        """A music.play against the gapless bookkeeping. True: nothing to seek or restart."""
+        key = (msg["id"], msg["positionMs"], msg["atHostTimeMs"])
+        if self.pending_next is not None and key == (self.pending_next[0], 0, self.pending_next[1]):
+            log("music.next: the music.play of the change arrived before our own clock got there")
+            self._change_over("the host's music.play")
+            return True
+        if self.changed is not None:
+            announced = (self.changed[0], 0, self.changed[1])
+            self._forget_change()
+            if key == announced:
+                log("music.next: music.play of the change carries the announced anchor; no seek, no restart")
+                return True
+            log(f"music.next: WARNING the music.play after the change does not carry the announced "
+                f"anchor: announced {announced}, got {key}")
+        if self.pending_next is not None:
+            if msg["id"] == self.pending_next[0]:
+                log(f"music.next: WARNING music.play for the pending track is not on the announced "
+                    f"anchor: announced {(self.pending_next[0], 0, self.pending_next[1])}, got {key}")
+            if key == self.anchor:
+                self._cancel_next("a music.play repeating the current anchor (taken back; no seek)")
+                return True
+            self._cancel_next(f"a music.play for {msg['id']} that is not the one of the change")
+        elif key == self.anchor:
+            log("music: play repeats the current anchor; no seek")
+            return True
+        return False
+
+    def _state_vs_next(self, music: dict | None) -> None:
+        if self.pending_next is None:
+            return
+        pend = self.pending_next
+        if music is None:
+            self._cancel_next("a state without music")
+        elif not music["playing"]:
+            self._cancel_next("a state whose music is not playing")
+        elif music["id"] == pend[0]:
+            on = (music["positionMs"], music["atHostTimeMs"]) == (0, pend[1])
+            log("music.next: state names the pending track: the host changed over first; awaiting its music.play"
+                + ("" if on else f"; WARNING its anchor {(music['positionMs'], music['atHostTimeMs'])} "
+                                 f"is not the announced (0, {pend[1]})"))
+        elif music["id"] != self.cur_id:
+            self._cancel_next(f"a state naming {music['id']}, neither the current nor the pending track")
+
     async def _music_play(self, msg: dict) -> None:
         id_ = msg["id"]
+        if self._play_vs_next(msg):
+            return
         pending = self.downloads.get(id_)
         if pending and not pending.done():
             await asyncio.shield(pending)
@@ -460,6 +677,7 @@ class Client:
         if file is None:
             log(f"music: {id_} is not cached, cannot play")
             return
+        self.cur_id, self.anchor = id_, (id_, msg["positionMs"], msg["atHostTimeMs"])
         self.player.schedule(file, msg["positionMs"], local)
 
     # ------------------------------------------------------------------ browsing
@@ -541,12 +759,7 @@ class Client:
             if not cmd:
                 continue
             if cmd == "talk":
-                if self.talk:
-                    self.send({"t": "talk.close", "by": "client", "reason": "trigger"})
-                elif self.mic_unavailable:
-                    log("mic is marked unavailable; not asking for talk ('unavailable' to toggle)")
-                else:
-                    self.send({"t": "talk.open", "by": "client"})
+                self._talk_trigger()
             elif cmd == "unavailable":
                 self.mic_unavailable = not self.mic_unavailable
                 log("mic UNAVAILABLE: the next talk.open is answered with "

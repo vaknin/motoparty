@@ -5,8 +5,10 @@ import Foundation
 /// Keeps the last `window` valid samples; the estimate is the offset of the
 /// sample with the smallest RTT (ties: most recent). Samples with RTT < 0 are
 /// discarded and do not take a window slot. A sample whose offset differs
-/// from the current estimate by more than `stepResetMs` (500) clears the
-/// window first: the iOS monotonic clock stops while the device sleeps.
+/// from the current estimate by more than `stepResetMs` (500) plus half its
+/// own RTT clears the window first: the iOS monotonic clock stops while the
+/// device sleeps, but a slow pong alone can be off by half its round trip and
+/// must not throw a good window away.
 public struct ClockSync: Sendable {
     public struct Sample: Equatable, Sendable {
         public var rtt: Double
@@ -30,7 +32,7 @@ public struct ClockSync: Sendable {
         let rtt = Double(t3 - t0) - Double(t2 - t1)
         guard rtt >= 0 else { return false }
         let offset = (Double(t1 - t0) + Double(t2 - t3)) / 2
-        if let limit = stepResetMs, let current = self.offset, abs(offset - current) > limit {
+        if let limit = stepResetMs, let current = self.offset, abs(offset - current) > limit + rtt / 2 {
             samples.removeAll()
         }
         samples.append(Sample(rtt: rtt, offset: offset))

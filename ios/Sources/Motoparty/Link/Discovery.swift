@@ -4,7 +4,7 @@ import MotopartyCore
 import Network
 
 struct HostCandidate {
-    enum Source: String { case bonjour, sweep }
+    enum Source: String { case bonjour, sweep, last }
 
     /// Where the probe actually reached the host (resolved address when known).
     let endpoint: NWEndpoint
@@ -19,8 +19,10 @@ struct HostCandidate {
 /// connect, resolution included, then 1 s for the host's `hello`; the probe
 /// sends nothing). 3 s after start the own /24 is swept too (64 parallel,
 /// 400 ms connect, same 1 s `hello` rule), alongside the browse. A failed
-/// candidate is skipped for 10 s; Bonjour candidates are re-probed every 2 s
-/// while nothing has won. Only a validated host `hello` ends discovery; the
+/// candidate is skipped for 10 s (1 s when the connection was refused: a host
+/// that is restarting); Bonjour candidates are re-probed every 2 s while
+/// nothing has won. After a link loss the address of that link is probed too,
+/// at once and then every second, whatever the backoff says (step 5). Only a validated host `hello` ends discovery; the
 /// last host's name wins over another answer within 300 ms (`HostSelection`).
 final class Discovery {
     /// Called on the main queue, once per start().
@@ -52,6 +54,7 @@ final class Discovery {
     private var browser: NWBrowser?
     private var results: Set<NWBrowser.Result> = []
     private var reprobeTimer: DispatchSourceTimer?
+    private var lastAddressTimer: DispatchSourceTimer?
     private var sweepWork: DispatchWorkItem?
     private var probes: [ObjectIdentifier: NWConnection] = [:]
     private var selection = HostSelection<HostCandidate>()
@@ -61,13 +64,15 @@ final class Discovery {
     private var generation = 0
     private var active = false
 
-    /// `preferredName`: the last host this client linked to.
-    func start(preferredName: String?) {
+    /// `preferredName`: the last host this client linked to. `lastAddress`:
+    /// the IPv4 of the link that was just lost, nil when none was.
+    func start(preferredName: String?, lastAddress: String? = nil) {
         queue.async { [self] in
             stopLocked()
             active = true
             generation += 1
             selection.restart(preferredName: preferredName)
+            if let lastAddress { startLastAddressProbes(lastAddress) }
             startBrowser()
             startReprobeTimer()
             scheduleSweep(afterMs: LinkDefaults.bonjourGraceMs)
@@ -76,6 +81,22 @@ final class Discovery {
 
     func stop() {
         queue.async { [self] in stopLocked() }
+    }
+
+    /// The host `name` (last reached at `address`) speaks another protocol
+    /// version: no probe of it wins, and its address is not probed, until
+    /// `unblock`. Other hosts are found as before.
+    func block(name: String, address: String?) {
+        queue.async { [self] in
+            var keys = ["bonjour:" + name]
+            if let address { keys += ["ip:" + address, "last:" + address] }
+            selection.block(name: name, keys: keys)
+        }
+    }
+
+    /// The user asked to connect again.
+    func unblock() {
+        queue.async { [self] in selection.unblock() }
     }
 
     // MARK: Bonjour
@@ -120,6 +141,32 @@ final class Discovery {
                 Log.link.info("probe \(name, privacy: .public): \(outcome.label, privacy: .public)")
                 self.settle(key, label: name, outcome: outcome, fallback: result.endpoint, txt: txt, source: .bonjour)
             }
+        }
+    }
+
+    // MARK: Last address
+
+    /// PROTOCOL.md "Discovery" step 5: a host that restarted is usually where
+    /// it was. Probed now and every second, exempt from the backoff.
+    private func startLastAddressProbes(_ ip: String) {
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now(), repeating: .milliseconds(Int(HostSelection<HostCandidate>.lastAddressProbeMs)))
+        t.setEventHandler { [weak self] in self?.probeLastAddress(ip) }
+        t.resume()
+        lastAddressTimer = t
+    }
+
+    private func probeLastAddress(_ ip: String) {
+        guard active else { return }
+        let key = "last:" + ip
+        guard selection.beginLastAddressProbe(key) else { return }
+        let port = NWEndpoint.Port(rawValue: UInt16(LinkDefaults.controlPort))!
+        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(ip), port: port)
+        probe(endpoint, connectMs: LinkDefaults.sweepTimeoutMs) { [weak self] outcome in
+            guard let self else { return }
+            // One line per second while the host is away would bury the log.
+            if case .host = outcome { Log.link.info("probe last address \(ip, privacy: .public): ok") }
+            self.settle(key, label: ip, outcome: outcome, fallback: endpoint, txt: nil, source: .last)
         }
     }
 
@@ -253,10 +300,15 @@ final class Discovery {
     private func settle(_ key: String, label: String, outcome: ProbeOutcome, fallback: NWEndpoint, txt: ServiceTXT?, source: HostCandidate.Source) {
         let now = MonotonicClock.nowMs()
         guard case .host(let hello, let remote) = outcome else {
-            selection.probeFailed(key, nowMs: now)
-            if case .wrongProto(let p) = outcome, active {
-                DispatchQueue.main.async { self.onWrongProto?(label, p) }
+            if case .wrongProto(let p) = outcome {
+                // Not probed again until the user asks (no probe loop either).
+                selection.probeWrongProto(key)
+                if active { DispatchQueue.main.async { self.onWrongProto?(label, p) } }
+                return
             }
+            var refused = false
+            if case .refused = outcome { refused = true }
+            selection.probeFailed(key, nowMs: now, refused: refused)
             return
         }
         let candidate = HostCandidate(endpoint: remote ?? fallback, name: hello.name, txt: txt, source: source)
@@ -290,6 +342,8 @@ final class Discovery {
         sweepWork = nil
         reprobeTimer?.cancel()
         reprobeTimer = nil
+        lastAddressTimer?.cancel()
+        lastAddressTimer = nil
         browser?.cancel()
         browser = nil
         results = []

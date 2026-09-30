@@ -8,14 +8,27 @@ final class Announcer: NSObject, AVSpeechSynthesizerDelegate {
     /// Main queue. true while speaking (used to duck the music).
     var onSpeakingChanged: ((Bool) -> Void)?
 
-    private let synthesizer = AVSpeechSynthesizer()
+    private var synthesizer = AVSpeechSynthesizer()
     /// The app volume (`AppVolume.Gains.cueVolume`), for the next utterance.
     var volume: Float = 1
 
     override init() {
         super.init()
+        configure()
+    }
+
+    private func configure() {
         synthesizer.delegate = self
         synthesizer.usesApplicationAudioSession = true
+    }
+
+    /// After a media-services reset: a new synthesizer (the old one is dead,
+    /// and whatever it was saying is gone).
+    func rebuild() {
+        synthesizer.delegate = nil
+        synthesizer = AVSpeechSynthesizer()
+        configure()
+        onSpeakingChanged?(false)
     }
 
     func speak(_ text: String, language: String) {

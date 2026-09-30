@@ -6,3 +6,6 @@ product: Motoparty
 # Merged over xtool's generated Info.plist (background audio, mic, local
 # network, Bonjour, speech, ATS local networking).
 infoPath: Info.plist
+# The home-screen icon: one 1024x1024 PNG without alpha (no asset catalog);
+# redrawn by scripts/make-icon.sh.
+iconPath: Icon.png

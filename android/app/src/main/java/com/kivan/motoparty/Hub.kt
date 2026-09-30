@@ -6,40 +6,54 @@ import com.kivan.motoparty.music.DownloadProgress
 import com.kivan.motoparty.music.MusicPhase
 import com.kivan.motoparty.music.OutputRoute
 import com.kivan.motoparty.music.Track
+import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
-/** What the UI and overlay show. Written by [LinkService]; read-only for everyone else. */
+/**
+ * What the UI and overlay show. Written by [LinkService]; read-only for everyone else.
+ *
+ * Only what a screen draws and what changes when something happens: the numbers that move every
+ * second are in [Diagnostics], the log in [Hub.logLines], and the playback position is the
+ * [anchor] the screen interpolates itself. So an idle second rewrites nothing here and nothing
+ * recomposes (UA4).
+ */
+@Immutable
 data class LinkStatus(
     val running: Boolean = false,
     val nsdName: String? = null,
     val clientName: String? = null,
-    val clientAddress: String? = null,
-    /** Client clock minus host clock from the last ping (t0 - t1; includes one-way delay). */
-    val clientSkewMs: Long? = null,
-    val lastPingAgeMs: Long? = null,
     val talkOpen: Boolean = false,
-    val jitterTargetMs: Int = 0,
-    val underruns: Int = 0,
-    val udpIn: Long = 0,
-    val udpOut: Long = 0,
-    /** What our own call route picked, or null while no call route is held. */
-    val audioDevice: String? = null,
-    /** Every audio device the phone has, in short ([com.kivan.motoparty.audio.DeviceRoster]). */
-    val audioDevices: String? = null,
+    /**
+     * The open talk's microphone is live: the "live" earcon has fired. Between [talkOpen] and this
+     * the headset is still switching (1–1.5 s on the AirPods route) and the button says so.
+     */
+    val talkLive: Boolean = false,
+    /** A talk just closed and its audio teardown (the switch back to media) is still running. */
+    val talkClosing: Boolean = false,
+    /**
+     * A spoken command can still be given in the open talk: the first-phrase window of a talk this
+     * phone opened has not passed, or the talk is solo (every phrase is one). The Ride tab shows
+     * the command list while it is set.
+     */
+    val commandWindow: Boolean = false,
+    /** The last phrase the recogniser heard in the open talk, or null. Cleared when it closes. */
+    val heard: String? = null,
     val nowPlaying: Track? = null,
     val playing: Boolean = false,
-    val positionMs: Long = 0,
+    /** Where the music is on the host clock; the screens interpolate from it ([PlaybackAnchor.at]). */
+    val anchor: PlaybackAnchor? = null,
     /** Why [nowPlaying] is not playing yet (loading, waiting for the client, parked by talk), or null. */
     val musicPhase: MusicPhase? = null,
     val queue: List<Track> = emptyList(),
     val busy: String? = null,
+    /** The last spoken reply, for a few seconds ([LinkHost] clears it). */
     val lastAnnounce: String? = null,
-    val lastDriftMs: Long? = null,
+    /** The last reply that was a failure ("No coverage"); stays until dismissed or the next success. */
+    val error: String? = null,
     /** Where the music plays; the latency trim shown in Settings is this route's. Null until known. */
     val outputRoute: OutputRoute? = null,
-    val cacheMb: Long = 0,
     /** Ids of the tracks in the active cache: the "downloaded" mark on song rows. */
     val cached: Set<String> = emptySet(),
     /** Album and playlist downloads (Search tab), by collection id. */
@@ -57,9 +71,52 @@ data class LinkStatus(
     val talkOnEarbudsFallback: Boolean = false,
     /** A long Lark recording ([com.kivan.motoparty.audio.UsbStereoProbe.startLong]) is running. */
     val longRecording: Boolean = false,
-    val log: List<String> = emptyList(),
+    /**
+     * The host runs without its microphone: the foreground service could not claim the
+     * `microphone` type (a restart by the system in the background, or RECORD_AUDIO not granted),
+     * so every talk is answered "unavailable" ([Hub.micFgsType]). Opening the app or pressing the
+     * notification's Talk claims it again. Written by [LinkService].
+     */
+    val micOff: Boolean = false,
 )
 
+/**
+ * The music's position as a fixed point: [positionMs] at [atMs] on `SystemClock.elapsedRealtime`,
+ * moving only while [playing]. Published instead of a position that would change every second.
+ */
+@Immutable
+data class PlaybackAnchor(val positionMs: Long, val atMs: Long, val playing: Boolean) {
+    /** The position at [nowMs], never negative (a start scheduled ahead) nor past [durationMs] (when known). */
+    fun at(nowMs: Long, durationMs: Long = 0): Long {
+        val p = if (playing) positionMs + (nowMs - atMs) else positionMs
+        return if (durationMs > 0) p.coerceIn(0, durationMs) else p.coerceAtLeast(0)
+    }
+
+    /** [at] as a fraction of [durationMs], 0 when the length is unknown. */
+    fun fraction(nowMs: Long, durationMs: Long): Float =
+        if (durationMs > 0) (at(nowMs, durationMs).toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+}
+
+/** The numbers of the Developer section; rewritten once a second, read by nothing else. */
+@Immutable
+data class Diagnostics(
+    val clientAddress: String? = null,
+    /** Client clock minus host clock from the last ping (t0 - t1; includes one-way delay). */
+    val clientSkewMs: Long? = null,
+    val lastPingAgeMs: Long? = null,
+    val jitterTargetMs: Int = 0,
+    val underruns: Int = 0,
+    val udpIn: Long = 0,
+    val udpOut: Long = 0,
+    /** What our own call route picked, or null while no call route is held. */
+    val audioDevice: String? = null,
+    /** Every audio device the phone has, in short ([com.kivan.motoparty.audio.DeviceRoster]). */
+    val audioDevices: String? = null,
+    val lastDriftMs: Long? = null,
+    val cacheMb: Long = 0,
+)
+
+@Immutable
 /** The Search tab's last search: songs or collections, depending on [kind] ([SearchKind]). */
 data class SearchState(
     val kind: String = SearchKind.SONGS,
@@ -70,6 +127,7 @@ data class SearchState(
     val error: String? = null,
 )
 
+@Immutable
 data class BrowseState(
     val collection: CollectionItem,
     val loading: Boolean = true,
@@ -89,6 +147,10 @@ sealed interface UiAction {
     data class Jump(val index: Int, val id: String) : UiAction
     data class Remove(val index: Int, val id: String) : UiAction
     data object ClearQueue : UiAction
+    /** Undo of a [Remove]: [track] back at `upcoming[index]`. */
+    data class Restore(val index: Int, val track: Track) : UiAction
+    /** The rider closed the error banner ([LinkStatus.error]). */
+    data object DismissError : UiAction
     /** Download every track of the album or playlist [collection] into the cache. */
     data class Download(val collection: CollectionItem, val tracks: List<Track>) : UiAction
     data class CancelDownload(val collectionId: String) : UiAction
@@ -104,18 +166,25 @@ sealed interface UiAction {
 /** Process-wide state shared between the service, the overlay and the activity. */
 object Hub {
     val status = MutableStateFlow(LinkStatus())
+    /** Once a second while the host runs; only the Developer section collects it. */
+    val diagnostics = MutableStateFlow(Diagnostics())
+    /** The last [LOG_LINES] log lines, newest first; only the Developer section collects it. */
+    val logLines = MutableStateFlow<List<String>>(emptyList())
     val actions = MutableSharedFlow<UiAction>(extraBufferCapacity = 16)
 
     /**
      * Whether the foreground service actually holds the `microphone` type. It can be refused
      * (SecurityException on a sticky restart), and without it recording is impossible, which is
-     * one of the "mic unavailable" cases of PROTOCOL.md "Talk flow" step 1.
+     * one of the "mic unavailable" cases of PROTOCOL.md "Talk flow" step 1. [LinkStatus.micOff]
+     * is its negation while the host runs, for the notification and the Ride tab.
      */
     @Volatile
     var micFgsType: Boolean = false
 
     fun log(line: String) {
         android.util.Log.i("Motoparty", line)
-        status.update { it.copy(log = (listOf(line) + it.log).take(40)) }
+        logLines.update { (listOf(line) + it).take(LOG_LINES) }
     }
+
+    private const val LOG_LINES = 40
 }

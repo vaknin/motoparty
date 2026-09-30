@@ -39,9 +39,15 @@ class TrackServer(
         job = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 val s = try { ss.accept() } catch (_: IOException) { break }
+                mark(s)
                 launch(Dispatchers.IO) { s.use { runCatching { serve(it) } } }
             }
         }
+    }
+
+    /** Track bytes are background traffic (CS1), behind voice and control on the hotspot. */
+    internal fun mark(socket: Socket) {
+        runCatching { socket.trafficClass = TRAFFIC_CLASS }
     }
 
     fun stop() {
@@ -137,6 +143,8 @@ class TrackServer(
 
     companion object {
         const val PORT = 47802
+        /** DSCP CS1 (background) in the TOS byte. */
+        const val TRAFFIC_CLASS = 0x20
         private val PATH = Regex("/track/([^/]+)\\.m4a")
         internal val INVALID = -1L to -1L
 

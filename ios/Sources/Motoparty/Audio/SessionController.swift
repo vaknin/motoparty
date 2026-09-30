@@ -57,10 +57,18 @@ final class SessionController {
         if let muteObserver { NotificationCenter.default.removeObserver(muteObserver) }
     }
 
+    private static let mediaSampleRate: Double = 48_000
+    /// iOS's default I/O buffer, 1024 frames (there is no "unset").
+    private static let mediaIOBufferDuration: TimeInterval = 1024.0 / 48_000
+
     func activate(_ newRoute: AudioRoute) throws {
         switch newRoute {
         case .media, .listen:
             try session.setCategory(.playback, mode: .default, options: [])
+            // The talk session's preferences outlive its category: back to
+            // the music rate and the default I/O buffer.
+            try? session.setPreferredSampleRate(Self.mediaSampleRate)
+            try? session.setPreferredIOBufferDuration(Self.mediaIOBufferDuration)
         case .talk:
             // `.defaultToSpeaker`: with no headset the talk (and its earcons)
             // plays on the loudspeaker, not the quiet earpiece. A Bluetooth

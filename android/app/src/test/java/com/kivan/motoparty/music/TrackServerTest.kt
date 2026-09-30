@@ -63,6 +63,15 @@ class TrackServerTest {
     }
 
     @Test
+    fun trackSocketsAreBackgroundClass() {
+        java.net.Socket("127.0.0.1", server.boundPort).use { s ->
+            server.mark(s)
+            assertEquals(0x20, TrackServer.TRAFFIC_CLASS)
+            assertEquals(TrackServer.TRAFFIC_CLASS, s.trafficClass)
+        }
+    }
+
+    @Test
     fun rangeParser() {
         assertEquals(0L to 99L, TrackServer.parseRange("bytes=0-99", 1000))
         assertEquals(900L to 999L, TrackServer.parseRange("bytes=900-5000", 1000))

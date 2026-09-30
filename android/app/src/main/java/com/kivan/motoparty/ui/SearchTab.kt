@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kivan.motoparty.BrowseState
@@ -76,15 +78,15 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
     }
     LazyColumn(modifier.fillMaxSize()) {
         item {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp),
                     placeholder = { Text("Songs, albums, artists") },
                     leadingIcon = { Icon(Icons.Search, null) },
                     trailingIcon = {
-                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Close, "Clear") }
+                        if (query.isNotEmpty()) IconButton(onClick = { query = "" }, Modifier.size(56.dp)) { Icon(Icons.Close, "Clear") }
                     },
                     singleLine = true,
                     shape = RoundedCornerShape(28.dp),
@@ -101,7 +103,8 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
                         FilterChip(
                             selected = kind == k,
                             onClick = { kind = k; run(k) },
-                            label = { Text(label) },
+                            label = { Text(label, style = MaterialTheme.typography.titleSmall) },
+                            modifier = Modifier.height(48.dp),
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -113,6 +116,9 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
         }
         val r = s.search
         val shown = r.kind == kind && r.query.isNotEmpty()
+        // The text in the box was edited since: say whose results these are (UA10).
+        val stale = shown && !r.loading && r.error == null && r.query != query.trim()
+        if (stale && query.isNotBlank()) item(key = "stale") { Heading("Results for “${r.query}”") }
         when {
             !s.running -> item { EmptyState(Icons.Search, "Motoparty is off", "Start it on the Ride tab to search.") }
             query.isBlank() && (history.searches.isNotEmpty() || history.played.isNotEmpty()) -> {
@@ -139,10 +145,10 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
             }
             shown && r.loading -> item { Loading() }
             shown && r.error != null -> item { EmptyState(Icons.Search, r.error, "Try again when there is signal.") }
-            shown && kind == SearchKind.SONGS && r.songs.isNotEmpty() -> itemsIndexed(r.songs) { _, t ->
+            shown && kind == SearchKind.SONGS && r.songs.isNotEmpty() -> itemsIndexed(r.songs, key = { i, t -> "s/$i/${t.id}" }) { _, t ->
                 SongRow(t, highlighted = t.id == s.nowPlaying?.id, downloaded = t.id in s.cached, cb)
             }
-            shown && kind != SearchKind.SONGS && r.collections.isNotEmpty() -> itemsIndexed(r.collections) { _, c ->
+            shown && kind != SearchKind.SONGS && r.collections.isNotEmpty() -> itemsIndexed(r.collections, key = { i, c -> "c/$i/${c.id}" }) { _, c ->
                 TrackRow(
                     c.title,
                     byline(c.artist, c.count?.let { "$it songs" }),
@@ -156,7 +162,7 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
                 EmptyState(
                     Icons.Note,
                     "Search YouTube Music",
-                    "Tap a song to play it now, or ⋮ to play it next or add it to the queue. " +
+                    "Tap a song to play it now. The button beside it plays it next or adds it to the queue. " +
                         "Albums and playlists open first, so you can see what's in them.",
                 )
             }
@@ -170,7 +176,7 @@ private val KINDS = listOf(SearchKind.SONGS to "Songs", SearchKind.ALBUMS to "Al
 @Composable
 private fun RecentSearchRow(r: RecentSearch, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().heightIn(min = 60.dp).clickable(onClick = onClick).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -199,26 +205,28 @@ private fun SongRow(t: Track, highlighted: Boolean, downloaded: Boolean, cb: Cal
         highlighted = highlighted,
         downloaded = downloaded,
         onClick = onPlay ?: { cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, listOf(t))) },
-        trailing = { QueueMenu { mode -> cb.onAction(UiAction.Enqueue(mode, listOf(t))) } },
+        trailing = { QueueMenu(t.title) { mode -> cb.onAction(UiAction.Enqueue(mode, listOf(t))) } },
     )
 }
 
 /** ⋮ with "Play next" and "Add to queue": a real button, not a gesture, so it works with gloves. */
 @Composable
-private fun QueueMenu(onPick: (String) -> Unit) {
+private fun QueueMenu(title: String, onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { open = true }) { Icon(Icons.More, "More") }
+        IconButton(onClick = { open = true }, Modifier.size(60.dp)) { Icon(Icons.More, "More options for $title") }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(
                 text = { Text("Play next") },
                 leadingIcon = { Icon(Icons.Play, null) },
                 onClick = { open = false; onPick(EnqueueMode.NEXT) },
+                modifier = Modifier.heightIn(min = 60.dp),
             )
             DropdownMenuItem(
                 text = { Text("Add to queue") },
                 leadingIcon = { Icon(Icons.QueueAdd, null) },
                 onClick = { open = false; onPick(EnqueueMode.END) },
+                modifier = Modifier.heightIn(min = 60.dp),
             )
         }
     }
@@ -230,8 +238,8 @@ private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modif
     LazyColumn(modifier.fillMaxSize()) {
         item {
             Row(Modifier.padding(start = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { cb.onAction(UiAction.CloseBrowse) }) { Icon(Icons.Back, "Back") }
-                Text("Search", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                IconButton(onClick = { cb.onAction(UiAction.CloseBrowse) }, Modifier.size(56.dp)) { Icon(Icons.Back, "Back") }
+                Text("Search", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         item {
@@ -248,6 +256,7 @@ private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modif
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
                 val count = if (b.tracks.isNotEmpty()) b.tracks.size else c.count
                 Text(
@@ -262,7 +271,7 @@ private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modif
                     Button(
                         onClick = { cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, b.tracks)) },
                         enabled = ready,
-                        modifier = Modifier.weight(1f).height(52.dp),
+                        modifier = Modifier.weight(1f).height(56.dp),
                     ) {
                         Icon(Icons.Play, null)
                         Text("Play", Modifier.padding(start = 8.dp))
@@ -270,7 +279,7 @@ private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modif
                     OutlinedButton(
                         onClick = { cb.onAction(UiAction.Enqueue(EnqueueMode.END, b.tracks)) },
                         enabled = ready,
-                        modifier = Modifier.weight(1f).height(52.dp),
+                        modifier = Modifier.weight(1f).height(56.dp),
                     ) {
                         Icon(Icons.QueueAdd, null)
                         Text("Add to queue", Modifier.padding(start = 8.dp))
@@ -284,8 +293,8 @@ private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modif
             b.error != null -> item { EmptyState(Icons.Album, b.error, "Try again when there is signal.") }
             b.tracks.isEmpty() -> item { EmptyState(Icons.Album, "No songs in this one") }
             // Tapping a song plays the collection from there, so the rest of it follows.
-            else -> itemsIndexed(b.tracks) { i, t ->
-                SongRow(t, highlighted = false, downloaded = t.id in s.cached, cb) {
+            else -> itemsIndexed(b.tracks, key = { i, t -> "b/$i/${t.id}" }) { i, t ->
+                SongRow(t, highlighted = t.id == s.nowPlaying?.id, downloaded = t.id in s.cached, cb) {
                     cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, b.tracks.drop(i)))
                 }
             }
@@ -309,7 +318,7 @@ private fun DownloadButton(b: BrowseState, s: LinkStatus, cb: Callbacks) {
             else cb.onAction(UiAction.Download(b.collection, b.tracks))
         },
         enabled = !done,
-        modifier = Modifier.fillMaxWidth().height(52.dp),
+        modifier = Modifier.fillMaxWidth().height(56.dp),
     ) {
         if (running) {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)

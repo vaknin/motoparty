@@ -1,6 +1,7 @@
 package com.kivan.motoparty.link
 
 import com.kivan.motoparty.core.CloseReason
+import com.kivan.motoparty.core.FirstPhraseGate
 import com.kivan.motoparty.core.Role
 
 /**
@@ -25,6 +26,13 @@ class TalkController {
     /** A trigger fired on this phone: toggles. */
     fun onLocalTrigger(): Action = if (isOpen) close(Role.HOST, CloseReason.TRIGGER) else open(Role.HOST)
 
+    /**
+     * May a press on this phone go ahead while something else holds the microphone ([micHeld]:
+     * the debug USB probe)? Only an *open* is blocked: a press always ends an open talk, or the
+     * rider would be left in a talk they cannot end.
+     */
+    fun localTriggerAllowed(micHeld: Boolean): Boolean = isOpen || !micHeld
+
     fun onClientOpenRequest(): Action? = if (isOpen) null else open(Role.CLIENT)
 
     /**
@@ -40,6 +48,13 @@ class TalkController {
     }
 
     fun onLinkLost(): Action? = if (isOpen) close(Role.HOST, CloseReason.LINK) else null
+
+    /**
+     * A client `hello` replaced the connection of the client named [previous] (PROTOCOL.md
+     * "Liveness"). The same [name] is that client back on a new socket before we noticed the old
+     * one die: the talk carries on. Another name is another client: link loss for the talk.
+     */
+    fun onClientReplaced(previous: String, name: String): Action? = if (previous == name) null else onLinkLost()
 
     /**
      * This phone's own microphone or call route failed after talk was already open (the route
@@ -66,4 +81,17 @@ class TalkController {
         isOpen = false
         return Action.Close(by, reason)
     }
+}
+
+/**
+ * A client connected while a talk is open. A solo talk stops being one: from here the rider is
+ * talking to someone, so no later phrase may be a command (PROTOCOL.md "Commands": only the
+ * opener's first phrase is, and a talk that was already running has long spent it). The gate is
+ * re-opened as one that never commands; true when it was solo, and the caller then stops its
+ * recognizer. Any other gate is left alone (a same-name reconnect keeps its window).
+ */
+fun FirstPhraseGate.onClientJoined(): Boolean {
+    if (role != FirstPhraseGate.Role.SOLO) return false
+    open(FirstPhraseGate.Role.OTHER)
+    return true
 }

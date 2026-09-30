@@ -1,42 +1,33 @@
 #if os(iOS)
 import MotopartyCore
 import SwiftUI
+import UIKit
 
-/// The riding screen: link pill, now playing with transport controls, and the
-/// one big glove-friendly TALK button (a command is the first phrase of a talk
-/// this phone opened). Settings in a sheet.
+/// The riding screen. Everything above scrolls when it does not fit (small
+/// phones, large text: audit UI5); the one big glove-friendly TALK button and
+/// the volume level stay pinned at the bottom, in the thumb zone. A command is
+/// the first phrase of a talk this phone opened. Settings in a sheet.
 struct RideView: View {
     @EnvironmentObject private var model: AppModel
     @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 12) {
-                NowPlayingCard()
-                if let downloading = model.downloading {
-                    Label("Downloading \(downloading)…", systemImage: "arrow.down.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                Spacer(minLength: 0)
-                VoiceCommands()
-                BigButton(title: talkTitle, systemImage: "mic.fill", color: talkColor) {
-                    model.talkButton()
-                }
-                HStack(spacing: 12) {
-                    VolumeIndicator()
-                    if model.link.isConnected {
-                        Text("Hold volume up: talk")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(spacing: 12) {
+                        PermissionsCard()
+                        ProblemBanner()
+                        NowPlayingCard(artSize: Self.artSize(viewport: geometry.size.height))
+                        StatusLines()
+                        VoiceCommands()
                     }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
                 }
-                StatusLines()
+                .scrollBounceBehavior(.basedOnSize)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 8)
+            .safeAreaInset(edge: .bottom, spacing: 0) { TalkDock() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) { ConnectionPill() }
@@ -49,48 +40,199 @@ struct RideView: View {
                 SettingsView()
                     .environmentObject(model)
                     .environmentObject(model.settings)
+                    .environmentObject(model.stats)
+                    .tint(Brand.orange)
+                    .preferredColorScheme(.dark)
             }
         }
     }
 
-    private var talkTitle: String {
-        if model.talkOpen { return "END TALK" }
-        if model.talkRequested { return "TALK…" }
-        return "TALK"
+    /// The cover is as big as the room above TALK allows: nil (a small cover
+    /// beside the title) when there is little, up to 200 pt when there is a lot.
+    static func artSize(viewport: CGFloat) -> CGFloat? {
+        let room = viewport - 340
+        return room < 120 ? nil : min(200, room)
+    }
+}
+
+// MARK: - Talk
+
+/// TALK, pinned above the tab bar, with the app volume under it.
+private struct TalkDock: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let phase = TalkPhase(requested: model.talkRequested, open: model.talkOpen,
+                              live: model.talkLive, mode: model.talkMode)
+        VStack(spacing: 8) {
+            TalkButton(phase: phase, liveSince: model.talkLiveSince, linked: model.link.isConnected) {
+                model.talkButton()
+            }
+            HStack(spacing: 12) {
+                VolumeIndicator()
+                Spacer(minLength: 0)
+                if model.link.isConnected {
+                    Text("Hold volume up: talk")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(.bar)
+        // A press, the talk going live, and its end: felt through a glove.
+        // (iOS mutes haptics while a microphone records, so "live" is only
+        // felt in a talk on the rider's mic; the earcon says it in every talk.)
+        .sensoryFeedback(trigger: phase) { old, new in
+            if new.isLive || new.isConnecting { return .impact(weight: .heavy) }
+            return old.isLive ? .impact(weight: .medium) : nil
+        }
+    }
+}
+
+/// Idle: orange "TALK". The press is on its way, or the headset is still
+/// switching: amber "Connecting…" with a pulsing mic. Live: red "END TALK",
+/// who is heard through which mic, and how long the talk has run.
+private struct TalkButton: View {
+    let phase: TalkPhase
+    let liveSince: Date?
+    let linked: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: phase.isLive ? "waveform" : "mic.fill")
+                    .font(.system(size: 30, weight: .bold))
+                    .symbolEffect(.pulse, isActive: phase.isConnecting)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(height: 34)
+                Text(phase.buttonTitle)
+                    .font(.largeTitle.weight(.heavy))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                caption
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 128)
+        }
+        .buttonStyle(TalkButtonStyle(background: background, foreground: foreground))
+        .opacity(linked ? 1 : 0.5)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        .animation(.easeInOut(duration: 0.2), value: phase)
+        .accessibilityLabel(phase.accessibilityLabel)
+        .accessibilityValue(phase.caption ?? (linked ? "" : "Not connected"))
+        .accessibilityHint(linked ? "Holding volume up does the same with the phone in a pocket" : "")
     }
 
-    private var talkColor: Color {
-        if model.talkOpen { return .red }
-        if model.talkRequested { return .yellow }
-        return .orange
+    @ViewBuilder
+    private var caption: some View {
+        if !linked {
+            Text("Not connected")
+        } else if let text = phase.caption {
+            HStack(spacing: 6) {
+                Text(text)
+                if let liveSince {
+                    Text("·")
+                    Text(liveSince, style: .timer).monospacedDigit()
+                }
+            }
+        } else if phase.isConnecting {
+            Text("Press again to cancel")
+        } else {
+            Text("Say a command first, or just talk")
+        }
+    }
+
+    private var background: Color {
+        switch phase {
+        case .idle: Brand.orange
+        case .connecting: Brand.waiting
+        case .live: Brand.live
+        }
+    }
+
+    private var foreground: Color {
+        phase.isLive ? .white : Brand.onOrange
+    }
+}
+
+private struct TalkButtonStyle: ButtonStyle {
+    let background: Color
+    let foreground: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(foreground)
+            .background(background, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .brightness(configuration.isPressed ? -0.12 : 0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
     }
 }
 
 /// What the first phrase of a talk this phone opened may be (PROTOCOL.md
-/// "Commands"), the same list as the Pixel's.
+/// "Commands"), the same list as the Pixel's, as chips. Folded away by who
+/// knows them; the choice is remembered.
 private struct VoiceCommands: View {
-    private static let lines = [
-        "play <song> · play album / artist / playlist <name>",
-        "pause · resume",
-        "next · previous",
-        "louder · quieter",
-        "what's playing",
-        "shuffle",
-        "over (ends the talk)",
-    ]
+    @AppStorage("voiceCommandsExpanded") private var expanded = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Voice commands").font(.subheadline.weight(.semibold))
-            Text("Press TALK and say one of these first; after that it's just talk.")
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(Self.lines, id: \.self) { Text($0).lineLimit(1).minimumScaleFactor(0.8) }
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Press TALK and say one of these first. After that it's just talk.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                FlowLayout(spacing: 6) {
+                    ForEach(VoiceCommandChip.all, id: \.words) { chip in
+                        CommandChip(chip: chip)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.top, 8)
+        } label: {
+            Label("Voice commands", systemImage: "text.bubble")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+                .frame(minHeight: 32)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Brand.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct CommandChip: View {
+    let chip: VoiceCommandChip
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(chip.words).fontWeight(.medium)
+            if let argument = chip.argument {
+                Text(argument).italic().foregroundStyle(.secondary)
+            }
+            if let note = chip.note {
+                Text("· \(note)").foregroundStyle(.secondary)
             }
         }
         .font(.footnote)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.09), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(chip.accessibilityText)
     }
 }
 
@@ -111,7 +253,7 @@ private struct VolumeIndicator: View {
             HStack(spacing: 1.5) {
                 ForEach(1...AppVolume.maxLevel, id: \.self) { step in
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(step <= level ? (step > AppVolume.unityLevel ? Color.orange : Color.primary)
+                        .fill(step <= level ? (step > AppVolume.unityLevel ? Brand.orange : Color.primary)
                                             : Color.secondary.opacity(0.25))
                         .frame(width: 3, height: 10)
                 }
@@ -135,71 +277,122 @@ private struct VolumeIndicator: View {
     }
 }
 
-/// Green dot and host name when connected, orange and what the link is doing
-/// otherwise; the round trip in small print.
+// MARK: - Link
+
+/// Green dot and the rider's phone's name when linked, amber and what the
+/// link is doing otherwise. (The round trip is in Settings → Diagnostics.)
 private struct ConnectionPill: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(model.link.isConnected ? Color.green : Color.orange)
+                .fill(model.link.isConnected ? Brand.good : Brand.waiting)
                 .frame(width: 8, height: 8)
-            Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
-            if model.link.isConnected, let rtt = model.rttMs {
-                Text("\(Int(rtt.rounded())) ms").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-            }
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
-        .background(.thinMaterial, in: Capsule())
+        .background(Color.primary.opacity(0.1), in: Capsule())
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(model.linkLabel)
     }
 
     private var title: String {
         if case .connected(let name) = model.link { return name }
-        return model.link.label
+        return model.linkLabel
     }
 }
 
+// MARK: - Now playing
+
 private struct NowPlayingCard: View {
     @EnvironmentObject private var model: AppModel
+    /// nil: a small cover beside the title (little room).
+    let artSize: CGFloat?
+
+    private var art: String? { model.nowPlaying == nil ? nil : model.hostState?.music?.art }
 
     var body: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 14) {
-                Artwork(url: model.nowPlaying == nil ? nil : model.hostState?.music?.art, size: 88)
-                VStack(alignment: .leading, spacing: 4) {
-                    if let track = model.nowPlaying {
-                        Text(track.title).font(.headline).lineLimit(2)
-                        Text(track.artist).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                    } else {
-                        Text("Nothing playing").font(.headline).foregroundStyle(.secondary)
-                        Text("Search, or press TALK and say “play album …”")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
+            if let artSize {
+                Artwork(url: art, size: artSize, cornerRadius: 20)
+                    .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+                titles(centered: true)
+            } else {
+                HStack(spacing: 14) {
+                    Artwork(url: art, size: 88)
+                    titles(centered: false)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let track = model.nowPlaying {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    let position = model.displayPositionMs() ?? 0
-                    VStack(spacing: 4) {
-                        ProgressView(value: min(position, Double(track.durationMs)), total: Double(max(track.durationMs, 1)))
-                        HStack {
-                            Text(TimeText.clock(position))
-                            Spacer()
-                            Text(TimeText.clock(Double(track.durationMs)))
-                        }
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    }
-                }
+                TrackProgress(durationMs: track.durationMs)
                 MusicStatusLine(status: model.musicStatus)
             }
             TransportControls()
+            UpNextLine()
         }
         .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .frame(maxWidth: .infinity)
+        .background { ArtBackdrop(url: art) }
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func titles(centered: Bool) -> some View {
+        VStack(alignment: centered ? .center : .leading, spacing: 4) {
+            if let track = model.nowPlaying {
+                Text(track.title)
+                    .font(centered ? .title2.bold() : .headline)
+                    .lineLimit(2)
+                Text(track.artist)
+                    .font(centered ? .body : .subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Text("Nothing playing")
+                    .font(centered ? .title2.bold() : .headline)
+                    .foregroundStyle(.secondary)
+                Text("Find something on the Search tab, or press TALK and say “play …”")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .multilineTextAlignment(centered ? .center : .leading)
+        .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The bar and the two clocks, from the host's anchor once a second. Only
+/// this view redraws for it.
+private struct TrackProgress: View {
+    @EnvironmentObject private var model: AppModel
+    let durationMs: Int64
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let position = model.displayPositionMs() ?? 0
+            VStack(spacing: 4) {
+                ProgressView(value: min(position, Double(durationMs)), total: Double(max(durationMs, 1)))
+                HStack {
+                    Text(TrackTime.clock(position))
+                        .contentTransition(.numericText())
+                    Spacer()
+                    Text(TrackTime.clock(Double(durationMs)))
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .animation(.default, value: Int(position / 1000))
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Position")
+            .accessibilityValue("\(TrackTime.clock(position)) of \(TrackTime.clock(Double(durationMs)))")
+        }
     }
 }
 
@@ -226,52 +419,159 @@ private struct MusicStatusLine: View {
     }
 }
 
-/// Previous / play-pause / next, sent to the host as `music.control`.
+/// Previous / play-pause / next, sent to the host as `music.control`: plain
+/// large glyphs, each at least 64 pt to press.
 private struct TransportControls: View {
     @EnvironmentObject private var model: AppModel
+    @State private var pressed = 0
+
+    /// Not while the music is held because the headset went away: the button
+    /// is then Play, for this phone's speaker.
+    private var playingHere: Bool { model.musicPlaying && !model.musicHeldForRoute }
 
     var body: some View {
-        HStack(spacing: 28) {
-            Button { model.musicControl(.previous) } label: {
-                Image(systemName: "backward.fill").font(.title2).frame(width: 56, height: 56)
+        HStack(spacing: 20) {
+            Button { press { model.musicControl(.previous) } } label: {
+                Image(systemName: "backward.fill").font(.system(size: 28)).frame(width: 64, height: 64)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.bordered)
             .accessibilityLabel("Previous track")
-            Button { model.musicControl(model.musicPlaying ? .pause : .resume) } label: {
-                Image(systemName: model.musicPlaying ? "pause.fill" : "play.fill")
-                    .font(.largeTitle).frame(width: 72, height: 72)
+            Button { press { model.playPauseButton() } } label: {
+                Image(systemName: playingHere ? "pause.fill" : "play.fill")
+                    .font(.system(size: 44))
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 80, height: 72)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderedProminent)
             .disabled(model.nowPlaying == nil)
-            .accessibilityLabel(model.musicPlaying ? "Pause" : "Play")
-            Button { model.musicControl(.next) } label: {
-                Image(systemName: "forward.fill").font(.title2).frame(width: 56, height: 56)
+            .accessibilityLabel(playingHere ? "Pause" : "Play")
+            Button { press { model.musicControl(.next) } } label: {
+                Image(systemName: "forward.fill").font(.system(size: 28)).frame(width: 64, height: 64)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.bordered)
             .accessibilityLabel("Next track")
         }
-        .buttonBorderShape(.circle)
+        .buttonStyle(GlyphButtonStyle())
+        .foregroundStyle(.primary)
         .disabled(!model.link.isConnected)
+        .sensoryFeedback(.success, trigger: pressed)
+    }
+
+    private func press(_ action: () -> Void) {
+        action()
+        pressed += 1
     }
 }
 
+/// "Up next: Title  +3", as on the Pixel.
+private struct UpNextLine: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let queue = model.hostState?.queue ?? []
+        if model.nowPlaying != nil, let next = queue.first {
+            Text("Up next: \(next.title)" + (queue.count > 1 ? "  +\(queue.count - 1)" : ""))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - Status
+
+/// What was just heard or announced (each goes after a few seconds), and why
+/// this phone's music is silent.
 private struct StatusLines: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if let heard = model.lastHeard {
-                Text("Heard: “\(heard)”").foregroundStyle(.secondary).lineLimit(1)
+        let heard = model.lastHeard
+        let said = model.lastAnnouncement
+        if heard != nil || said != nil || model.musicHeldForRoute {
+            VStack(alignment: .leading, spacing: 4) {
+                if let heard {
+                    Label("Heard: “\(heard)”", systemImage: "ear").lineLimit(1)
+                }
+                if let said {
+                    Label("“\(said)”", systemImage: "speaker.wave.2").lineLimit(2)
+                }
+                if model.musicHeldForRoute {
+                    Label("Headset disconnected: music is silent on this phone. Press Play to use the speaker.",
+                          systemImage: "headphones")
+                }
             }
-            if let said = model.lastAnnouncement {
-                Text("Host: \(said)").foregroundStyle(.secondary).lineLimit(1)
-            }
-            if let problem = model.problem {
-                Text(problem).foregroundStyle(.red).lineLimit(2)
-            }
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .transition(.opacity)
         }
-        .font(.footnote)
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The one problem line: what failed, and a ✕. It also goes by itself when
+/// the thing next works (`Notice`).
+private struct ProblemBanner: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        if let problem = model.problem {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Brand.waiting)
+                    .padding(.top, 12)
+                    .accessibilityHidden(true)
+                Text(problem.text)
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+                Button { model.dismissProblem() } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(GlyphButtonStyle())
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.leading, 12)
+            .background(Brand.live.opacity(0.22), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+}
+
+/// A refused permission is fixed in the Settings app, not here: say what it
+/// costs and give the way there.
+private struct PermissionsCard: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        if model.micDenied || model.speechDenied {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Motoparty needs a few permissions").font(.subheadline.weight(.semibold))
+                if model.micDenied {
+                    Label("Microphone is off: you can only talk through the rider's clip-on mic.", systemImage: "mic.slash")
+                }
+                if model.speechDenied {
+                    Label("Speech recognition is off: spoken commands don't work from this phone.", systemImage: "text.bubble")
+                }
+                Button {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                } label: {
+                    Text("Open Settings").fontWeight(.semibold).foregroundStyle(Brand.onOrange)
+                        .frame(maxWidth: .infinity, minHeight: 32)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 2)
+            }
+            .font(.footnote)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Brand.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
     }
 }
 #endif

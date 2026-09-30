@@ -98,6 +98,8 @@ QUEUE_ITEM_SCHEMA: dict[str, tuple[Any, bool]] = {
     "id": ("str", True),
     "title": ("str", True),
     "artist": ("str", True),
+    "durationMs": ("int", False),
+    "art": ("str", False),
 }
 
 RESULT_ITEM_SCHEMA: dict[str, tuple[Any, bool]] = {
@@ -144,6 +146,8 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
     "music.error": {"id": ("str", True), "message": ("str", True)},
     "music.play": {"id": ("str", True), "positionMs": ("int", True), "atHostTimeMs": ("int", True)},
     "music.pause": {"id": ("str", True), "positionMs": ("int", True)},
+    # H->C: track id starts at position 0 at atHostTimeMs, gapless (PROTOCOL.md "Music flow" 6).
+    "music.next": {"id": ("str", True), "atHostTimeMs": ("int", True)},
     "music.stop": {},
     "music.control": {"action": (_ACTION, True)},
     "command.text": {"text": ("str", True), "lang": ("str", True)},

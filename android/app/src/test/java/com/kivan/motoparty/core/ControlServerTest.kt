@@ -203,4 +203,109 @@ class ControlServerTest {
         server.stop()
         assertNull(runCatching { c.read() }.getOrNull())
     }
+
+    /** P10: the host cancels its scope right after stop(); the client must still get the `bye`. */
+    @Test
+    fun byeReachesTheClientWhenTheScopeIsCancelledRightAfterStop() {
+        val c = Client(port)
+        c.read(); c.read()
+        c.send(Hello(proto = 1, role = "client", name = "A"))
+        nextEvent()
+        server.stop()
+        scope.cancel()
+        assertEquals(Bye("host stopping"), c.read())
+        assertNull("then EOF", c.read())
+    }
+
+    /** P1 needs the order: a reconnect that replaces its own connection is one event, no ClientGone. */
+    @Test
+    fun sameNameReconnectIsOneConnectedEvent() {
+        val a = Client(port)
+        a.read(); a.read()
+        a.send(Hello(proto = 1, role = "client", name = "iPhone"))
+        nextEvent()
+        val b = Client(port)
+        b.read(); b.read()
+        b.send(Hello(proto = 1, role = "client", name = "iPhone"))
+        assertEquals("iPhone", (nextEvent() as ControlServer.Event.ClientConnected).name)
+        assertTrue(a.read() is Bye)
+        noEvent()
+        assertTrue(server.hasClient())
+        server.send(Announce("to b"))
+        assertEquals(Announce("to b"), b.read())
+    }
+
+    /**
+     * P9: a client that dies while its replacement says hello. Whatever the interleaving, the
+     * events must end on the replacement being connected, and it must be the one that is served.
+     */
+    @Test
+    fun closingClientAndItsReplacementNeverLeaveTheNewOneIgnored() {
+        repeat(40) { round ->
+            val a = Client(port)
+            a.read(); a.read()
+            a.send(Hello(proto = 1, role = "client", name = "A$round"))
+            assertEquals("A$round", (nextEvent() as ControlServer.Event.ClientConnected).name)
+            val b = Client(port)
+            b.read(); b.read()
+            a.socket.close()
+            b.send(Hello(proto = 1, role = "client", name = "B$round"))
+            // ClientGone(A) then ClientConnected(B), or B alone: never B followed by A's ClientGone.
+            var e = nextEvent()
+            if (e is ControlServer.Event.ClientGone) e = nextEvent()
+            assertEquals("B$round", (e as ControlServer.Event.ClientConnected).name)
+            b.send(MusicReady("r$round"))
+            assertEquals(MusicReady("r$round"), (nextEvent() as ControlServer.Event.Received).message)
+            assertTrue(server.hasClient())
+            b.socket.close()
+            assertTrue(nextEvent() is ControlServer.Event.ClientGone)
+        }
+    }
+
+    /** P11: a client `hello` with another `proto` gets `bye{reason:"proto"}` and no session. */
+    @Test
+    fun anotherProtoIsRefusedWithBye() {
+        val c = Client(port)
+        c.read(); c.read()
+        c.send(Hello(proto = 2, role = "client", name = "Future"))
+        assertEquals(Bye("proto"), c.read())
+        assertNull("closed after the bye", c.read())
+        noEvent()
+        assertTrue(!server.hasClient())
+        assertTrue(logs.toString(), logs.any { "proto 2" in it })
+        // The port still serves a client that speaks our version.
+        val ok = Client(port)
+        ok.read(); ok.read()
+        ok.send(Hello(proto = 1, role = "client", name = "A"))
+        assertEquals("A", (nextEvent() as ControlServer.Event.ClientConnected).name)
+    }
+
+    /** P11: a wrong `proto` on a reconnect does not replace the client that is connected. */
+    @Test
+    fun anotherProtoDoesNotReplaceTheClient() {
+        val a = Client(port)
+        a.read(); a.read()
+        a.send(Hello(proto = 1, role = "client", name = "A"))
+        nextEvent()
+        val b = Client(port)
+        b.read(); b.read()
+        b.send(Hello(proto = 0, role = "client", name = "Old"))
+        assertEquals(Bye("proto"), b.read())
+        noEvent()
+        a.send(MusicReady("ok"))
+        assertEquals(MusicReady("ok"), (nextEvent() as ControlServer.Event.Received).message)
+    }
+
+    /** P11: a frame that is not valid UTF-8 is invalid JSON: the connection closes. */
+    @Test
+    fun invalidUtf8ClosesConnection() {
+        val c = Client(port)
+        c.read(); c.read()
+        c.send(Hello(proto = 1, role = "client", name = "A"))
+        nextEvent()
+        val body = """{"t":"command.text","text":"x"}""".toByteArray().also { it[it.size - 3] = 0xFF.toByte() }
+        c.sendRaw(java.nio.ByteBuffer.allocate(4 + body.size).putInt(body.size).put(body).array())
+        val gone = nextEvent()
+        assertTrue("$gone", gone is ControlServer.Event.ClientGone && "UTF-8" in gone.reason)
+    }
 }

@@ -2,6 +2,7 @@ package com.kivan.motoparty.core
 
 import com.kivan.motoparty.link.TalkController
 import com.kivan.motoparty.link.TalkController.Action
+import com.kivan.motoparty.link.onClientJoined
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -92,5 +93,56 @@ class TalkControllerTest {
         assertNull(talk.onLinkLost())
         talk.onClientOpenRequest()
         assertEquals(Action.Close("host", "link"), talk.onLinkLost())
+    }
+
+    /** PROTOCOL.md "Liveness": the same client back on a new socket keeps the talk; another name ends it. */
+    @Test
+    fun sameNameReconnectKeepsTheTalk() {
+        assertNull("no talk", talk.onClientReplaced("iPhone", "Other"))
+        talk.onClientOpenRequest()
+        assertNull(talk.onClientReplaced("iPhone", "iPhone"))
+        assertTrue(talk.isOpen)
+        assertEquals("client", talk.openedBy)
+        assertEquals(Action.Close("host", "link"), talk.onClientReplaced("iPhone", "Other"))
+        assertFalse(talk.isOpen)
+    }
+
+    /** R3: a client joining a solo talk ends its commands; the rider is now in a conversation. */
+    @Test
+    fun clientJoiningASoloTalkEndsItsCommands() {
+        val gate = FirstPhraseGate()
+        gate.open(FirstPhraseGate.Role.SOLO)
+        gate.live(1_000)
+        assertEquals("next", gate.onPhrase("Next", 2_000))
+        assertFalse(gate.isSpent(2_000))
+        assertTrue(gate.onClientJoined())
+        assertTrue("the recognizer may stop", gate.isSpent(2_001))
+        assertNull("a command phrase is conversation now", gate.onPhrase("next", 2_500))
+        assertNull("and an unparsed one gets no reply", gate.onPhrase("how is the road", 3_000))
+        assertFalse("once", gate.onClientJoined())
+        // The live earcon still to come (the client joined before it) opens no window either.
+        gate.live(3_500)
+        assertNull(gate.onPhrase("pause", 3_600))
+    }
+
+    /** A talk with a client already in it keeps its gate: a reconnect must not take the opener's window. */
+    @Test
+    fun clientJoiningLeavesAnOpenersWindowAlone() {
+        val gate = FirstPhraseGate()
+        gate.open(FirstPhraseGate.Role.OPENER)
+        gate.live(1_000)
+        assertFalse(gate.onClientJoined())
+        assertEquals(FirstPhraseGate.Role.OPENER, gate.role)
+        assertEquals("pause", gate.onPhrase("pause", 2_000))
+    }
+
+    /** H7: something holding the mic (the USB probe) blocks a press from opening, never from ending. */
+    @Test
+    fun heldMicBlocksOnlyTheOpen() {
+        assertTrue(talk.localTriggerAllowed(micHeld = false))
+        assertFalse(talk.localTriggerAllowed(micHeld = true))
+        talk.onClientOpenRequest()
+        assertTrue("a press must end the passenger's talk", talk.localTriggerAllowed(micHeld = true))
+        assertEquals(Action.Close("host", "trigger"), talk.onLocalTrigger())
     }
 }

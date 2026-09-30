@@ -6,6 +6,7 @@ import com.kivan.motoparty.core.Codec
 import com.kivan.motoparty.core.FrameReader
 import com.kivan.motoparty.core.Hello
 import com.kivan.motoparty.core.MalformedMessageException
+import com.kivan.motoparty.core.PROTO_VERSION
 import com.kivan.motoparty.core.Message
 import com.kivan.motoparty.core.Ping
 import com.kivan.motoparty.core.Pong
@@ -15,6 +16,7 @@ import com.kivan.motoparty.core.UnknownMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -56,8 +58,21 @@ class ControlServer(
 
     val events = Channel<Event>(Channel.UNLIMITED)
 
+    /** The client. Written only under [swap]; read from any thread. */
     @Volatile
     private var active: Connection? = null
+    /**
+     * Guards every change of [active] together with the event that reports it, so a closing
+     * client and the hello that replaces it cannot interleave: the host sees `ClientGone` then
+     * `ClientConnected`, or the replacement alone, never a connected client it then forgets.
+     */
+    private val swap = Any()
+    /**
+     * Writers and the socket close that waits for them run here, not in [scope]: the host
+     * cancels its scope right after [stop], and the `bye` must still go out. Nothing here
+     * outlives a connection by more than [DRAIN_MS].
+     */
+    private val drain = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var server: ServerSocket? = null
     private var acceptJob: Job? = null
     private val ids = AtomicInteger()
@@ -131,7 +146,10 @@ class ControlServer(
         fun start() {
             conns += this
             socket.tcpNoDelay = true
-            writer = scope.launch(Dispatchers.IO) { writeLoop() }
+            // CS5 (voice is EF): control and its clock pings go ahead of best-effort traffic on
+            // the hotspot's WMM queues. A hint only; a stack that refuses it changes nothing.
+            runCatching { socket.trafficClass = TRAFFIC_CLASS }
+            writer = drain.launch { writeLoop() }
             jobs += scope.launch(Dispatchers.IO) { readLoop() }
             jobs += scope.launch(Dispatchers.IO) { watchdog() }
             send(hostHello())
@@ -188,15 +206,28 @@ class ControlServer(
                 }
                 is Hello -> {
                     if (message.role != Role.CLIENT) return
+                    // PROTOCOL.md "Control channel": another protocol version gets
+                    // `bye{reason:"proto"}` and no session; it never becomes the client.
+                    if (message.proto != PROTO_VERSION) {
+                        log("control: \"${message.name}\" speaks proto ${message.proto}, not $PROTO_VERSION: refused")
+                        close(BYE_PROTO, sendBye = true)
+                        return
+                    }
                     hello = true
-                    val previous = active
-                    active = this
-                    lastRxAtMs = now
+                    val previous = synchronized(swap) {
+                        if (closed) return // closed meanwhile (host stopping): never the client
+                        val was = active
+                        active = this
+                        lastRxAtMs = now
+                        events.trySend(Event.ClientConnected(message.name, socket.inetAddress))
+                        was
+                    }
+                    Log.i(TAG, "#$id is the client: ${message.name} (${socket.remoteSocketAddress})")
+                    // Outside the lock ([close] takes the connection's monitor, then [swap]).
+                    // It is no longer the client, so its close raises no ClientGone.
                     if (previous != null && previous !== this) {
                         previous.close("replaced by #$id", sendBye = true)
                     }
-                    Log.i(TAG, "#$id is the client: ${message.name} (${socket.remoteSocketAddress})")
-                    events.trySend(Event.ClientConnected(message.name, socket.inetAddress))
                 }
                 is UnknownMessage -> Unit // PROTOCOL.md: unknown types are ignored
                 else -> if (this === active) events.trySend(Event.Received(message, now))
@@ -222,22 +253,23 @@ class ControlServer(
             if (sendBye) outbox.trySend(Codec.frame(Bye(reason.take(60))))
             outbox.close()
             jobs.forEach { it.cancel() }
-            // Let the writer drain (the bye) before the socket goes away. invokeOnCompletion
-            // also runs when the scope is already cancelled and the body never starts, so the
-            // socket is closed either way (that also unblocks the reader).
-            scope.launch(Dispatchers.IO) {
-                withTimeoutOrNull(1000) { writer.join() }
+            // Let the writer drain (the bye) before the socket goes away; closing the socket
+            // also unblocks the reader, and a writer stuck on a dead peer.
+            drain.launch {
+                withTimeoutOrNull(DRAIN_MS) { writer.join() }
             }.invokeOnCompletion { runCatching { socket.close() } }
-            if (hello) {
+            if (hello || reason == BYE_PROTO) {
                 Log.i(TAG, "#$id closed: $reason")
             } else {
                 val from = socket.inetAddress?.hostAddress
                 log(if (reason == PEER_CLOSED) "probe from $from closed" else "probe from $from closed: $reason")
             }
-            if (active === this) {
-                active = null
-                lastPingSkewMs = null
-                events.trySend(Event.ClientGone(reason))
+            synchronized(swap) {
+                if (active === this) {
+                    active = null
+                    lastPingSkewMs = null
+                    events.trySend(Event.ClientGone(reason))
+                }
             }
         }
     }
@@ -247,7 +279,13 @@ class ControlServer(
         const val LIVENESS_MS = 6_000L
         /** A connection with no client `hello` by then is a probe that lingered (PROTOCOL.md "Discovery" 4). */
         const val PRE_HELLO_MS = 3_000L
+        /** How long a closing connection's writer gets to send what is queued (the `bye`). */
+        private const val DRAIN_MS = 1_000L
         private const val PEER_CLOSED = "closed by peer"
+        /** `bye.reason` for a client `hello` with another `proto`. */
+        const val BYE_PROTO = "proto"
+        /** DSCP CS5 in the TOS byte. */
+        const val TRAFFIC_CLASS = 0xA0
         private const val TAG = "ControlServer"
     }
 }

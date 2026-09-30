@@ -20,6 +20,11 @@ data class TalkStats(
     val plc: Int,
     val keepalives: Int,
     val jitterTargetMs: Int,
+    /** Queued frames the jitter buffer dropped to get rid of a backlog; neither loss nor late. */
+    val shed: Int = 0,
+    /** Queue depth when a frame was due, over the talk. */
+    val depthMeanMs: Int = 0,
+    val depthMaxMs: Int = 0,
 ) {
     /**
      * `seq` values in the span that never arrived. Keepalives share the counter and are not
@@ -32,5 +37,6 @@ data class TalkStats(
         "talk stats: tx $sent sent of $captured captured (${captured - sent} DTX), " +
             "rx $received received, $played played, $lost lost, " +
             "$late late, $fec FEC, $plc PLC, " +
-            "$keepalives keepalives, jitter target $jitterTargetMs ms"
+            "$keepalives keepalives, jitter target $jitterTargetMs ms, " +
+            "$shed shed, depth mean $depthMeanMs max $depthMaxMs ms"
 }

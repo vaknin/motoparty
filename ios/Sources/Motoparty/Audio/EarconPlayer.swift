@@ -29,6 +29,12 @@ final class EarconPlayer {
         player.play()
     }
 
+    /// After a media-services reset the cached players are dead: make new
+    /// ones on the next `play`.
+    func reset() {
+        players.removeAll()
+    }
+
     func play(_ earcon: Earcon) { play(earcon.rawValue) }
 }
 #endif

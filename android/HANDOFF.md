@@ -1048,6 +1048,127 @@ Device checklist:
 6. Search a few things, play a few songs, force-stop and reopen: both history lists survive; tap a
    recent search re-runs it on the right chip; Clear empties searches only.
 
+### Audit round 1 (2026-09-30) — ride-breaking bugs and voice latency
+
+Built offline, **device-unverified**. Coordinator-run: 361 tests / 0 fail / 5 skipped, `lintDebug`
+0 errors / 21 warnings (`--rerun-tasks`). IDs are `AUDIT.md`'s.
+
+- **L1/L2** `core/JitterBuffer.kt`: backlog shedding at spurt start and during a spurt, a late first
+  packet after silence starts a spurt (PROTOCOL.md "Voice", vectors `fixtures/jitter.json`, 17 cases).
+  Known cost: a bunch of frames arriving at once after a pause is cut to the target (latency over
+  the word onset). `talk stats` now ends `…, N shed, depth mean N max N ms`.
+- **P5** `core/ClockEstimator.kt`: step reset only above `500 + rtt/2`.
+- **L3** talk track asks a 40 ms buffer and grows on underruns (`audio/PlaybackFill.kt`); Lark
+  passenger track holds a 40 ms fill with watermarks. **L4** whole-frame writes only. **L5** periodic
+  `routedDevice` reads moved to the route threads. **L7** earcon release off Main.
+- **R4** `onPlayerError` reloads and re-applies the anchor cold; second error skips the track.
+  **R5** per-chunk retry at the same offset (1/2/4/8 s), 403/410 re-resolves, `.part` kept and
+  continued; final failure skips (cached first), three in a row stops and keeps the queue; with no
+  network the track waits (`music/NetworkWatch.kt`). **R9** a pause during a load parks the track
+  paused. **U-D2** `ACTION_AUDIO_BECOMING_NOISY` pauses both phones, ignored during a talk and for
+  3 s after it.
+- **R2** FGS start cannot crash-loop, `ACTION_TALK` retries the microphone type, `LinkStatus.micOff`
+  + notification text "Microphone off – tap to restore" (**Ride tab does not show it yet: round 3**).
+  **R3** a client joining a solo talk ends its commands. **R6** rotation no longer restarts a stopped
+  host. **P1** a same-name reconnect keeps the talk (only when the hello replaces a connection the
+  host still holds). **P2** connect-time `state` is a snapshot. **P9** client swap under one lock.
+  **P10** `bye` survives Stop.
+
+**Device checklist** (log line to look for):
+1. Talk by earbuds, then Lark: `talk stats … N shed, depth mean … max …` — mean near the target
+   (40–60 ms), and listen for clicks. After a route switch mid-talk the delay must not stay.
+2. `playback track: mode …, buffer X of CAP frames (asked 640, granted G, grew Nx), underruns U` at
+   talk stop; `grew` on most talks → raise `PLAYBACK_BUFFER_FRAMES`.
+3. `lark playback: … hold H ms (grew Nx), underruns U, fill min/mean/max, … partial P, unknown fill K`;
+   `partial`/`unknown fill` > 0 means the fill estimate is unreliable on this phone.
+4. `capture routed to …` still appears; earcons still audible.
+5. AirPods into the case mid-song → `becoming noisy: pausing the music`, iPhone pauses. Open/close
+   talks with music: `audio becoming noisy` should not appear at all. Unplugging the Lark must not pause.
+6. Airplane mode mid-download → `load <id> failed with no network (…); waiting for it`, plays when
+   data is back. Does `online` follow mobile data while the Pixel is the hotspot host?
+7. Pause while a song is still loading → `parked paused at 0 ms: paused while starting`.
+8. Kill the process with the host running (never tested): no crash loop, `microphone off: service
+   type refused…`, then Talk in the notification or opening the app → `microphone restored`.
+9. Solo talk, then connect the iPhone → `talk: client joined a solo talk, commands off for the rest of it`.
+10. Stop, rotate: host stays stopped. Stop: the iPhone logs a `bye` ("host stopping").
+11. Wi-Fi blip mid-talk → `talk kept: "<name>" reconnected`.
+
+### Audit round 2 (2026-09-30) — music
+
+Built offline, **device-unverified**. Coordinator-run after integration: 403 tests / 0 fail /
+5 skipped, `lintDebug` 0 errors / 21 warnings (`--rerun-tasks`). IDs are `AUDIT.md`'s.
+
+- **M1** `SyncController.startLeadMs(cold)`: every start and resume is anchored far enough ahead for
+  the Pixel to be audible *at* the anchor (learned start latency + 250 ms preparation + 50 ms, never
+  under 300). **M5** gapless: `MusicController.armGapless` queues the next file behind the current
+  one in ExoPlayer and sends `music.next`; at the change only the anchor is adopted
+  (`SyncController.adopt`), no pause/seek. Taken back with the current `music.play` sent again
+  unchanged (`gapless: cancelled`); after any `music.play` the host sends `music.next` again
+  (PROTOCOL.md Music flow 6). **M7** end of queue parks the last track paused at 0 (`music.pause`,
+  no `music.stop`); spoken `next` on the last track answers "End of queue". **M9** one more
+  `music.load` 2 s after the first `music.error`.
+- **M3/M4/M6/M8** `music/TrackCache.kt` rewritten: 4 parallel ranges per download, one download at a
+  time by priority (`CURRENT > NEXT > PREFETCH > COLLECTION`), a lower one is paused and continues
+  from its `.part`; stream addresses cached 1 h and looked up ahead (`preResolve`: the top 3 song
+  results and the 3 tracks ahead); ids/size in memory (no 1 Hz directory listing on Main); LRU
+  eviction that never takes the playing or the next track. `MusicController.cacheHints()` calls
+  `retain`/`protect`/`preResolve` on every queue or index change. **Behaviour change:** cancelling
+  the last waiter of `ensure` stops the download (bytes kept).
+- **P3** DSCP: control socket CS5 (`0xA0`), track server CS1 (`0x20`). **P11** a client `hello` with
+  another `proto` gets `bye{reason:"proto"}`; invalid UTF-8 closes the connection.
+- **H6** no stale notification after Stop. **H7** the USB probe blocks only talk opens; a client
+  `talk.open` during it is refused `unavailable`. **H8** the overlay redraws only on talk/client
+  changes. `state.queue` items carry `durationMs`/`art` (`link/StateFit.kt` drops art above 48 KiB).
+
+**Device checklist** (log line to look for):
+1. Start a song: `play <id> from 0 ms, anchor in ~600 ms`, `start warm: lead …`, and **no**
+   `start past the anchor by N ms`; the first `trace:` lines show `pos` near `expected`. The first
+   half-second of the song is audible on the Pixel.
+2. Let one song run into the next (both cached, iPhone ready): `gapless: <next> queued behind <cur>,
+   change in N ms`, then `Player: gapless: <cur> -> <next>` and `gapless: now <next>, N ms after its
+   anchor` (N within ±100), no `start warm` at the change, the next `drift` line small. Listen on
+   both phones: no gap, no jump. Then: pause/resume, a talk, and a queue edit shortly before the end
+   (`gapless: cancelled`, then queued again).
+3. Last song ends: `end of queue: <id> parked paused at its start`; Play starts it again; Previous works.
+4. Tap a new song on LTE: time from tap to sound (parallel ranges, pre-resolved top results).
+   Skip next-next-next: `download <id>: cancelled` each; back to one: `download <id>: continuing, N of
+   T there`. During an album download tap a song: `download <id>: waits for a CURRENT download`.
+   Full cache: `cache: evicted <id>` never names the playing or next track.
+5. `music.error for <id>: …; sending music.load again in 2 s` → `music.load for <id> sent again`
+   (force it by blocking the iPhone's download once).
+6. Stop in the app → the notification shade is empty. Settings cache size appears a moment after
+   start; `MainLag` shows no 1 Hz stall.
+7. With a third machine on the hotspot: `tcpdump -v port 47800` shows `tos 0xa0`, `port 47802`
+   shows `tos 0x20`; voice does not stutter while the iPhone downloads a song.
+8. USB probe running: a passenger talk request is refused (`talk.open refused: usb probe running`),
+   and the rider can still end a talk.
+
+### Audit round 3 (2026-09-30) — UI, notification, release build
+
+Built offline, **device-unverified** (450 tests / 0 fail / 5 skipped, lint 0 errors). Reports:
+`~/.cache/claude-handoff/motoparty-round3/{android-ui,android-system}.md`.
+
+Checked on the Pixel 2026-09-30 (release build, screen locked, `tools/peer` as the client): start,
+NSD, search, `play <id> from 0 ms, anchor in 600–645 ms` with no `start past the anchor`, remux
+50–700 ms, `gapless: now <id>, -74 ms after its anchor` between two cached tracks, end of queue
+parks paused at 0, MediaStyle notification with Talk/Stop. Everything below that needs eyes on the
+screen or the iPhone is still open. New: an Opus MP4 from the batching muxer (`Remux.kt`) has not
+been played by AVPlayer yet.
+
+1. Ride: Connecting… → LIVE against the beep; END TALK pill; command card during the first-phrase
+   window, gone after 8 s or the first phrase; "Heard" line; haptics through gloves.
+2. Mic-off banner tap restores the microphone type; UA14 with a permanently denied permission.
+3. Ride layout under real insets, portrait and landscape (rail); progress bar smooth after pause,
+   talk, track change; snackbar vs mini-player.
+4. Queue Undo at first, middle, last position with the iPhone connected (one `state` push).
+5. Long-press on the link line stops the host (confirm); Stop also in Settings.
+6. Media notification: art, progress, prev/play/next plus Talk and Stop; Talk flips to End talk;
+   mic-off falls back to the plain notification; media keys unchanged; nothing left after Stop.
+7. Overlay: colours, "END TALK" fits, pulse until the live beep. Launcher/themed/status icons.
+8. Release build (needs the uninstall, see README "Release build"): start, link, YouTube search and
+   play (Rhino + extractor under R8), settings/history, a talk both ways, cover art.
+9. L9: `Earcons: live routed to … (prepared)` in logcat; beep audible on AirPods.
+
 ## 3. Not done, in priority order
 
 Coordinator spec updates, all implemented: (1) DTX frames not sent, kind-1 = activity,

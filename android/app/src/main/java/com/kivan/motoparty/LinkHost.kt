@@ -31,6 +31,7 @@ import com.kivan.motoparty.core.CommandParser
 import com.kivan.motoparty.core.CommandText
 import com.kivan.motoparty.core.Codec
 import com.kivan.motoparty.core.EditOp
+import com.kivan.motoparty.core.EnqueueMode
 import com.kivan.motoparty.core.TouchPlay
 import com.kivan.motoparty.core.FirstPhraseGate
 import com.kivan.motoparty.core.CloseReason
@@ -50,6 +51,7 @@ import com.kivan.motoparty.core.MusicSearch
 import com.kivan.motoparty.core.ResultItem
 import com.kivan.motoparty.core.MusicError
 import com.kivan.motoparty.core.MusicReady
+import com.kivan.motoparty.core.QueueItem
 import com.kivan.motoparty.core.Role
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.core.State
@@ -58,14 +60,18 @@ import com.kivan.motoparty.core.TalkOpen
 import com.kivan.motoparty.core.wireType
 import com.kivan.motoparty.link.ControlServer
 import com.kivan.motoparty.link.Discovery
+import com.kivan.motoparty.link.StateFit
 import com.kivan.motoparty.link.TalkController
+import com.kivan.motoparty.link.onClientJoined
 import com.kivan.motoparty.link.VoiceSocket
 import com.kivan.motoparty.music.Catalog
 import com.kivan.motoparty.music.CollectionDownloads
 import com.kivan.motoparty.music.CollectionItem
+import com.kivan.motoparty.music.DownloadPriority
 import com.kivan.motoparty.music.isValidTrackId
 import com.kivan.motoparty.music.Track
 import com.kivan.motoparty.music.MusicController
+import com.kivan.motoparty.music.NetworkWatch
 import com.kivan.motoparty.music.Player
 import com.kivan.motoparty.music.RemoteAction
 import com.kivan.motoparty.music.SyncController
@@ -138,21 +144,30 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             File(context.cacheDir, "tracks-opus"), http, { source(it, opus = true) }, scope,
             remux = ::remuxWebmToMp4,
             onChange = { scope.launch { refreshCached() } },
+            log = Hub::log,
         ),
         aacCache = TrackCache(
             File(context.cacheDir, "tracks"), http, { source(it, opus = false) }, scope, maxBytes = 256L shl 20,
             onChange = { scope.launch { refreshCached() } },
+            log = Hub::log,
         ),
     )
     /** The Search tab's album/playlist Download button: whole collections into the active cache. */
     private val downloads = CollectionDownloads(
         scope,
-        ensure = { caches.ensure(it) },
+        ensure = { caches.ensure(it, DownloadPriority.COLLECTION) },
         cached = { caches.cached(it) },
         onProgress = { p -> Hub.status.update { it.copy(downloads = p) } },
         log = Hub::log,
     )
-    private val player: Player = Player(context, ::onMediaKey, ::onRemoteControl, onEnded = { music.onTrackEnded() })
+    private val player: Player = Player(
+        context, ::onMediaKey, ::onRemoteControl,
+        onEnded = { music.onTrackEnded() },
+        onError = { music.onPlayerError(it) },
+        // The earbuds dropped: pause both phones instead of playing on the Pixel's speaker.
+        onNoisy = { music.onBecomingNoisy() },
+    )
+    private val network = NetworkWatch(context) { music.onNetworkBack() }
     /**
      * The output music plays on (from [devices]) and the trim in force for it. Main only. The trim
      * is per route since the first two-phone run (2026-09-29): the AirPods value applied on the
@@ -165,7 +180,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         trimMs = { activeTrimMs },
         routeName = { outputRoute.name },
     )
-    private val control: ControlServer = ControlServer(scope, clock, ::hello, ::state, log = Hub::log)
+    private val control: ControlServer = ControlServer(scope, clock, ::hello, { lastState }, log = Hub::log)
     private val voice: VoiceEngine = VoiceEngine(
         send = { ts, p -> voiceSocket.sendAudio(ts, p) },
         clockTs = { voiceSocket.currentTs() },
@@ -255,6 +270,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         log = Hub::log,
         // "Recently played" on the Search tab: whoever queued it, once it really started.
         onStarted = { t -> history.update { it.played(t) } },
+        online = { network.online },
     )
     private val audioManager = context.getSystemService(AudioManager::class.java)
     /** `AudioManager.getMode()` cached off Main; see [AudioModeWatch] and [micAvailable]. */
@@ -364,8 +380,11 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         sco.stop()
         devices.stop()
         player.release()
+        network.release()
         announcer.release()
-        Hub.status.update { LinkStatus(log = it.log) }
+        clearAnnounce?.cancel()
+        Hub.status.value = LinkStatus()
+        Hub.diagnostics.value = Diagnostics()
     }
 
     // ---- control channel ----
@@ -375,17 +394,33 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         voicePort = VoiceSocket.PORT, httpPort = TrackServer.PORT,
     )
 
-    private fun state(): Message = State(
-        talk = talk.isOpen,
-        music = music.musicState(),
-        queue = music.upcoming.map { it.toQueueItem() },
-        // PROTOCOL.md "state": only while the open talk is a host-mic one, so a client that joins
-        // mid-talk opens it receive-only too.
-        mic = if (larkTalk) Mic.HOST else null,
+    private fun state(): Message = StateFit.fit(
+        State(
+            talk = talk.isOpen,
+            music = music.musicState(),
+            // With the length and the cover, so the client's queue rows look like the host's.
+            // A track of unknown length (0) sends none.
+            queue = music.upcoming.map {
+                QueueItem(it.id, it.title, it.artist, durationMs = it.durationMs.takeIf { d -> d > 0 }, art = it.art)
+            },
+            // PROTOCOL.md "state": only while the open talk is a host-mic one, so a client that
+            // joins mid-talk opens it receive-only too.
+            mic = if (larkTalk) Mic.HOST else null,
+        ),
     )
 
+    /**
+     * The last [state] built, for the `hello` + `state` a new connection gets at once: that is
+     * sent from the accept thread, and [state] reads Main-only things (talk, queue, anchor). Every
+     * change goes through [pushState], so this is what a client already connected was last told.
+     */
+    @Volatile
+    private var lastState: Message = State(talk = false, queue = emptyList())
+
     private fun pushState() {
-        control.send(state())
+        val s = state()
+        lastState = s
+        control.send(s)
         refreshStatus()
     }
 
@@ -403,14 +438,26 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private fun onControlEvent(e: ControlServer.Event) {
         when (e) {
             is ControlServer.Event.ClientConnected -> {
-                if (clientName != null) {
-                    // A new hello replaced the previous client: its talk and readiness are void.
-                    talk.onLinkLost()?.let(::applyTalk)
+                val previous = clientName
+                if (previous != null) {
+                    // A new hello replaced the previous client: its readiness is void, and so is
+                    // its talk unless it is the same client back on a new socket (PROTOCOL.md
+                    // "Liveness"). Voice follows the source of its next valid packet.
+                    val wasOpen = talk.isOpen
+                    talk.onClientReplaced(previous, e.name)?.let(::applyTalk)
+                    if (wasOpen && talk.isOpen) Hub.log("talk kept: \"${e.name}\" reconnected")
                     voiceSocket.forgetPeer()
                     music.onClientGone()
                 }
                 clientName = e.name
                 Hub.log("client \"${e.name}\" connected from ${e.address.hostAddress}")
+                // A solo talk has company now: the rider's phrases are conversation from here,
+                // never commands and never "Didn't catch that" (which the passenger would hear).
+                if (talk.isOpen && phrases.onClientJoined()) {
+                    Hub.log("talk: client joined a solo talk, commands off for the rest of it")
+                    recognizer.stop()
+                    Hub.status.update { it.copy(commandWindow = false) }
+                }
                 music.onClientConnected()
             }
             is ControlServer.Event.ClientGone -> {
@@ -435,7 +482,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is CommandText -> onClientCommand(m.text)
             is MusicSearch -> onClientSearch(m.id) {
                 if (m.kind == SearchKind.SONGS) {
-                    catalog.searchSongs(m.query).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs, art = it.art) }
+                    catalog.searchSongs(m.query).also(::preResolveTop).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs, art = it.art) }
                 } else {
                     catalog.searchCollections(m.kind == SearchKind.ALBUMS, m.query)
                         .map { ResultItem(it.id, it.title, it.artist, count = it.count, art = it.art) }
@@ -465,6 +512,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         if (!micAvailable()) {
             control.send(TalkClose(Role.HOST, CloseReason.UNAVAILABLE))
             Hub.log("talk.open refused: microphone unavailable")
+            return
+        }
+        // The USB probe holds the receiver and cannot be cut short (its files would be lost): the
+        // passenger is refused like any other "mic unavailable", rather than given a talk that
+        // records neither properly.
+        if (!talk.isOpen && usbProbe.isRunning) {
+            control.send(TalkClose(Role.HOST, CloseReason.UNAVAILABLE))
+            Hub.log("talk.open refused: usb probe running")
             return
         }
         talk.onClientOpenRequest()?.let(::applyTalk)
@@ -550,6 +605,11 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                     },
                 )
                 clientCommanded = false
+                // The Ride tab: "Connecting…" until the live earcon, and the command list while a
+                // phrase of ours can still be a command.
+                Hub.status.update {
+                    it.copy(talkLive = false, talkClosing = false, heard = null, commandWindow = phrases.role != FirstPhraseGate.Role.OTHER)
+                }
                 // Switching the headset to HFP blocks for about a second; messages went out first.
                 // A failure here is this phone's "cannot open the microphone" case. enterCall
                 // counts itself before it can throw, so the close that follows balances it.
@@ -597,6 +657,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 val closed = talkAudio.close()
                 talkClosed = closed
                 Hub.log("talk closed (by ${action.by}, ${action.reason})")
+                // The Ride tab says "Ending…" while the headset switches back.
+                Hub.status.update { it.copy(talkLive = false, talkClosing = true, heard = null, commandWindow = false) }
+                scope.launch {
+                    closed.join()
+                    if (talkClosed === closed) Hub.status.update { it.copy(talkClosing = false) }
+                }
                 if (resuming) scope.launch {
                     closed.join()
                     sync.release(cold = true)
@@ -644,6 +710,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         if (phrases.role != FirstPhraseGate.Role.OPENER || !phrases.isSpent(clock())) return
         Hub.log("talk recognizer: first phrase spent, stopping")
         recognizer.stop()
+        Hub.status.update { it.copy(commandWindow = false) }
     }
 
     /**
@@ -666,6 +733,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         val command = phrases.onPhrase(text, clock())
         val who = if (passengerAsr) "passenger, " else ""
         Hub.log("heard: \"$text\" ($who${if (command != null) "command" else "conversation"})")
+        Hub.status.update { it.copy(heard = text) }
         // Before the command: a `play` closes the talk, and with it this check's reason to run.
         stopRecognizerIfSpent(session)
         if (command == null) return
@@ -724,6 +792,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         Hub.log(fire.line())
         // A host-mic talk holds no call route: the beep goes where the music goes (A2DP).
         earcon(Earcons.Kind.LIVE, call = !larkTalk)
+        Hub.status.update { it.copy(talkLive = true) }
         // The first phrase's window runs from here; once it has passed, stop listening.
         phrases.live(clock())
         if (phrases.role == FirstPhraseGate.Role.OPENER) scope.launch {
@@ -855,8 +924,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             return
         }
         // The USB probe holds the receiver (51 s, or a whole ride); a talk opening under it
-        // would record neither properly.
-        if (usbProbe.isRunning) {
+        // would record neither properly. Only the open is blocked: a press still ends a talk.
+        if (!talk.localTriggerAllowed(micHeld = usbProbe.isRunning)) {
             errorEarcon()
             Hub.log("talk: usb probe running")
             return
@@ -1043,7 +1112,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             }
             // No reply: the talk's closing earcon is the acknowledgement.
             Command.End -> if (effect.closeBy == null) Hub.log("end: no talk to end")
-            Command.Next -> { music.next(); reply(music.current?.let { "Next: ${it.title}" } ?: "End of queue", Earcon.OK) }
+            Command.Next -> {
+                // On the last track `next` parks it and `current` stays: that is the end of the queue.
+                val had = music.hasNext
+                music.next()
+                reply(music.current?.takeIf { had }?.let { "Next: ${it.title}" } ?: "End of queue", Earcon.OK)
+            }
             Command.Previous -> { music.previous(); reply(music.current?.let { "Playing ${it.title}" } ?: "Nothing to play", Earcon.OK) }
             Command.NowPlaying -> music.current.let { reply(MusicController.nowPlayingLine(it), if (it != null) Earcon.OK else Earcon.ERROR) }
             Command.Shuffle -> if (music.shuffleUpcoming()) reply("Shuffled", Earcon.OK) else reply("Nothing to shuffle", Earcon.ERROR)
@@ -1139,9 +1213,20 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         // In a host-mic talk there is no call route to speak on: the media route, now.
         if (inTalk && !larkTalk) announcer.announce(text, kind, language, call = true)
         else mediaSound(MediaCue.Kind.ANNOUNCE) { announcer.announce(text, kind, language) }
-        Hub.status.update { it.copy(lastAnnounce = text) }
+        // A failure stays as a banner until it is dismissed or something succeeds; a success is
+        // a line that goes away by itself, so it never sits under a later song (UA3).
+        val failed = earcon == Earcon.ERROR
+        Hub.status.update { it.copy(lastAnnounce = if (failed) null else text, error = if (failed) text else null) }
+        clearAnnounce?.cancel()
+        clearAnnounce = if (failed) null else scope.launch {
+            delay(ANNOUNCE_SHOWN_MS)
+            Hub.status.update { if (it.lastAnnounce == text) it.copy(lastAnnounce = null) else it }
+        }
         Hub.log("announce: $text")
     }
+
+    /** Takes [LinkStatus.lastAnnounce] off the screen again. Main only. */
+    private var clearAnnounce: Job? = null
 
     /** The "that did not work" tone, on the media route like every other non-call sound. */
     private fun errorEarcon() {
@@ -1169,6 +1254,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is UiAction.Jump -> jump(a.index, a.id, Role.HOST)
             is UiAction.Remove -> music.remove(a.index, a.id)
             is UiAction.ClearQueue -> music.clearUpcoming()
+            is UiAction.Restore -> restore(a.index, a.track)
+            is UiAction.DismissError -> Hub.status.update { it.copy(error = null) }
             is UiAction.Download -> downloads.start(a.collection.id, a.tracks.map { it.id })
             is UiAction.CancelDownload -> downloads.cancel(a.collectionId)
             is UiAction.Command -> executeCommand(a.text)
@@ -1185,8 +1272,16 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
+    /** Undo of a removal on the Queue tab: [track] back where it was. */
+    private fun restore(index: Int, track: Track) {
+        if (music.current == null) Hub.log("undo: nothing loaded, ignored") else music.insert(index, track)
+    }
+
     private var uiSearchJob: Job? = null
     private var uiBrowseJob: Job? = null
+
+    /** The top song results are the likely taps: have their stream addresses looked up already. */
+    private fun preResolveTop(songs: List<Track>) = caches.preResolve(songs.take(PRE_RESOLVE_TOP).map { it.id })
 
     private fun uiSearch(kind: String, query: String) {
         history.update { it.searched(kind, query) }
@@ -1195,7 +1290,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         uiSearchJob = scope.launch {
             val done = try {
                 if (kind == SearchKind.SONGS) {
-                    SearchState(kind, query, songs = catalog.searchSongs(query))
+                    SearchState(kind, query, songs = catalog.searchSongs(query).also(::preResolveTop))
                 } else {
                     SearchState(kind, query, collections = catalog.searchCollections(kind == SearchKind.ALBUMS, query))
                 }
@@ -1322,28 +1417,32 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 running = true,
                 nsdName = discovery.registeredName.value,
                 clientName = clientName,
-                clientAddress = control.clientAddress?.hostAddress,
-                clientSkewMs = control.lastPingSkewMs,
-                lastPingAgeMs = if (control.hasClient()) now - control.lastRxAtMs else null,
                 talkOpen = talk.isOpen,
                 larkMissing = larkMissing,
                 talkOnEarbudsFallback = talk.isOpen && talkOnEarbudsFallback,
-                jitterTargetMs = voice.jitterTargetMs,
-                underruns = voice.underruns,
-                udpIn = voiceSocket.packetsIn.get(),
-                udpOut = voiceSocket.packetsOut.get(),
-                audioDevice = router.selectedDevice,
-                audioDevices = devices.summary,
                 nowPlaying = music.current,
                 playing = music.isPlaying,
                 musicPhase = music.phase,
-                positionMs = sync.anchor?.expectedAt(now)?.coerceAtLeast(0) ?: 0,
+                // The anchor, not a position: equal from one second to the next, so an idle
+                // second changes nothing here and the screens stay as they are (UA4).
+                anchor = sync.anchor?.let { a -> PlaybackAnchor(a.positionMs, a.atHostTimeMs, a.playing) },
                 queue = music.upcoming,
-                lastDriftMs = sync.lastDriftMs,
                 outputRoute = outputRoute,
-                cacheMb = caches.active.sizeBytes() / (1024 * 1024),
             )
         }
+        Hub.diagnostics.value = Diagnostics(
+            clientAddress = control.clientAddress?.hostAddress,
+            clientSkewMs = control.lastPingSkewMs,
+            lastPingAgeMs = if (control.hasClient()) now - control.lastRxAtMs else null,
+            jitterTargetMs = voice.jitterTargetMs,
+            underruns = voice.underruns,
+            udpIn = voiceSocket.packetsIn.get(),
+            udpOut = voiceSocket.packetsOut.get(),
+            audioDevice = router.selectedDevice,
+            audioDevices = devices.summary,
+            lastDriftMs = sync.lastDriftMs,
+            cacheMb = caches.active.sizeBytes() / (1024 * 1024),
+        )
     }
 
     /** One bad event must not stop the loop that delivers the next one. */
@@ -1404,8 +1503,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     companion object {
+        /** Song results whose stream address is looked up before a tap (each is one extraction). */
+        private const val PRE_RESOLVE_TOP = 3
         /** In a solo talk, phrases this soon after our own speech are taken for its echo. */
         private const val ECHO_MS = 2_000L
+        /** How long a spoken reply stays on the Ride tab. */
+        private const val ANNOUNCE_SHOWN_MS = 6_000L
         /**
          * How long the capture thread waits for SCO before opening the recorder anyway (F9c). The
          * SCO link came up ~1.6–2.9 s after the press on the F8 bench, i.e. well inside this after

@@ -19,6 +19,7 @@ import android.util.Log
 import com.kivan.motoparty.core.JitterBuffer
 import com.kivan.motoparty.core.TalkStats
 import com.kivan.motoparty.core.VoicePacket
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 
@@ -145,6 +146,10 @@ class VoiceEngine(
         micLive.reset()
         val s = Session(onFailed)
         session.set(s)
+        // L9: the "live" beep of this talk goes to the call route. Have its track built (on the
+        // earcons' own thread) while the capture below waits for the route, so firing it is only
+        // `play()`. Released by [stop] if the talk ends before it was live.
+        Earcons.prepare(Earcons.Kind.LIVE, call = true)
         captureThread = thread(name = "voice-capture") { runCatching { captureLoop(s) }.onFailure { fail(s, "capture", it) } }
         playbackThread = thread(name = "voice-playback") { runCatching { playbackLoop(s) }.onFailure { fail(s, "playback", it) } }
         Log.i(TAG, t.line("start"))
@@ -155,6 +160,7 @@ class VoiceEngine(
     fun stop() {
         val wasRunning = session.getAndSet(null) != null || captureThread != null
         val t = StepTimer()
+        if (wasRunning) Earcons.discardPrepared()
         captureThread?.join(500)
         t.step("join capture")
         playbackThread?.join(500)
@@ -177,7 +183,8 @@ class VoiceEngine(
             captured = framesCaptured, sent = framesSent, received = jitter.received,
             played = framesPlayed, seqSpan = jitter.seqSpan, late = jitter.underruns - underrunsAtStart,
             fec = jitter.fecUsed, plc = jitter.concealed, keepalives = jitter.keepalives,
-            jitterTargetMs = jitter.targetMs,
+            jitterTargetMs = jitter.targetMs, shed = jitter.shed,
+            depthMeanMs = jitter.meanDepthMs, depthMaxMs = jitter.maxDepthMs,
         ).line()
     }
 
@@ -301,11 +308,14 @@ class VoiceEngine(
         // block — and only hands the report over; the capture loop picks it up on its next frame.
         val routeReport = AtomicReference<RouteReport?>(null)
         val routeThread = HandlerThread("voice-route")
+        var routeHandler: Handler? = null
+        val routePollPending = AtomicBoolean(false)
         fun startMic(m: Mic) {
             val l = AudioRouting.OnRoutingChangedListener { routing ->
                 routeReport.set(RouteReport(m.gen, routing.routedDevice?.type, SystemClock.elapsedRealtime()))
             }
-            m.record.addOnRoutingChangedListener(l, Handler(routeThread.looper))
+            val handler = routeHandler ?: Handler(routeThread.looper).also { routeHandler = it }
+            m.record.addOnRoutingChangedListener(l, handler)
             m.listener = l
             m.record.startRecording()
             // A route that cannot give us the mic (a phone call took it) fails here, not above.
@@ -344,10 +354,21 @@ class VoiceEngine(
                 tee?.offer(pcm)
                 // A report of a recorder already replaced is about nothing that exists any more.
                 routeReport.getAndSet(null)?.let { if (it.gen == mic.gen) noteRouted(it.type, it.atMs) }
-                // Backstop while the input device is still unknown: a getter read inside a loop that
-                // runs anyway (every ~500 ms), never a sleep.
-                if (micLive.scoRoutedAtMs == null && reopenFrom == null && framesCaptured % ROUTE_RECHECK_FRAMES == 0L) {
-                    noteRouted(mic.record.routedDevice?.type, atMs)
+                // Backstop while the input device is still unknown, every ~500 ms. The getter can
+                // binder into the audio server and was seen blocked for over a second during a
+                // route change (longer than the recorder's buffer), so the routing thread reads it
+                // and hands the answer over like a listener report; one read in flight at most.
+                if (micLive.scoRoutedAtMs == null && reopenFrom == null && framesCaptured % ROUTE_RECHECK_FRAMES == 0L &&
+                    routePollPending.compareAndSet(false, true)
+                ) {
+                    val m = mic
+                    val posted = routeHandler?.post {
+                        // A recorder released meanwhile throws or says null; its `gen` is stale anyway.
+                        runCatching { m.record.routedDevice?.type }
+                            .onSuccess { routeReport.set(RouteReport(m.gen, it, SystemClock.elapsedRealtime())) }
+                        routePollPending.set(false)
+                    }
+                    if (posted != true) routePollPending.set(false)
                 }
                 micLive.frame(peak, atMs)?.let { at ->
                     micLiveAtMs = at
@@ -491,6 +512,14 @@ class VoiceEngine(
         val pcm = ShortArray(FRAME)
         var writes = 0L
         var writesFrom = 0L
+        // L3: the blocking write keeps the buffer full, so its size is delay in front of every
+        // frame. Ask for two frames' worth; the track clamps that to what it can do, and every
+        // underrun from then on grows it a frame, back to the full buffer at worst.
+        val capacity = runCatching { track.bufferCapacityInFrames }.getOrDefault(0)
+        val granted = runCatching { track.setBufferSizeInFrames(FRAME * PLAYBACK_BUFFER_FRAMES) }
+            .onFailure { Log.w(TAG, "playback buffer size refused: $it") }.getOrDefault(-1)
+        val buffer = if (granted > 0 && capacity >= granted) GrowOnUnderrun(granted, FRAME, capacity) else null
+        var startUpUnderruns = 0
         try {
             track.play()
             t.step("play")
@@ -510,6 +539,19 @@ class VoiceEngine(
                     t.step("first write")
                     Log.i(TAG, t.line("playback up"))
                 }
+                if (buffer != null && writes % UNDERRUN_CHECK_FRAMES == 0L) {
+                    val count = track.underrunCount
+                    if (writes == UNDERRUN_CHECK_FRAMES) {
+                        // The track starting on an empty buffer is not a buffer too small.
+                        startUpUnderruns = count
+                        buffer.baseline(count)
+                    } else {
+                        buffer.underruns(count)?.let { size ->
+                            val now = runCatching { track.setBufferSizeInFrames(size) }.getOrDefault(-1)
+                            Log.i(TAG, "playback track: underrun $count, buffer -> $now frames")
+                        }
+                    }
+                }
                 if (out is JitterBuffer.Out.Play) framesPlayed++
             }
         } finally {
@@ -519,6 +561,14 @@ class VoiceEngine(
                 val ms = (System.nanoTime() - writesFrom) / 1_000_000
                 val reanchors = synchronized(jitter) { jitter.reanchors }
                 Log.i(TAG, "playback: wrote $writes frames in $ms ms (${ms / VoicePacket.FRAME_MS} expected), $reanchors re-anchors")
+                // `playback track: mode low_latency, buffer 640 of 1924 frames (asked 640, granted
+                // 640, grew 0x), underruns 0 (0 at start-up)`: what the device gave, for L3.
+                runCatching {
+                    "playback track: mode ${performanceMode(track.performanceMode)}, " +
+                        "buffer ${track.bufferSizeInFrames} of $capacity frames " +
+                        "(asked ${FRAME * PLAYBACK_BUFFER_FRAMES}, granted $granted, grew ${buffer?.grown ?: 0}x), " +
+                        "underruns ${track.underrunCount} ($startUpUnderruns at start-up)"
+                }.onSuccess { Log.i(TAG, it) }
             }
             runCatching { track.stop() }
             track.release()
@@ -531,6 +581,18 @@ class VoiceEngine(
         const val FRAME = VoicePacket.FRAME_SAMPLES
         private const val TAG = "VoiceEngine"
         private const val CAPTURE_BUFFER_FRAMES = 10
+        /** The talk track's buffer to start with: 40 ms (L3); it grows on underruns. */
+        private const val PLAYBACK_BUFFER_FRAMES = 2
+        /** Look at the track's underrun count every 10 writes (200 ms); the first look is the baseline. */
+        private const val UNDERRUN_CHECK_FRAMES = 10L
+
+        /** `AudioTrack.getPerformanceMode()` as a word, for the log lines of both engines. */
+        fun performanceMode(mode: Int): String = when (mode) {
+            AudioTrack.PERFORMANCE_MODE_LOW_LATENCY -> "low_latency"
+            AudioTrack.PERFORMANCE_MODE_NONE -> "none"
+            AudioTrack.PERFORMANCE_MODE_POWER_SAVING -> "power_saving"
+            else -> "mode$mode"
+        }
 
         /** `mic trace:` covers the first [TRACE_BUCKETS] × [TRACE_BUCKET_MS] ms = 4 s of capture. */
         private const val TRACE_BUCKET_MS = 100L

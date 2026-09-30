@@ -30,7 +30,8 @@ in the Bonjour TXT record and in its `hello`; clients must use the advertised va
    TCP connect (3 s, name resolution included), then 1 s to receive the host's `hello`.
    The host is the first candidate whose first frame is a `hello` with `role:"host"` and
    the client's `proto`. Only then does the client stop browsing and sweeping and open its
-   control connection. A candidate that fails is not probed again for 10 s; the browse
+   control connection. A candidate that fails is not probed again for 10 s (1 s when the
+   connection was refused: a host that is restarting is not listening yet); the browse
    keeps running meanwhile, so a host that appears later is still found. When several
    answer at once, the one named like the last host this client linked to wins; otherwise
    the first to answer.
@@ -42,7 +43,10 @@ in the Bonjour TXT record and in its `hello`; clients must use the advertised va
 4. A probe sends nothing: it only reads the host's `hello` and closes (a client `hello`
    would replace the host's current client). The host treats such a connection as no
    session: no state change beyond a log line.
-5. Test tools never advertise `_motoparty._tcp` on a real network by default (opt-in only,
+5. After link loss the client also probes the address it was last linked to, at once and then
+   every second, alongside everything above and exempt from the back-off: a host that
+   restarted is usually where it was.
+6. Test tools never advertise `_motoparty._tcp` on a real network by default (opt-in only,
    with a short TTL), so a test run can't leave stale hosts on the riders' Wi-Fi.
 
 ## Control channel (TCP 47800)
@@ -55,10 +59,15 @@ unknown fields are ignored. Absent optional fields are omitted, never `null`. Ev
 the table is required unless marked optional. A known type with a missing or mistyped
 required field, or a value outside the listed set (e.g. an unknown `reason` or `action`), is
 dropped and logged; the connection stays up. Invalid JSON or an oversize
-frame closes the connection.
+frame closes the connection. A frame whose bytes are not valid UTF-8 is treated as invalid
+JSON: the connection is closed (no U+FFFD replacement; `fixtures/control/framing.json` `fatal`).
 Times are integer milliseconds. `*HostTimeMs` values are on the host's clock (see Clock).
 
-On connect, each side sends `hello` first. The host sends `state` immediately after its
+On connect, each side sends `hello` first. Each side checks the other's `hello.proto`: the
+host answers any other value with `bye{reason:"proto"}` and closes; no session starts and a
+connected client is not replaced. A client that gets `bye{reason:"proto"}`, or reads another
+`proto` in the host's `hello`, shows the mismatch and does not connect to that host again
+until the user asks (no reconnect loop). The host sends `state` immediately after its
 `hello`, and again whenever anything in it changes. If a track is loaded, the host then
 re-sends `music.load` for the current and next track, and (if playing) a `music.play` with
 the current anchor once the client reports `music.ready`, so a client that joins mid-track
@@ -76,6 +85,7 @@ catches up.
 | `music.error`   | C→H   | `id`, `message` — starting with `"not decodable"` when the file downloaded but will not play (see Tracks) |
 | `music.play`    | H→C   | `id`, `positionMs`, `atHostTimeMs` — also used for seek and resync |
 | `music.pause`   | H→C   | `id`, `positionMs` |
+| `music.next`    | H→C   | `id`, `atHostTimeMs` — the track that follows the current one without a gap, see Music flow 6 |
 | `music.stop`    | H→C   | (nothing) |
 | `music.control` | C→H   | `action`: `"pause"`\|`"resume"`\|`"next"`\|`"previous"` (button presses on the client; volume is local, see Commands) |
 | `command.text`  | C→H   | `text`: the recognised command, the first phrase of a talk the client opened (see Commands), `lang`: BCP-47 tag |
@@ -100,7 +110,7 @@ catches up.
 `mic` (optional, `"host"`) is present only while `talk` is true and the open talk is a host-mic
 talk (see "Host-mic talk"), so a client that learns of the talk only from `state` (it joined
 mid-talk) opens it the same way. A receiver ignores `mic` on `state{talk:false}` (the message is kept). `music` is omitted when nothing is loaded; its `art` (optional) is a cover image URL. `queue` (required, possibly empty) is the upcoming
-tracks after the current one. `positionMs`/`atHostTimeMs` form the same anchor as in
+tracks after the current one; an item is `{id, title, artist}` plus optional `durationMs` and `art` (2026-09-30; the host leaves `art` out of every item when `state` would pass 48 KiB). `positionMs`/`atHostTimeMs` form the same anchor as in
 `music.play`; while paused (including during talk) `playing` is false and `positionMs` is the
 pause position.
 
@@ -109,6 +119,12 @@ pause position.
 The client sends `ping` every 2 s. Either side treats 6 s without any received control frame
 as link loss: close, and (client) restart discovery; (host) close talk with reason `"link"`
 and keep the music playing locally.
+
+A client often notices a dead socket before the host does and is back within a second. When
+a client `hello` replaces a connection whose client had the same `name`, the host does
+**not** close an open talk: the talk carries on, `state{talk:true}` on the new connection is
+what the client acts on, and voice follows the source address of its next valid packet. A
+`hello` with a different `name` replaces the client and closes the talk with `"link"`.
 
 ## Clock
 
@@ -123,8 +139,10 @@ offset = ((t1 - t0) + (t2 - t3)) / 2          (floating point)
 
 Keep the last 8 samples; the estimate is the `offset` of the sample with the smallest `rtt`
 (ties: most recent). Discard samples with `rtt < 0`; they take no window slot. If a new
-sample's offset differs from the current estimate by more than 500 ms (the iOS monotonic
-clock stops while the device sleeps), clear the window and start over from that sample. `hostToLocal(h) = h - offset`,
+sample's offset differs from the current estimate by more than `500 + rtt / 2` ms, `rtt`
+being the new sample's (the iOS monotonic clock stops while the device sleeps; a slow pong
+alone can be off by half its round trip and must not throw a good window away), clear the
+window and start over from that sample. A reconnect to the same host keeps the window. A host with another `name` starts a fresh one. `hostToLocal(h) = h - offset`,
 `localToHost(l) = l + offset`. Vectors: `fixtures/clock.json`.
 
 ## Voice (UDP 47801)
@@ -168,6 +186,36 @@ lower by 20 ms (min 40 ms) after 10 s without one; depth changes take effect at 
 the next talk spurt. A missing frame whose successor has arrived is decoded with FEC from the
 successor; otherwise packet-loss concealment.
 
+A *talk spurt* starts at the first audio packet and again after every silence gap. A packet
+that arrives after the playout clock passed its slot is **not** an underrun but the first
+packet of a new spurt when all of these hold: nothing is queued, its `ts` is at least two
+frames past the last played frame, and every `seq` between the last played packet and it was
+a keepalive (or an audio packet that came too late to play).
+
+**Shedding a backlog.** An earbud microphone never goes silent, so a whole talk can be one
+spurt, and a playout stall (a route switch, a blocked audio write) or an output clock slower
+than the sender's would otherwise be heard as extra delay until the talk ends. A receiver
+therefore drops queued frames, oldest first:
+
+1. *At spurt start*, until the queue spans no more than the target
+   (`newest ts − oldest ts ≤ target`), then starts at the oldest that is left.
+2. *During a spurt*, it notes the queue depth (frames queued × 20 ms) each time a frame is
+   due and keeps the smallest over every 50 frames due (1 s; the window restarts at spurt
+   start). At the end of a window, with `min` that smallest depth: if `min > target + 120 ms`
+   it drops `(min − target) / 20 ms` frames; else if `min > target + 40 ms` it drops one.
+
+Shed frames are neither loss nor underruns: no FEC, no concealment, no target change.
+
+Three more rules keep a receiver from getting stuck, and the vectors pin them too. A packet
+counts as on time up to half a frame after its slot. When packets have kept arriving late for
+100 ms with nothing played in between, the playout clock is ahead of the stream for good: the
+next late packet starts a new spurt instead of being dropped (*re-anchor*; the target keeps
+the raise the first late packet gave it). A packet whose `ts` is more than 3 s from the
+playout point restarts the buffer at the current target. Whatever else happens, the queue
+never holds more than 400 ms: the oldest frames go first (shed). With nothing queued
+mid-spurt a receiver conceals at most 3 frames, then plays silence.
+Vectors: `fixtures/jitter.json`.
+
 ## Tracks (HTTP 47802)
 
 `GET /track/<id>.m4a` → `200` with `Content-Type: audio/mp4` and the full audio-only MP4 file,
@@ -183,6 +231,9 @@ link re-encodes to AAC or SBC anyway.
 ## Talk flow
 
 1. Trigger on either side. The client sends `talk.open{by:"client"}`; the host decides.
+   A second trigger on the client before the decision arrives sends
+   `talk.close{by:"client", reason:"trigger"}` (the host, having opened the talk, closes it),
+   and a request unanswered for 5 s is dropped by the client.
    Talk is not negotiable: there is no way for a person to decline it, and the host opens
    talk whenever it can. Only when a phone *cannot* open its microphone (a cellular call in
    progress, microphone permission missing, the audio route failed) does it answer with
@@ -234,9 +285,14 @@ In a host-mic talk:
 
 1. Host resolves and caches a track, then sends `music.load`.
 2. Client downloads it and replies `music.ready` (or `music.error`).
-3. Host sends `music.play{positionMs, atHostTimeMs = now + 300}` once the client is ready
-   (on `music.error`, or after 8 s without `music.ready`: the host plays alone and sends `music.play` anyway;
-   a late client joins mid-track by computing its position from the anchor).
+3. Host sends `music.play{positionMs, atHostTimeMs = now + lead}` once the client is ready.
+   `lead` is long enough for the host itself to be audible *at* the anchor: its own measured
+   output start delay plus preparation, never under 300 ms (2026-09-30; a fixed 300 ms made
+   the host skip the first 250–750 ms of every track and resume). A client that cannot be
+   ready by `atHostTimeMs` starts late at the position the anchor gives.
+   On a `music.error` for the current track the host sends its `music.load` once more after
+   2 s; on a second error, or after 8 s without `music.ready`, the host plays alone and sends
+   `music.play` anyway; a late client joins mid-track by computing its position from the anchor.
 4. Drift: each side independently compares its player position with the anchor
    (`expected = positionMs + (hostNow - atHostTimeMs)`). Every play or seek on Bluetooth
    (A2DP) restarts the output with 350–700 ms of fresh lag (measured on the Pixel 8), so
@@ -246,6 +302,27 @@ In a host-mic talk:
    (setting, ms) to account for Bluetooth delay.
 5. Pause/stop are immediate on receipt. The host sends `music.load` for the next queue
    item as soon as the current one starts, so the client prefetches it.
+6. **Gapless** (2026-09-30). When the next track is ready on both phones (the client
+   answered `music.ready` for it) and the current one is playing, the host sends
+   `music.next{id, atHostTimeMs}`: track `id` starts at position 0 at that host time, which
+   is when the current track ends by its anchor. Each phone queues the track behind the
+   current one in its own player, so the change has no gap locally, and from then on
+   `{id, positionMs:0, atHostTimeMs}` is the anchor drift is measured against. At the change
+   the host sends `state` and the usual `music.play{id, 0, atHostTimeMs}` with that same
+   anchor; a client already playing `id` on that anchor must not seek or restart for it.
+   A pending `music.next` is cancelled by: any `music.play` message other than the one of the
+   change (the pending track on its announced anchor) — so also one that repeats the current
+   track's anchor unchanged, which is how the host takes a `music.next` back; the client does
+   not seek for that one — and by `music.pause`, `music.stop`, a talk, a `music.next` naming
+   another track, and a `state` whose `music` is absent, is not playing, or names a track that
+   is neither the current nor the pending one. A `state` that names the current track playing
+   on its unchanged anchor does **not** cancel (the host
+   sends one on every queue edit). The host sends `music.next` again once playback continues
+   and after every `music.play` it sends while one is announced. Once the host has sent the
+   `music.play` of the change, a `music.next` that reaches a client which has not changed over
+   yet names the track *after* the pending one: the client applies it after its own change,
+   never in place of the pending track. A client that ignores `music.next` still
+   works: it starts the track on the `music.play`, with a gap.
 
 ## Browsing
 
@@ -372,7 +449,8 @@ else → `announce{text:"Didn't catch that", earcon:"error"}`. Vectors: `fixture
 |------|--------|
 | `fixtures/control/messages.json` | every message type round-trips |
 | `fixtures/control/framing.json`  | length prefix, UTF-8, oversize rejection, unknown types/fields |
-| `fixtures/clock.json`            | offset estimator incl. negative RTT, ties, window eviction |
+| `fixtures/clock.json`            | offset estimator incl. negative RTT, ties, window eviction, the step reset |
+| `fixtures/jitter.json`           | jitter buffer: spurts, underruns and target changes, FEC/conceal, shedding, re-anchor, wrap-around |
 | `fixtures/voice/header.json`     | UDP header encode/decode and rejection |
 | `fixtures/commands.json`         | command parser |
 | `fixtures/first_phrase.json`     | the first-phrase gate: command text or conversation per phrase |

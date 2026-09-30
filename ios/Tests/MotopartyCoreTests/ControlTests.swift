@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 34)
+        XCTAssertEqual(messages.count, 36)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -28,7 +28,7 @@ final class MessageFixtureTests: XCTestCase {
 
         let allTypes: Set<String> = [
             "hello", "ping", "pong", "talk.open", "talk.close", "music.load", "music.ready",
-            "music.error", "music.play", "music.pause", "music.stop", "music.control",
+            "music.error", "music.play", "music.pause", "music.next", "music.stop", "music.control",
             "command.text", "music.search", "music.browse", "music.results", "music.enqueue",
             "music.edit", "announce", "state", "bye",
         ]
@@ -41,6 +41,16 @@ final class MessageFixtureTests: XCTestCase {
 
         let state = try ControlCodec.decode(Data(#"{"t":"state","talk":true,"queue":[]}"#.utf8))
         XCTAssertEqual(state, .state(HostState(talk: true)))
+
+        let next = try ControlCodec.decode(Data(#"{"t":"music.next","id":"a","atHostTimeMs":5}"#.utf8))
+        XCTAssertEqual(next, .musicNext(MusicNext(id: "a", atHostTimeMs: 5)))
+
+        let queue = try ControlCodec.decode(Data(#"{"t":"state","talk":false,"queue":[{"id":"a","title":"T","artist":"A","durationMs":1000,"art":"https://x/a.jpg"},{"id":"b","title":"T","artist":"A","durationMs":2000},{"id":"c","title":"T","artist":"A"}]}"#.utf8))
+        XCTAssertEqual(queue, .state(HostState(talk: false, queue: [
+            .init(id: "a", title: "T", artist: "A", durationMs: 1000, art: "https://x/a.jpg"),
+            .init(id: "b", title: "T", artist: "A", durationMs: 2000),
+            .init(id: "c", title: "T", artist: "A"),
+        ])))
     }
 
     func testOptionalFieldsAreOmittedNotNull() throws {
@@ -122,6 +132,8 @@ final class MessageFixtureTests: XCTestCase {
         for json in [#"{"t":"ping","id":1}"#, #"{"t":"ping","id":"1","t0":2}"#,
                      #"{"t":"state","talk":false}"#, #"{"t":"talk.close","by":"host","reason":"bored"}"#,
                      #"{"t":"music.control","action":"louder"}"#,
+                     #"{"t":"music.next","id":"a"}"#, #"{"t":"music.next","id":"a","atHostTimeMs":"5"}"#,
+                     #"{"t":"state","talk":false,"queue":[{"id":"a","title":"T","artist":"A","durationMs":"1"}]}"#,
                      #"{"t":"music.control","action":"volumeDown"}"#] {
             guard case .invalidFields? = error(json) else { XCTFail("\(json) should be invalidFields"); continue }
             XCTAssertFalse(error(json)!.closesConnection)
@@ -192,7 +204,7 @@ final class FramingFixtureTests: XCTestCase {
     func testMalformedMessagesAreDroppedNotFatal() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let malformed = try XCTUnwrap(fixture["malformed"] as? [[String: Any]])
-        XCTAssertEqual(malformed.count, 12, "every malformed vector must be exercised")
+        XCTAssertEqual(malformed.count, 15, "every malformed vector must be exercised")
         for m in malformed {
             let json = try XCTUnwrap(m["json"] as? String)
             // Framed and received like any other frame…
@@ -210,17 +222,37 @@ final class FramingFixtureTests: XCTestCase {
     func testFatalFramesCloseTheConnection() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let fatal = try XCTUnwrap(fixture["fatal"] as? [[String: Any]])
-        XCTAssertFalse(fatal.isEmpty)
+        XCTAssertEqual(fatal.count, 6, "every fatal vector must be exercised")
         for f in fatal {
             let hex = try XCTUnwrap(f["hex"] as? String)
             var d = FrameDecoder()
             let frames = try d.append(Data(hex: hex))
             XCTAssertEqual(frames.count, 1, hex)
+            if (f["_doc"] as? String)?.contains("invalid UTF-8") == true {
+                XCTAssertFalse(ControlCodec.isValidUTF8(frames[0]), hex)
+            }
             XCTAssertThrowsError(try ControlCodec.decode(frames[0]), hex) { error in
                 XCTAssertEqual(error as? ControlCodecError, .invalidJSON)
                 XCTAssertEqual((error as? ControlCodecError)?.closesConnection, true)
             }
         }
+    }
+
+    func testFatalVectorsIncludeTheFourInvalidUTF8Frames() throws {
+        let fixture = try Fixtures.json("control/framing.json")
+        let fatal = try XCTUnwrap(fixture["fatal"] as? [[String: Any]])
+        XCTAssertEqual(fatal.filter { ($0["_doc"] as? String)?.contains("invalid UTF-8") == true }.count, 4)
+    }
+
+    func testStrictUTF8() {
+        XCTAssertTrue(ControlCodec.isValidUTF8(Data()))
+        XCTAssertTrue(ControlCodec.isValidUTF8(Data("{\"t\":\"announce\",\"text\":\"שלום 🎵\"}".utf8)))
+        XCTAssertFalse(ControlCodec.isValidUTF8(Data([0x22, 0xFF, 0x22])))
+        XCTAssertFalse(ControlCodec.isValidUTF8(Data([0xC3, 0x28])))
+        XCTAssertFalse(ControlCodec.isValidUTF8(Data([0xED, 0xA0, 0x80])))
+        XCTAssertFalse(ControlCodec.isValidUTF8(Data([0xC0, 0xAF])))
+        // Truncated at the end of the frame.
+        XCTAssertFalse(ControlCodec.isValidUTF8(Data([0x61, 0xE2, 0x82])))
     }
 
     func testUnknownTypesAndFields() throws {
@@ -258,6 +290,30 @@ final class ClockFixtureTests: XCTestCase {
             XCTAssertEqual(clock.hostToLocal(host), local)
             XCTAssertEqual(clock.localToHost(local), host)
         }
+    }
+
+    /// `stepReset`: a fresh estimator; a slow pong is kept, a real step
+    /// resets, and the `500 + rtt / 2` boundary is pinned on both sides.
+    func testStepReset() throws {
+        let fixture = try Fixtures.json("clock.json")
+        let block = try XCTUnwrap(fixture["stepReset"] as? [String: Any])
+        let steps = try XCTUnwrap(block["steps"] as? [[String: Any]])
+        XCTAssertFalse(steps.isEmpty)
+
+        var clock = ClockSync()
+        for (i, step) in steps.enumerated() {
+            let s = try XCTUnwrap(step["sample"] as? [NSNumber]).map { $0.int64Value }
+            let expect = try XCTUnwrap(step["expectOffset"] as? NSNumber).doubleValue
+            clock.add(t0: s[0], t1: s[1], t2: s[2], t3: s[3])
+            XCTAssertEqual(clock.offset, expect, "stepReset step \(i)")
+        }
+    }
+
+    func testKeepaliveDue() {
+        XCTAssertFalse(LinkDefaults.keepaliveDue(nowMs: 1_999, lastSentMs: 1_000))
+        XCTAssertTrue(LinkDefaults.keepaliveDue(nowMs: 2_000, lastSentMs: 1_000))
+        // Ticks at 250 ms: the gap after the last packet stays under 1.25 s.
+        XCTAssertLessThanOrEqual(LinkDefaults.keepaliveIntervalMs + LinkDefaults.keepaliveTickMs, 1_250)
     }
 
     func testNegativeRttDiscarded() {

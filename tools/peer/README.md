@@ -98,8 +98,8 @@ behaves as before. (`say` stays ungated, so it can test how a host treats a stra
 
 Output: `<<` lines are received messages and `>>` lines are sent ones, as compact JSON.
 Pongs print as `pong id=… rtt=…ms offset=…ms | estimate offset=…ms (rtt …ms)`. While talk
-is open, a `voice rx:` line every 2 s shows received / played / FEC / PLC / late / underruns,
-the jitter-buffer depth and target, plus how many audio packets, DTX skips and keepalives
+is open, a `voice rx:` line every 2 s shows received / played / FEC / PLC / underruns / shed /
+re-anchors, the jitter-buffer depth (and its maximum) and target, plus how many audio packets, DTX skips and keepalives
 were sent. On `music.load` the client downloads the file over HTTP and checks it (ftyp box,
 plus an ffprobe audio stream when ffprobe is available), then replies `music.ready` or
 `music.error`. On `music.play` it logs the host time converted to local time and how far
@@ -119,6 +119,10 @@ stays off the Wi-Fi. A probe (a connection that never sends `hello`) gets the ho
 and `state`, then the host logs the close; nothing else changes.
 
 - One client at a time. A new `hello` replaces the old connection, which gets `bye{reason:"replaced"}`.
+  If a talk is open and the new client has the same `name` as the replaced one, the talk stays
+  open (log: `talk kept: '<name>' reconnected`; the new connection already got
+  `state{talk:true}`); a different name closes it with `talk.close{by:"host",reason:"link"}`.
+  A connection the host has already seen close is link loss as before, whoever comes next.
 - Answers `pong` with `t1` taken at frame receipt and `t2` at send. The clock is `CLOCK_MONOTONIC` in ms.
 - Talk authority. It opens or closes on client requests and on the stdin `talk` command, and
   broadcasts `talk.*` + `state`. After `mic off` it answers a client's `talk.open` with
@@ -282,6 +286,18 @@ Then, from the iPhone app, check each of these:
 - With talk open (host `talk`), make the iPhone lose its mic (start a call, revoke the
   permission): it should send `talk.close{by:"client",reason:"unavailable"}`, which the fake
   host treats like any close request — it closes talk and broadcasts `talk.close` + `state`.
+- Gapless (PROTOCOL.md "Music flow" 6): start the host with a directory, `--track ~/Music/dir`
+  (two or more `.m4a`), type `queue` (every other track goes behind the current one), then
+  `load`. The iPhone gets `music.load` for the next track right after the first `music.play`;
+  once it answers `music.ready` the host sends `music.next{id, atHostTimeMs}` (the end of the
+  current track by its anchor, using the file's own duration), and at that time `state`,
+  `music.play{id, 0, sameAnchor}` and the `music.load` of the following track. The iPhone must
+  change without a gap and not seek on that `music.play`. `pause`/`play`, `talk` twice and
+  `next` cancel the announcement and the host sends it again (after a skip: for the new next
+  track). Less than 1.5 s before the end nothing is announced (log: `was not announced,
+  loading it (gap)`). After the last track the host sends `music.pause{id, 0}` (parked, not
+  `music.stop`); `play` starts it again from 0. A first `music.error` for the current track
+  gets its `music.load` again after 2 s.
 - Type `hostmic on`, then trigger talk (either side): the iPhone gets `talk.open{…,mic:"host"}`.
   It must open no mic, stay in media mode, pause music and send keepalives only. The host's
   stats show `audio=0` and `dropped=0`, and a nonzero `dropped` means the iPhone is still
@@ -318,7 +334,10 @@ message is kept): the spec only says the host sends it while talk is true. `titl
 oversize length (> 65536; exactly 65536 is allowed) closes the connection.
 
 **Clock.** `hostToLocal`/`localToHost` return floats; nothing rounds. Discarded (rtt < 0)
-samples never enter the 8-sample window.
+samples never enter the 8-sample window. A sample whose offset is more than `500 + rtt/2` ms
+from the estimate clears the window and starts it over (`ClockEstimator.resets` counts
+these). The client keeps the window across reconnects to the same host (same hello `name`)
+and clears it when it connects to a different one.
 
 **Voice sender.**
 
@@ -340,22 +359,29 @@ CELT-only and other packets count as activity. Why:
   cannot identify them.
 - Real room noise often never triggers DTX at all.
 
-**Jitter buffer** (`motoparty_peer/jitter.py` has the full model and its tests):
+**Jitter buffer** (`motoparty_peer/jitter.py`): a port of the Android reference
+(`core/JitterBuffer.kt`), pinned by the shared vectors in `fixtures/jitter.json`
+(`tests/test_jitter.py` runs every case).
 
-- **Depth** is the buffered audio ahead of the playout point, including the frame about to
-  play.
-- **Start of playout.** Each talk spurt starts playing once 40 ms (the target) is buffered,
-  or once its first packet has waited the target.
-- **Missing frames.** When a frame is missing but a later packet is buffered, the peer counts
-  the lost seqs; keepalive seqs don't count. The frame right before the later packet is
-  recovered with **FEC** from it, other lost frames get **PLC**, and a gap with no lost seqs
-  is DTX and plays as **silence**.
-- **Underrun** means a packet arrived after its playout slot. The target goes up 20 ms
-  (max 200). If the late packet directly follows the last played frame, playout re-anchors on
-  it; otherwise the extra 20 ms is inserted at the next silence.
+- **Spurt start.** The first frame of a talk spurt plays once it has waited the target
+  (40 ms at first). A spurt starts at the first packet and after every silence gap, also when
+  the packet after the gap arrives behind the old spurt's playout clock.
+- **Shedding.** At spurt start the oldest frames are dropped until the queue spans no more
+  than the target. During a spurt, every 50 frames due: if the smallest depth of that window
+  was > target + 120 ms the whole excess is dropped, else if > target + 40 ms one frame. A
+  400 ms hard cap applies on every pull. Shed frames are not loss and not underruns.
+- **Missing frames.** A `seq` gap is loss: **FEC** from the successor when it is the very
+  next frame, otherwise **PLC**. A `ts` jump whose `seq`s in between were all keepalives (or
+  audio that came too late) is silence and starts a new spurt. With nothing queued: at most
+  3 PLC frames, then silence.
+- **Underrun** means a packet arrived after its playout slot (on time up to half a frame
+  after it); it is dropped. The target goes up 20 ms (max 200), at most once per spurt, and
+  the new target applies from the next spurt.
 - **Decay.** After 10 s without an underrun, the target drops 20 ms (min 40).
-- **Trim.** Once a second, if the minimum depth over that second was ≥ target + 20 ms, one
-  frame is dropped.
+- **Re-anchor / restart.** Packets late for 100 ms with nothing played: the next late one
+  starts a new spurt. A `ts` more than 3 s from the playout clock restarts the buffer.
+- Beyond the spec: a duplicate of a queued packet is ignored; a duplicate of one already
+  played counts as a late packet (as on Android).
 
 **Talk and music.**
 

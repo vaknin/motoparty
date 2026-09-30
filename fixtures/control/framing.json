@@ -74,6 +74,18 @@
   {
    "_doc": "state mic outside its set: drop, keep",
    "json": "{\"t\":\"state\",\"talk\":true,\"mic\":\"both\",\"queue\":[]}"
+  },
+  {
+   "_doc": "music.next missing atHostTimeMs: drop, keep",
+   "json": "{\"t\":\"music.next\",\"id\":\"abc-_123\"}"
+  },
+  {
+   "_doc": "music.next mistyped atHostTimeMs: drop, keep",
+   "json": "{\"t\":\"music.next\",\"id\":\"abc-_123\",\"atHostTimeMs\":\"10090000\"}"
+  },
+  {
+   "_doc": "state queue item with a mistyped optional durationMs: drop, keep",
+   "json": "{\"t\":\"state\",\"talk\":false,\"queue\":[{\"id\":\"x1\",\"title\":\"A\",\"artist\":\"B\",\"durationMs\":\"65000\"}]}"
   }
  ],
  "fatal": [
@@ -84,6 +96,22 @@
   {
    "_doc": "JSON but not an object: close",
    "hex": "000000025b5d"
+  },
+  {
+   "_doc": "invalid UTF-8 (a lone 0xFF byte in a string): close, no U+FFFD replacement",
+   "hex": "000000187b2274223a22627965222c22726561736f6e223a22ff227d"
+  },
+  {
+   "_doc": "invalid UTF-8 (truncated two-byte sequence C3 28): close",
+   "hex": "000000197b2274223a22627965222c22726561736f6e223a22c328227d"
+  },
+  {
+   "_doc": "invalid UTF-8 (encoded surrogate ED A0 80): close",
+   "hex": "0000001a7b2274223a22627965222c22726561736f6e223a22eda080227d"
+  },
+  {
+   "_doc": "invalid UTF-8 (overlong C0 AF): close",
+   "hex": "000000197b2274223a22627965222c22726561736f6e223a22c0af227d"
   }
  ]
 }

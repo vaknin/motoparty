@@ -11,7 +11,17 @@ import coil3.SingletonImageLoader
 import coil3.annotation.DelicateCoilApi
 import coil3.test.FakeImageLoaderEngine
 import com.github.takahirom.roborazzi.captureRoboImage
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.kivan.motoparty.BrowseState
+import com.kivan.motoparty.Diagnostics
+import com.kivan.motoparty.PlaybackAnchor
+import com.kivan.motoparty.music.MusicPhase
+import com.kivan.motoparty.music.OutputRoute
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.kivan.motoparty.LinkStatus
 import com.kivan.motoparty.SearchState
 import com.kivan.motoparty.Settings
@@ -61,9 +71,14 @@ class ScreensTest {
         clientName = "iPhone",
         nowPlaying = songs[0],
         playing = true,
-        positionMs = 97_000,
+        // Not a moving anchor: the position on the PNG is the same on every run.
+        anchor = PlaybackAnchor(97_000, 0, playing = false),
         queue = songs.drop(1),
-        lastAnnounce = "Playing album The Dark Side of the Moon by Pink Floyd",
+    )
+
+    private val dev = DevFlows(
+        MutableStateFlow(Diagnostics(clientAddress = "192.168.43.17", clientSkewMs = 12, lastPingAgeMs = 340, jitterTargetMs = 60, cacheMb = 412)),
+        MutableStateFlow(listOf("host up as \"Pixel 8\"", "client \"iPhone\" connected from 192.168.43.17")),
     )
 
     @OptIn(DelicateCoilApi::class)
@@ -85,13 +100,90 @@ class ScreensTest {
         permissions: List<Permission> = emptyList(),
         history: History = History(),
     ) {
-        compose.setContent { MotopartyTheme { Motoparty(status, Settings(), permissions, Callbacks(), tab, history) } }
+        compose.setContent { MotopartyTheme { Motoparty(status, Settings(), permissions, Callbacks(), tab, history, dev = dev) } }
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")
     }
 
     @Test
     fun ridePlaying() = shoot("1-ride-playing", playing, Tab.RIDE)
+
+    /** The height the Ride tab really gets on the Pixel 8, under the status bar and above the gesture bar. */
+    @Test
+    @Config(qualifiers = "w412dp-h840dp-420dpi")
+    fun ridePlayingRealHeight() = shoot("1a-ride-playing-pixel-height", playing.copy(lastAnnounce = "Playing Money by Pink Floyd"), Tab.RIDE)
+
+    /** The handlebar mount: tabs on a rail, the music on the left, TALK the whole right side. */
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun ridePlayingLandscape() = shoot("1b-ride-playing-landscape", playing, Tab.RIDE)
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideTalkLiveLandscape() = shoot(
+        "1c-ride-talk-live-landscape",
+        playing.copy(talkOpen = true, talkLive = true, playing = false, musicPhase = MusicPhase.PAUSED_FOR_TALK, heard = "are you cold"),
+        Tab.RIDE,
+    )
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideTalkOpeningLandscape() = shoot(
+        "1d-ride-talk-opening-landscape",
+        playing.copy(talkOpen = true, commandWindow = true, playing = false),
+        Tab.RIDE,
+    )
+
+    /** The host is off: one button, where TALK would be. */
+    @Test
+    fun rideHostOff() = shoot("1e-ride-host-off", LinkStatus(), Tab.RIDE)
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideHostOffLandscape() = shoot("1f-ride-host-off-landscape", LinkStatus(), Tab.RIDE)
+
+    /** Pressed, the headset is still switching: the ring, "Connecting…", and the commands in place of the music. */
+    @Test
+    fun rideTalkOpening() = shoot(
+        "1g-ride-talk-opening",
+        playing.copy(talkOpen = true, commandWindow = true, playing = false, musicPhase = MusicPhase.PAUSED_FOR_TALK),
+        Tab.RIDE,
+    )
+
+    /** Live, and the first phrase was a conversation: red END TALK with the LIVE pill, and what was heard. */
+    @Test
+    fun rideTalkLive() = shoot(
+        "1h-ride-talk-live",
+        playing.copy(talkOpen = true, talkLive = true, playing = false, musicPhase = MusicPhase.PAUSED_FOR_TALK, heard = "are you cold"),
+        Tab.RIDE,
+    )
+
+    @Test
+    fun rideTalkClosing() = shoot("1i-ride-talk-closing", playing.copy(talkClosing = true, playing = false), Tab.RIDE)
+
+    /** The service lost its microphone: the red banner is the button that brings it back. */
+    @Test
+    fun rideMicOff() = shoot("1j-ride-mic-off", playing.copy(micOff = true), Tab.RIDE)
+
+    /** A failed command stays as a banner with a ✕; the song is still downloading. */
+    @Test
+    fun rideErrorAndLoading() = shoot(
+        "1k-ride-error-loading",
+        playing.copy(error = "Couldn't find pink floid", playing = false, musicPhase = MusicPhase.LOADING, anchor = null),
+        Tab.RIDE,
+    )
+
+    /** What the "Say …" line opens. */
+    @Test
+    fun commandsSheetContent() {
+        compose.setContent {
+            MotopartyTheme {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainer) { CommandsList(solo = false, Modifier.padding(16.dp)) }
+            }
+        }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/1l-commands-sheet.png")
+    }
 
     @Test
     fun rideWaitingEmpty() = shoot(
@@ -101,7 +193,11 @@ class ScreensTest {
 
     /** A solo talk: the one button reads END TALK, and the commands card says every phrase is one. */
     @Test
-    fun rideTalkingSolo() = shoot("2b-ride-talking-solo", playing.copy(clientName = null, talkOpen = true, playing = false), Tab.RIDE)
+    fun rideTalkingSolo() = shoot(
+        "2b-ride-talking-solo",
+        playing.copy(clientName = null, talkOpen = true, talkLive = true, commandWindow = true, playing = false),
+        Tab.RIDE,
+    )
 
     /** The Lark setting is on and no receiver is enumerated: the amber warning under the status. */
     @Test
@@ -111,7 +207,7 @@ class ScreensTest {
     @Test
     fun rideLarkMissingInTalk() = shoot(
         "2d-ride-lark-missing-talk",
-        playing.copy(larkMissing = "no USB input", talkOpen = true, talkOnEarbudsFallback = true, playing = false),
+        playing.copy(larkMissing = "no USB input", talkOpen = true, talkLive = true, talkOnEarbudsFallback = true, playing = false),
         Tab.RIDE,
     )
 
@@ -194,6 +290,14 @@ class ScreensTest {
     @Test
     fun queueEmpty() = shoot("7-queue-empty", LinkStatus(running = true), Tab.QUEUE)
 
+    /** Only a current song: the row has the play/pause button and nothing comes after. */
     @Test
-    fun settings() = shoot("8-settings", playing, Tab.SETTINGS)
+    fun queueOnlyCurrent() = shoot("7b-queue-only-current", playing.copy(queue = emptyList(), playing = false), Tab.QUEUE)
+
+    @Test
+    fun settings() = shoot("8-settings", playing.copy(outputRoute = OutputRoute("bt:aa", "AirPods Pro", bluetooth = true)), Tab.SETTINGS)
+
+    @Test
+    @Config(qualifiers = "w412dp-h1900dp-420dpi")
+    fun settingsWhole() = shoot("8b-settings-whole", playing.copy(outputRoute = OutputRoute("bt:aa", "AirPods Pro", bluetooth = true)), Tab.SETTINGS)
 }

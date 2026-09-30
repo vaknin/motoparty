@@ -89,6 +89,11 @@
    "positionMs": 61234
   },
   {
+   "t": "music.next",
+   "id": "abc-_123",
+   "atHostTimeMs": 10090000
+  },
+  {
    "t": "music.stop"
   },
   {
@@ -247,6 +252,30 @@
     }
    ],
    "mic": "host"
+  },
+  {
+   "t": "state",
+   "talk": false,
+   "queue": [
+    {
+     "id": "abc-_123",
+     "title": "Speak to Me",
+     "artist": "Pink Floyd",
+     "durationMs": 65000,
+     "art": "https://i.ytimg.com/vi/abc-_123/mqdefault.jpg"
+    },
+    {
+     "id": "abc-_124",
+     "title": "Breathe",
+     "artist": "Pink Floyd",
+     "durationMs": 169000
+    },
+    {
+     "id": "x1",
+     "title": "A",
+     "artist": "B"
+    }
+   ]
   },
   {
    "t": "bye",

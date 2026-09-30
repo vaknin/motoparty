@@ -9,6 +9,12 @@ final class AppSettings: ObservableObject {
     /// Output-latency trim (ms). Positive = this phone's audio comes out late
     /// (Bluetooth), so its player runs ahead by this much.
     @Published var latencyTrimMs: Double { didSet { defaults.set(latencyTrimMs, forKey: "latencyTrimMs") } }
+    /// Whether the player also runs ahead by `AVAudioSession.outputLatency`
+    /// (audit M2: AVPlayer may already account for it, which would count it
+    /// twice). On = the behaviour so far, until a click-track session decides.
+    @Published var compensateOutputLatency: Bool {
+        didSet { defaults.set(compensateOutputLatency, forKey: "compensateOutputLatency") }
+    }
     /// BCP-47 tag for on-device ASR and TTS.
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "speechLanguage") } }
     /// The app volume level (`AppVolume`, 0...16) the keys and spoken
@@ -32,6 +38,7 @@ final class AppSettings: ObservableObject {
     init() {
         deviceName = defaults.string(forKey: "deviceName") ?? "iPhone"
         latencyTrimMs = defaults.object(forKey: "latencyTrimMs") as? Double ?? 0
+        compensateOutputLatency = defaults.object(forKey: "compensateOutputLatency") as? Bool ?? true
         speechLanguage = defaults.string(forKey: "speechLanguage") ?? "en-US"
         // Removed 2026-09-29: the command mode, and headset buttons as talk
         // triggers (the earbuds sit inside the helmet).

@@ -169,6 +169,28 @@ class CodecTest {
         assertEquals("""{"t":"music.stop"}""", Codec.encode(MusicStop))
     }
 
+    @Test
+    fun musicNextAndQueueItemOptionals() {
+        assertEquals("""{"t":"music.next","id":"a","atHostTimeMs":5}""", Codec.encode(MusicNext("a", 5)))
+        assertEquals(MusicNext("a", 5), Codec.decode("""{"t":"music.next","id":"a","atHostTimeMs":5}"""))
+        val state = State(
+            talk = false,
+            queue = listOf(
+                QueueItem("a", "T", "A", durationMs = 1000, art = "https://x/a.jpg"),
+                QueueItem("b", "T", "A", durationMs = 2000),
+                QueueItem("c", "T", "A"),
+            ),
+        )
+        assertEquals(
+            """{"t":"state","talk":false,"queue":[""" +
+                """{"id":"a","title":"T","artist":"A","durationMs":1000,"art":"https://x/a.jpg"},""" +
+                """{"id":"b","title":"T","artist":"A","durationMs":2000},""" +
+                """{"id":"c","title":"T","artist":"A"}]}""",
+            Codec.encode(state),
+        )
+        assertEquals(state, Codec.decode(Codec.encode(state)))
+    }
+
     @Test(expected = MalformedMessageException::class)
     fun knownTypeWithMissingFieldIsMalformed() {
         Codec.decode("""{"t":"ping","id":1}""")
@@ -206,5 +228,28 @@ class CodecTest {
         assertTrue(Codec.fits(cut))
         assertEquals("id0", cut.items.first().ref)
         assertTrue(cut.items.size in 100 until 2000)
+    }
+
+    /** P11: invalid UTF-8 is fatal (not replaced with U+FFFD and processed), like invalid JSON. */
+    @Test
+    fun invalidUtf8IsFatal() {
+        val bodies = listOf(
+            "7b2274223a22627965222c22726561736f6e223a22ff227d", // a lone 0xFF inside a string
+            "7b2274223a22627965222c22726561736f6e223a22c328227d", // a cut two-byte sequence
+            "7b2274223a22627965222c22726561736f6e223a22eda080227d", // an encoded surrogate
+            "7b2274223a22627965222c22726561736f6e223a22c0af227d", // an overlong form
+        )
+        for (h in bodies) {
+            val body = hex(h)
+            val frame = java.nio.ByteBuffer.allocate(4 + body.size).putInt(body.size).put(body).array()
+            try {
+                FrameReader(ByteArrayInputStream(frame)).read()
+                fail("accepted $h")
+            } catch (e: ProtocolException) {
+                assertTrue("$h must be fatal, not droppable", e !is MalformedMessageException)
+            }
+        }
+        // Valid multi-byte text still passes.
+        assertEquals("""{"t":"bye","reason":"שלום 🏍"}""", Codec.text("""{"t":"bye","reason":"שלום 🏍"}""".toByteArray()))
     }
 }

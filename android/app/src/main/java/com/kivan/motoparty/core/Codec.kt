@@ -19,6 +19,8 @@ import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 
 /** Fatal for the connection: oversize frame or invalid JSON. */
 open class ProtocolException(message: String) : IOException(message)
@@ -42,7 +44,7 @@ object Codec {
         Hello.serializer(), Ping.serializer(), Pong.serializer(), TalkOpen.serializer(),
         TalkClose.serializer(), MusicLoad.serializer(), MusicReady.serializer(),
         MusicError.serializer(), MusicPlay.serializer(), MusicPause.serializer(),
-        MusicStop.serializer(), MusicControl.serializer(), CommandText.serializer(),
+        MusicNext.serializer(), MusicStop.serializer(), MusicControl.serializer(), CommandText.serializer(),
         Announce.serializer(), State.serializer(), Bye.serializer(), MusicSearch.serializer(),
         MusicBrowse.serializer(), MusicResults.serializer(), MusicEnqueue.serializer(),
         MusicEdit.serializer(),
@@ -140,6 +142,20 @@ object Codec {
         return r
     }
 
+    /**
+     * A frame body as text. Bytes that are not valid UTF-8 are fatal like invalid JSON (the
+     * connection closes), never replaced with U+FFFD and carried on with: PROTOCOL.md "Control
+     * channel", and what the Swift codec does.
+     */
+    fun text(body: ByteArray): String = try {
+        Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(body)).toString()
+    } catch (e: CharacterCodingException) {
+        throw ProtocolException("frame is not valid UTF-8")
+    }
+
     fun frameText(text: String): ByteArray {
         val body = text.toByteArray(Charsets.UTF_8)
         if (body.size > MAX_FRAME) throw ProtocolException("frame too large: ${body.size}")
@@ -169,7 +185,7 @@ class FrameReader(input: InputStream) {
         val len = Codec.bodyLength(header)
         val body = ByteArray(len)
         input.readFully(body)
-        return String(body, Charsets.UTF_8)
+        return Codec.text(body)
     }
 
     fun read(): Message? = readText()?.let(Codec::decode)

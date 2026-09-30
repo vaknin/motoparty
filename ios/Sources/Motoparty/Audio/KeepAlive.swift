@@ -8,6 +8,8 @@ import Foundation
 /// voice engine is the active output.
 final class KeepAlive {
     private var engine = AVAudioEngine()
+    /// Wanted, not actual: an interruption (call, Siri) stops the engine
+    /// without telling anyone, so `start` asks the engine itself.
     private(set) var isRunning = false
     private var observer: NSObjectProtocol?
 
@@ -16,18 +18,21 @@ final class KeepAlive {
     }
 
     func start() {
-        guard !isRunning else { return }
+        guard !engine.isRunning else {
+            isRunning = true
+            return
+        }
         do {
             engine.prepare()
             try engine.start()
             isRunning = true
         } catch {
+            isRunning = false
             Log.audio.error("keepalive start failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
     func stop() {
-        guard isRunning else { return }
         engine.stop()
         isRunning = false
     }

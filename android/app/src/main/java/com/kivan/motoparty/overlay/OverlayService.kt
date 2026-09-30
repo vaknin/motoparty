@@ -1,10 +1,13 @@
 package com.kivan.motoparty.overlay
 
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.provider.Settings as AndroidSettings
@@ -19,17 +22,19 @@ import android.widget.TextView
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.kivan.motoparty.Hub
-import com.kivan.motoparty.LinkStatus
 import com.kivan.motoparty.MotopartyApp
 import com.kivan.motoparty.trigger.TriggerKind
 import com.kivan.motoparty.trigger.TriggerSource
 import com.kivan.motoparty.trigger.Triggers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
  * One floating TALK button above the navigation app: a ≥96 dp glove-sized zone, tap to toggle
- * talk, drag to move (position is remembered). Colour = state. Since option A (2026-09-29) it is
+ * talk, drag to move (position is remembered). It looks and reads like the app's TALK button
+ * ([OverlayLook]): orange "TALK", red "END TALK", breathing while the talk is still opening. Since option A (2026-09-29) it is
  * the only button: commands are spoken inside a talk, so the MUSIC zone is gone.
  *
  * The position is kept as a fraction of the usable area — the display minus the system-bar and
@@ -47,6 +52,10 @@ class OverlayService : LifecycleService() {
     private var root: LinearLayout? = null
     private lateinit var talk: TextView
     private lateinit var params: WindowManager.LayoutParams
+
+    /** What [render] last drew, and the animation of the "opening" look while it runs. */
+    private var shown: OverlayLook? = null
+    private var pulse: ObjectAnimator? = null
 
     /** The X target: a second, untouchable window, only present while a drag is running. */
     private var dismiss: TextView? = null
@@ -89,7 +98,11 @@ class OverlayService : LifecycleService() {
         }
         place()
         wm.addView(root, params)
-        lifecycleScope.launch { Hub.status.collect(::render) }
+        // Only what render() shows: the status changes every second (ping age, position), and
+        // each redraw here is a new background drawable on top of the navigation app.
+        lifecycleScope.launch {
+            Hub.status.map { OverlayLook.of(it.talkOpen, it.talkLive) }.distinctUntilChanged().collect(::render)
+        }
     }
 
     /** Rotation, a resize, a display change: put the buttons back inside the new bounds. */
@@ -100,6 +113,8 @@ class OverlayService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        pulse?.cancel()
+        pulse = null
         hideDismiss()
         root?.let { runCatching { wm.removeView(it) } }
         root = null
@@ -260,21 +275,35 @@ class OverlayService : LifecycleService() {
 
     private fun zone(label: String) = TextView(this).apply {
         text = label
-        textSize = 20f
-        setTextColor(Color.WHITE)
+        textSize = 22f
+        typeface = Typeface.DEFAULT_BOLD
+        // "END TALK" takes two lines, broken at the word gap.
+        maxLines = 2
+        setTextColor(OverlayLook.IDLE.text)
         gravity = Gravity.CENTER
         layoutParams = LinearLayout.LayoutParams(dp(ZONE_W_DP), dp(ZONE_H_DP))
             .apply { setMargins(dp(ZONE_MARGIN_DP), dp(ZONE_MARGIN_DP), dp(ZONE_MARGIN_DP), dp(ZONE_MARGIN_DP)) }
     }
 
-    private fun render(s: LinkStatus) {
-        val talkColor = when {
-            s.talkOpen -> 0xE02E7D32.toInt() // green: live
-            s.clientName == null -> 0xC0616161.toInt() // grey: no passenger (a press opens a solo talk)
-            else -> 0xE01565C0.toInt() // blue: ready
+    private fun render(look: OverlayLook) {
+        if (look == shown) return
+        shown = look
+        talk.background = rounded(look.fill)
+        talk.setTextColor(look.text)
+        talk.text = look.label
+        pulse?.cancel()
+        pulse = null
+        talk.alpha = 1f
+        if (look.pulsing) {
+            // Pressed, not live yet: the button breathes until the "live" beep. Alpha only, so the
+            // window is neither resized nor laid out again over the navigation app.
+            pulse = ObjectAnimator.ofFloat(talk, View.ALPHA, 1f, PULSE_MIN_ALPHA).apply {
+                duration = PULSE_MS
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                start()
+            }
         }
-        talk.background = rounded(talkColor)
-        talk.text = if (s.talkOpen) "TALKING" else "TALK"
     }
 
     private fun rounded(color: Int) = GradientDrawable().apply {
@@ -386,5 +415,8 @@ class OverlayService : LifecycleService() {
         const val DISMISS_MARGIN_DP = 12
         const val BUTTONS_TITLE = "com.kivan.motoparty:buttons"
         const val DISMISS_TITLE = "MotopartyDismiss"
+        /** The "opening" breath: half a second down, half a second up, never dimmer than this. */
+        const val PULSE_MS = 500L
+        const val PULSE_MIN_ALPHA = 0.55f
     }
 }

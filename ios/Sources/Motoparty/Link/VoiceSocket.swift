@@ -4,8 +4,9 @@ import MotopartyCore
 import Network
 
 /// UDP voice (PROTOCOL.md, Voice). Sends from an ephemeral port to the host's
-/// voice port; sends a keepalive once per second while no audio is going out,
-/// so the host always knows our address and the radios never idle. `ts` is a
+/// voice port; sends a keepalive once per second while no audio is going out
+/// (checked every 250 ms, so the gap after the last audio frame stays near
+/// 1 s), so the host always knows our address and the radios never idle. `ts` is a
 /// running 16 kHz clock from a random start that keeps running between talks
 /// (VoiceSequencer).
 final class VoiceSocket {
@@ -19,7 +20,8 @@ final class VoiceSocket {
     private var sequencer = VoiceSequencer(seq: UInt16.random(in: 0...UInt16.max),
                                            startTs: UInt32.random(in: 0...UInt32.max),
                                            startMs: MonotonicClock.nowMs())
-    private var lastAudioSentMs: Double = 0
+    /// When the last packet of either kind went out (on queue).
+    private var lastSentMs: Double = 0
     private var timer: DispatchSourceTimer?
     private var stopped = false
 
@@ -32,7 +34,7 @@ final class VoiceSocket {
         queue.async { [self] in
             connect()
             let t = DispatchSource.makeTimerSource(queue: queue)
-            t.schedule(deadline: .now(), repeating: .milliseconds(LinkDefaults.keepaliveIntervalMs))
+            t.schedule(deadline: .now(), repeating: .milliseconds(LinkDefaults.keepaliveTickMs))
             t.setEventHandler { [weak self] in self?.keepaliveTick() }
             t.resume()
             timer = t
@@ -59,7 +61,7 @@ final class VoiceSocket {
         let now = MonotonicClock.nowMs()
         queue.async { [self] in
             let packet = sequencer.audio(opus, nowMs: now)
-            lastAudioSentMs = now
+            lastSentMs = now
             connection?.send(content: packet.encoded(), completion: .idempotent)
         }
     }
@@ -109,8 +111,9 @@ final class VoiceSocket {
 
     private func keepaliveTick() {
         let now = MonotonicClock.nowMs()
-        guard now - lastAudioSentMs >= Double(LinkDefaults.keepaliveIntervalMs) else { return }
+        guard LinkDefaults.keepaliveDue(nowMs: now, lastSentMs: lastSentMs) else { return }
         let packet = sequencer.keepalive(nowMs: now)
+        lastSentMs = now
         connection?.send(content: packet.encoded(), completion: .idempotent)
     }
 }

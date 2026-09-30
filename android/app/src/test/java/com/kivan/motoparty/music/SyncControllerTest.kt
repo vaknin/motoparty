@@ -661,4 +661,73 @@ class SyncControllerTest {
         assertTrue("the script must re-seek: $withTrace", withTrace.count { " seek " in it } >= 5)
         assertEquals(without, withTrace)
     }
+
+    // ---- M1: the lead an anchor needs ----
+
+    @Test
+    fun `the start lead covers the start latency, the prepare time and a margin, never under 300`() = runTest {
+        val player = FakePlayer(now = { currentTime })
+        val sync = SyncController(player, backgroundScope, hostNow = { currentTime }, trimMs = { 0 })
+        assertEquals(SyncController.DEFAULT_START_LATENCY_MS + 300, sync.startLeadMs())
+        assertEquals(sync.startLeadMs(), sync.startLeadMs(cold = true))
+        assertTrue(sync.startLeadMs() >= SyncController.MIN_START_LEAD_MS)
+    }
+
+    @Test
+    fun `with a learned 600 ms latency the start position equals the anchor position`() = runTest {
+        val player = FakePlayer(now = { currentTime }, outputLagMs = 600)
+        val sync = SyncController(player, backgroundScope, hostNow = { currentTime }, trimMs = { 0 })
+        repeat(16) {
+            sync.apply(Anchor("t1", 0, currentTime + sync.startLeadMs(), playing = true))
+            advanceTimeBy(firstCheckAfter(sync.startLeadMs()) + 100)
+        }
+        assertTrue("learned ${sync.startLatencyMs}", sync.startLatencyMs in 590..600)
+        assertEquals(sync.startLatencyMs + 300, sync.startLeadMs())
+
+        val lines = mutableListOf<String>()
+        sync.log = { lines += it }
+        val anchor = Anchor("t1", 42_000, currentTime + sync.startLeadMs(), playing = true)
+        sync.apply(anchor)
+        runCurrent()
+        assertEquals("seeks to the anchor, not past it", 42_000L, player.seeks.last())
+        assertTrue(lines.none { it.startsWith("start past the anchor") })
+        // Audible at the anchor: the position starts moving there (within the learning error).
+        advanceTimeBy(anchor.atHostTimeMs - currentTime + 1_000)
+        assertTrue("${player.positionMs}", abs(player.positionMs - anchor.expectedAt(currentTime)) <= 10)
+
+        // The old fixed 300 ms: the start lands past the anchor and the beginning is skipped.
+        sync.apply(Anchor("t1", 0, currentTime + 300, playing = true))
+        runCurrent()
+        assertTrue("${player.seeks.last()}", player.seeks.last() > 250)
+        assertTrue(lines.any { it.startsWith("start past the anchor") })
+    }
+
+    // ---- M5: the anchor of a gapless change ----
+
+    @Test
+    fun `adopting an anchor touches nothing on the player and drift is checked against it`() = runTest {
+        val player = FakePlayer(now = { currentTime })
+        val sync = SyncController(player, backgroundScope, hostNow = { currentTime }, trimMs = { 0 })
+        sync.traceLog = null
+        sync.apply(Anchor("t1", 0, currentTime + 1_000, playing = true))
+        advanceTimeBy(firstCheckAfter(1_000) + 100)
+
+        // The player went on to t2 by itself, 30 ms after the announced time.
+        val at = currentTime - 30
+        player.loadedId = "t2"
+        player.seekTo(0)
+        // (Resetting the speed to 1 is the only thing it may do.)
+        fun moves() = player.calls.count { " speed " !in it }
+        val calls = moves()
+        val next = Anchor("t2", 0, at, playing = true)
+        sync.adopt(next)
+        assertEquals(next, sync.anchor)
+        assertEquals("no pause, seek or play", calls, moves())
+        assertEquals(1f, player.speed)
+        assertTrue(player.isPlaying)
+
+        advanceTimeBy(SyncController.EARLY_CHECK_MS + SyncController.FILTER_SPAN_MS + 100)
+        val drift = sync.lastDriftMs!!
+        assertTrue("drift $drift ms against the new anchor", drift in -400L..-1L)
+    }
 }

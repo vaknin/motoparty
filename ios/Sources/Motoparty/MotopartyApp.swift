@@ -12,6 +12,10 @@ struct MotopartyApp: App {
             ContentView()
                 .environmentObject(model)
                 .environmentObject(model.settings)
+                // The brand orange of both phones, on a dark screen like the
+                // Pixel's (readable in a tank bag, easy on a night ride).
+                .tint(Brand.orange)
+                .preferredColorScheme(.dark)
                 .onAppear { model.start() }
         }
     }

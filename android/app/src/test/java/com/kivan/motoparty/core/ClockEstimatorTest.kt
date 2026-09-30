@@ -18,6 +18,12 @@ class ClockEstimatorTest {
             est.add(s[0], s[1], s[2], s[3])
             assertEquals("step $i", step.jsonObject["expectOffset"]!!.jsonPrimitive.double, est.offset!!, 1e-9)
         }
+        val fresh = ClockEstimator()
+        for ((i, step) in f["stepReset"]!!.jsonObject["steps"]!!.jsonArray.withIndex()) {
+            val s = step.jsonObject["sample"]!!.jsonArray.map { it.jsonPrimitive.long }
+            fresh.add(s[0], s[1], s[2], s[3])
+            assertEquals("stepReset $i", step.jsonObject["expectOffset"]!!.jsonPrimitive.double, fresh.offset!!, 1e-9)
+        }
         for (c in f["conversions"]!!.jsonArray) {
             val host = c.jsonObject["host"]!!.jsonPrimitive.long
             val local = c.jsonObject["local"]!!.jsonPrimitive.long

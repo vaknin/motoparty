@@ -92,7 +92,7 @@ class VoiceReceiver:
     """Jitter buffer + Opus decoder. push() from the network, pull_pcm() from the output clock."""
 
     def __init__(self) -> None:
-        self.jb = JitterBuffer(now_ms())
+        self.jb = JitterBuffer()
         self.decoder = OpusDecoder()
         self._lock = threading.Lock()
         self.last_rx_ms: int | None = None
@@ -127,9 +127,8 @@ class VoiceReceiver:
             s, jb = self.jb.stats, self.jb
             return (
                 f"rx={s.received} ka={s.keepalives} played={s.played} fec={s.fec} plc={s.plc} "
-                f"late={s.late} dup={s.duplicates} dtx={s.dtx_silence} starved={s.starved} "
-                f"underruns={s.underruns} trimmed={s.trimmed} depth={jb.depth_ms:.0f}ms "
-                f"target={jb.target_ms}ms"
+                f"underruns={s.underruns} shed={s.shed} reanchors={s.reanchors} "
+                f"depth={jb.depth_ms}ms (max {s.max_depth_ms}ms) target={jb.target_ms}ms"
             )
 
 

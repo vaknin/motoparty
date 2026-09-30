@@ -142,6 +142,14 @@ data class MusicPlay(val id: String, val positionMs: Long, val atHostTimeMs: Lon
 @SerialName("music.pause")
 data class MusicPause(val id: String, val positionMs: Long) : Message
 
+/**
+ * PROTOCOL.md "Music flow" step 6: track [id] starts at position 0 at [atHostTimeMs], the moment
+ * the current track ends by its anchor, so the two play without a gap.
+ */
+@Serializable
+@SerialName("music.next")
+data class MusicNext(val id: String, val atHostTimeMs: Long) : Message
+
 @Serializable
 @SerialName("music.stop")
 data object MusicStop : Message
@@ -223,7 +231,14 @@ data class MusicState(
 )
 
 @Serializable
-data class QueueItem(val id: String, val title: String, val artist: String)
+data class QueueItem(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val durationMs: Long? = null,
+    /** Cover image URL; the host leaves it out of every item when `state` would pass 48 KiB. */
+    val art: String? = null,
+)
 
 @Serializable
 @SerialName("bye")

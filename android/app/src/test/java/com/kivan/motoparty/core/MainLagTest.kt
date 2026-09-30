@@ -41,6 +41,7 @@ class MainLagTest {
             MusicError("i", "m") to MusicError.serializer(),
             MusicPlay("i", 0, 0) to MusicPlay.serializer(),
             MusicPause("i", 0) to MusicPause.serializer(),
+            MusicNext("i", 0) to MusicNext.serializer(),
             MusicStop to MusicStop.serializer(),
             MusicControl(ControlAction.NEXT) to MusicControl.serializer(),
             CommandText("t", "en-US") to CommandText.serializer(),

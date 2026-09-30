@@ -41,6 +41,9 @@ final class ControlClient {
             tcp.noDelay = true
             tcp.connectionTimeout = 3
             let params = NetworkInterfaces.lanParameters(NWParameters(tls: nil, tcp: tcp))
+            // talk.open / state / pong must not queue behind a track download
+            // on the hotspot (audit P3; the host marks its end CS5).
+            params.serviceClass = .signaling
             let conn = NWConnection(to: endpoint, using: params)
             connection = conn
             conn.stateUpdateHandler = { [weak self] state in self?.handle(state) }

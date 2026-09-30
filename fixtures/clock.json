@@ -1,5 +1,5 @@
 {
- "_doc": "Feed samples in order to a fresh estimator; after each, the estimate must equal expectOffset. Sample = [t0,t1,t2,t3]. Then with the final estimate, hostToLocal/localToHost must match. Discarded (negative-RTT) samples do not occupy a window slot; the last block pins that.",
+ "_doc": "Feed samples in order to a fresh estimator; after each, the estimate must equal expectOffset. Sample = [t0,t1,t2,t3]. Then with the final estimate, hostToLocal/localToHost must match. Discarded (negative-RTT) samples do not occupy a window slot; the last block pins that. stepReset: a second, fresh estimator fed the same way; it pins the step rule (clear the window only when |offset - estimate| > 500 + rtt/2 of the new sample): a slow pong is kept, a real step resets, and the boundary is checked on both sides.",
  "steps": [
   {
    "sample": [
@@ -218,5 +218,63 @@
    "host": 4001,
    "local": 0
   }
- ]
+ ],
+ "stepReset": {
+  "steps": [
+   {
+    "sample": [
+     1000,
+     5010,
+     5011,
+     1020
+    ],
+    "expectOffset": 4000.5
+   },
+   {
+    "sample": [
+     2000,
+     6010,
+     6011,
+     3400
+    ],
+    "expectOffset": 4000.5
+   },
+   {
+    "sample": [
+     4000,
+     11010,
+     11011,
+     4020
+    ],
+    "expectOffset": 7000.5
+   },
+   {
+    "sample": [
+     5000,
+     12040,
+     12041,
+     5060
+    ],
+    "expectOffset": 7000.5
+   },
+   {
+    "sample": [
+     6000,
+     13520,
+     13520,
+     6020
+    ],
+    "expectOffset": 7000.5
+   },
+   {
+    "sample": [
+     7000,
+     14521,
+     14521,
+     7020
+    ],
+    "expectOffset": 7511
+   }
+  ]
+ }
 }

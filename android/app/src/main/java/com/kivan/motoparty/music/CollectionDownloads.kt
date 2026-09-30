@@ -24,8 +24,10 @@ data class DownloadProgress(val done: Int, val total: Int, val failed: Int = 0, 
  * The Search tab's **Download** button: every track of an album or playlist into the track cache,
  * for riding through patchy coverage. One track at a time across every collection (a second
  * download waits its turn track by track), so it never takes more than one stream from the track
- * that is about to play. Already-cached tracks count as done at once. Cancelling stops after the
- * track in flight, which the cache finishes and keeps. Main thread; [ensure] does the I/O.
+ * that is about to play. Already-cached tracks count as done at once. [ensure] is the cache at
+ * [DownloadPriority.COLLECTION], so any track the queue wants pauses these. Cancelling stops the
+ * track in flight too; the cache keeps its bytes for the next time. Main thread; [ensure] does the
+ * I/O.
  */
 class CollectionDownloads(
     private val scope: CoroutineScope,

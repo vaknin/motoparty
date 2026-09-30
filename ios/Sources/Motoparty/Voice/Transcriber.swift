@@ -48,6 +48,12 @@ final class Transcriber {
 
     var isRunning: Bool { recognizer != nil }
 
+    /// The user (or a restriction) has said no: only the Settings app changes it.
+    static var isDenied: Bool {
+        let status = SFSpeechRecognizer.authorizationStatus()
+        return status == .denied || status == .restricted
+    }
+
     static func requestAuthorization(_ done: @escaping (Bool) -> Void) {
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async { done(status == .authorized) }

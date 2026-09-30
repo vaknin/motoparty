@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The same values as ui/Theme.kt (Palette.Talk and the scheme's background), for what is not
+     Compose: the launcher icon and the notification accent. OverlayLookTest pins brand_talk. -->
+<resources>
+    <color name="brand_talk">#FF7A2F</color>
+    <color name="launcher_background">#0E1013</color>
+</resources>

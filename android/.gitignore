@@ -5,3 +5,7 @@ app/.cxx/
 *.iml
 # libopus source is fetched by tools/fetch_opus.sh, not committed (see README.md).
 app/src/main/cpp/opus/
+# Release signing (H5): the keystore and its passwords never go into the public repository.
+keystore.properties
+*.jks
+*.keystore
