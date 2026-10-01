@@ -112,6 +112,9 @@ final class AppModel: ObservableObject {
     /// Songs of the album or playlist being browsed, and which one it is.
     @Published private(set) var collectionResults = ResultList()
     @Published private(set) var browsedCollection: ResultItem?
+    /// The host's cached tracks (the song rows' marks) and its album and
+    /// playlist downloads (PROTOCOL.md "Browsing" step 6).
+    @Published private(set) var hostDownloads = HostDownloads()
     /// Recent searches and recently played tracks, local to this phone.
     @Published private(set) var history = BrowseHistory() {
         didSet { if history != oldValue { settings.browseHistory = history } }
@@ -555,8 +558,10 @@ final class AppModel: ObservableObject {
             if announce.ask == true { awaitReply() }
         case .musicResults(let results):
             receive(results)
+        case .musicDownloads(let downloads):
+            assign(\.hostDownloads, HostDownloads(downloads))
         case .bye, .ping, .pong, .musicReady, .musicError, .musicControl, .commandText,
-             .musicSearch, .musicBrowse, .musicEnqueue, .musicEdit, .unknown:
+             .musicSearch, .musicBrowse, .musicEnqueue, .musicEdit, .musicDownload, .unknown:
             break
         }
     }
@@ -564,6 +569,8 @@ final class AppModel: ObservableObject {
     private func apply(_ state: HostState) {
         // Most states repeat the last one: only a real change redraws (UI4).
         assign(\.hostState, state)
+        // The host's voice search, for the status line (absent: none runs).
+        if state.busy != musicStatusTracker.busy { musicStatusTracker.hostBusy(state.busy) }
         // Talk state is authoritative on the host; heal missed messages.
         if !state.talk { talkOpenPending = false }
         // The host holds its music from its talk decision on, before this
@@ -1226,6 +1233,18 @@ final class AppModel: ObservableObject {
         guard !message.tracks.isEmpty else { return }
         if mode == .now { releaseRouteHold() }
         send(.musicEnqueue(message))
+    }
+
+    /// The collection page's Download button: every song of it into the
+    /// host's cache, or (while that runs) stop it. Progress and the marks come
+    /// back in `music.downloads` (PROTOCOL.md "Browsing" step 6).
+    func downloadButton(_ collection: ResultItem, songs: [ResultItem]) {
+        let button = hostDownloads.button(ref: collection.ref, songs: songs.map(\.ref))
+        if button.isRunning {
+            send(.musicDownload(.stop(collection.ref)))
+        } else if !button.isDone, !songs.isEmpty {
+            send(.musicDownload(.start(collection.ref, ids: Array(songs.prefix(MusicEnqueue.maxTracks).map(\.ref)))))
+        }
     }
 
     /// Plays a track from the Search tab's history now.

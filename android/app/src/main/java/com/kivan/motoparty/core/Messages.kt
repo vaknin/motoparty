@@ -62,6 +62,13 @@ object EditOp {
     const val MOVE = "move"
 }
 
+/** PROTOCOL.md "Browsing" step 6 (2026-10-01): a collection download from the client. */
+object DownloadOp {
+    /** Needs [MusicDownload.ids]. */
+    const val START = "start"
+    const val STOP = "stop"
+}
+
 /** PROTOCOL.md "Host-mic talk": the value of `mic` on the host's `talk.open` and in `state`. */
 object Mic {
     const val HOST = "host"
@@ -87,6 +94,7 @@ internal val ENUM_FIELDS: Map<Pair<String, String>, Set<String>> = mapOf(
     ("music.search" to "kind") to setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS),
     ("music.enqueue" to "mode") to setOf(EnqueueMode.NOW, EnqueueMode.NEXT, EnqueueMode.END),
     ("music.edit" to "op") to setOf(EditOp.JUMP, EditOp.REMOVE, EditOp.CLEAR, EditOp.MOVE),
+    ("music.download" to "op") to setOf(DownloadOp.START, DownloadOp.STOP),
     // Nested: `off` is never sent (absent means off).
     ("state" to "music.repeat") to setOf(RepeatMode.TRACK.word, RepeatMode.QUEUE.word),
 )
@@ -224,6 +232,25 @@ data class MusicEdit(
     val to: Int? = null,
 ) : Message
 
+/**
+ * PROTOCOL.md "Browsing" step 6 (2026-10-01): start or stop downloading the album or playlist
+ * [ref] into the host's cache. [ids] (its songs' refs, in order) is required for [DownloadOp.START].
+ */
+@Serializable
+@SerialName("music.download")
+data class MusicDownload(val op: String, val ref: String, val ids: List<String>? = null) : Message
+
+/**
+ * PROTOCOL.md "Browsing" step 6 (2026-10-01): which tracks the host has downloaded (the song rows'
+ * marks) and every collection download's progress. Sent after a client's `hello` and on any change.
+ */
+@Serializable
+@SerialName("music.downloads")
+data class MusicDownloads(val cached: List<String>, val downloads: List<DownloadItem>) : Message
+
+@Serializable
+data class DownloadItem(val ref: String, val done: Int, val total: Int, val failed: Int, val running: Boolean)
+
 @Serializable
 @SerialName("announce")
 data class Announce(
@@ -242,6 +269,11 @@ data class State(
     val queue: List<QueueItem>,
     /** [Mic.HOST] while [talk] is true and the open talk is a host-mic talk; absent otherwise. */
     val mic: String? = null,
+    /**
+     * While a voice command's search runs (2026-10-01): the status line's text, such as
+     * `Searching song "moby"`, without the ellipsis. Absent otherwise.
+     */
+    val busy: String? = null,
 ) : Message
 
 @Serializable

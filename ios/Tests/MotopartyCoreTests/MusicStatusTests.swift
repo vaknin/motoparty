@@ -152,5 +152,27 @@ final class MusicStatusTests: XCTestCase {
         XCTAssertNil(MusicStatus.none.text)
         XCTAssertEqual(MusicStatus.loading.text, "Downloading song…")
         XCTAssertEqual(MusicStatus.pausedForTalk.text, "Paused for talk — plays when the talk ends")
+        XCTAssertEqual(MusicStatus.searching(#"Searching song "moby""#).text, #"Searching song "moby"…"#)
+        XCTAssertEqual([MusicStatus.none, .loading, .pausedForTalk, .searching("x")].map(\.spins), [false, true, false, true])
+    }
+
+    /// `state.busy`: shown with nothing loaded too, after the track's own
+    /// reasons (as on the Pixel), and gone with a state without it or a link loss.
+    func testBusyShowsTheHostSearch() {
+        var t = MusicStatusTracker()
+        t.hostBusy("Searching song \"moby\"")
+        XCTAssertEqual(t.status, .searching("Searching song \"moby\""))
+        t.load("a")
+        t.setCurrent("a")
+        XCTAssertEqual(t.status, .loading, "the track's own status first")
+        t.play("a")
+        XCTAssertEqual(t.status, .searching("Searching song \"moby\""))
+        t.hostBusy(nil)
+        XCTAssertEqual(t.status, .none)
+        t.hostBusy("")
+        XCTAssertEqual(t.status, .none)
+        t.hostBusy("Searching album \"x\"")
+        t.linkLost()
+        XCTAssertEqual(t.status, .none)
     }
 }

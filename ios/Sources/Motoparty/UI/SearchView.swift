@@ -69,6 +69,7 @@ struct SearchView: View {
                     Group {
                         if model.searchedKind == .songs {
                             SongRow(item: item, isCurrent: item.ref == model.nowPlaying?.id,
+                                    downloaded: model.hostDownloads.isCached(item.ref),
                                     onPlay: { model.enqueue(.now, songs: [item]) },
                                     onEnqueue: { model.enqueue($0, songs: [item]) })
                         } else {
@@ -192,6 +193,9 @@ private struct ResultRow: View {
     let subtitle: String
     var fallbackArt: String?
     var isCurrent = false
+    /// On the host's cache (PROTOCOL.md "Browsing" step 6): a small mark
+    /// before the subtitle, as on the Pixel, so it plays without coverage.
+    var downloaded = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -199,8 +203,16 @@ private struct ResultRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).font(.body.weight(.medium)).lineLimit(1)
                     .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-                if !subtitle.isEmpty {
-                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                if downloaded || !subtitle.isEmpty {
+                    HStack(spacing: 4) {
+                        if downloaded {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.footnote)
+                                .foregroundStyle(.tint)
+                                .accessibilityLabel("Downloaded")
+                        }
+                        Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -219,6 +231,7 @@ private struct SongRow: View {
     let item: ResultItem
     var fallbackArt: String?
     var isCurrent = false
+    var downloaded = false
     let onPlay: () -> Void
     let onEnqueue: (EnqueueMode) -> Void
     @State private var tapped = 0
@@ -228,7 +241,7 @@ private struct SongRow: View {
             Button { tap(onPlay) } label: {
                 ResultRow(item: item,
                           subtitle: TrackTime.joined([item.artist, item.durationMs.map { TrackTime.clock(Double($0)) }]),
-                          fallbackArt: fallbackArt, isCurrent: isCurrent)
+                          fallbackArt: fallbackArt, isCurrent: isCurrent, downloaded: downloaded)
             }
             .buttonStyle(RowButtonStyle())
             .accessibilityElement(children: .combine)
@@ -308,6 +321,7 @@ struct CollectionView: View {
                 } else {
                     ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
                         SongRow(item: item, fallbackArt: collection.art, isCurrent: item.ref == model.nowPlaying?.id,
+                                downloaded: model.hostDownloads.isCached(item.ref),
                                 onPlay: { model.enqueue(.now, songs: Array(list.items[index...]), from: collection) },
                                 onEnqueue: { model.enqueue($0, songs: [item], from: collection) })
                     }
@@ -361,10 +375,37 @@ struct CollectionView: View {
             .controlSize(.large)
             .disabled(list.items.isEmpty || !connected)
             .padding(.top, 4)
+            if !list.items.isEmpty { downloadButton(list.items) }
             if !connected { NotConnectedHint() }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
+    }
+
+    /// Every song of it into the host's cache, for patchy coverage, as on the
+    /// Pixel: shows the progress and stops on a second tap; "Downloaded" once
+    /// every song is there (PROTOCOL.md "Browsing" step 6).
+    private func downloadButton(_ songs: [ResultItem]) -> some View {
+        let button = model.hostDownloads.button(ref: collection.ref, songs: songs.map(\.ref))
+        return Button {
+            model.downloadButton(collection, songs: songs)
+            tapped += 1
+        } label: {
+            HStack(spacing: 8) {
+                switch button.phase {
+                case .running: ProgressView().controlSize(.small)
+                case .done: Image(systemName: "checkmark.circle.fill")
+                case .retry: Image(systemName: "arrow.clockwise")
+                case .idle: Image(systemName: "arrow.down.circle")
+                }
+                Text(button.label).lineLimit(1).monospacedDigit()
+            }
+            .frame(maxWidth: .infinity, minHeight: 36)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .disabled(button.isDone || !connected)
+        .accessibilityHint(button.isRunning ? "Stops the download" : "")
     }
 }
 #endif

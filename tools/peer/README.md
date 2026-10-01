@@ -78,6 +78,7 @@ Stdin commands:
 | `unavailable` | toggles "my mic is dead": while on, the host's `talk.open` is answered with `talk.close{by:"client",reason:"unavailable"}` and talk never opens locally; `talk` will not ask for talk either |
 | `search <kind> <query>` | `music.search{id, kind, query}` (`songs`/`albums`/`playlists`, empty query allowed); the newest request's results print numbered |
 | `browse <n>` | `music.browse` for album/playlist result `n` |
+| `download [stop]` | after `browse <n>`: `music.download{op:"start", ref, ids}` with the collection's song refs, or `{op:"stop", ref}`. The host's `music.downloads` prints each collection's progress and which listed songs are cached; a changed `state.busy` prints as `busy: …` |
 | `enqueue now\|next\|end <n>\|all` | `music.enqueue` with song result `n` (or all of them); `album` is set after a `browse` of an album |
 | `edit jump\|remove <i>` / `edit move <i> <to>` / `edit clear` | `music.edit`; `i` is 0-based into the last `state.queue`, and its `id` is filled in from there; for `move`, `to` is the track's new 0-based index (past the end = the end) |
 | `stats` | prints jitter-buffer/voice stats and the clock estimate |
@@ -215,13 +216,22 @@ and `state`, then the host logs the close; nothing else changes.
 - A client `music.control{action:"repeat", mode}` (2026-10-01) sets the repeat mode like the
   stdin `repeat` (a `state` only when it changes) and leaves the voice undo alone; a `repeat`
   without a `mode` is dropped as malformed.
+- Downloads (2026-10-01, PROTOCOL.md "Browsing" step 6): after every client `hello` the host
+  sends `music.downloads{cached, downloads}`. A client `music.download{op:"start", ref, ids}`
+  "downloads" the ids one at a time (300 ms each, across collections): a library track becomes
+  cached, any other valid id fails; invalid ids are skipped, a repeated start of a running
+  collection is ignored. `music.download{op:"stop"}` cancels it and drops its progress; cached
+  tracks stay. Every step sends `music.downloads`. A `start` without `ids` is malformed.
+- `state.busy` (2026-10-01): the fake host's searches are instant, so the "Searching …" line is
+  set by hand with the stdin `busy <text>` and cleared with `busy off` (a `state` each time).
 
 Stdin commands: `load` (sends `music.load`, then `music.play` 300 ms ahead once
 `music.ready` arrives, or after 8 s / on `music.error`), `play`, `pause`, `stop`, `talk`,
 `mic on|off` (bare `mic` toggles; `off` refuses the client's `talk.open` as `unavailable`),
 `hostmic on|off` (bare `hostmic` toggles; `on` makes the next talks host-mic talks),
 `hear <phrase>` (the host's own ASR, see Commands above), `repeat off|track|queue`
-(`state.music.repeat`, as by touch), `announce <text>`, `state`, `stats`, `raw <json>`, `quit`.
+(`state.music.repeat`, as by touch), `busy <text>|off` (`state.busy`), `downloads` (sends
+`music.downloads` again), `announce <text>`, `state`, `stats`, `raw <json>`, `quit`.
 
 ## Bench recipes
 

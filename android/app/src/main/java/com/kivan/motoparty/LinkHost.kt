@@ -46,6 +46,10 @@ import com.kivan.motoparty.core.Message
 import com.kivan.motoparty.core.MusicBrowse
 import com.kivan.motoparty.core.MusicControl
 import com.kivan.motoparty.core.MusicEdit
+import com.kivan.motoparty.core.DownloadItem
+import com.kivan.motoparty.core.DownloadOp
+import com.kivan.motoparty.core.MusicDownload
+import com.kivan.motoparty.core.MusicDownloads
 import com.kivan.motoparty.core.MusicEnqueue
 import com.kivan.motoparty.core.MusicResults
 import com.kivan.motoparty.core.MusicSearch
@@ -70,6 +74,7 @@ import com.kivan.motoparty.link.onClientJoined
 import com.kivan.motoparty.link.VoiceSocket
 import com.kivan.motoparty.music.Catalog
 import com.kivan.motoparty.music.CollectionDownloads
+import com.kivan.motoparty.music.QueueEdits
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.DownloadPriority
 import com.kivan.motoparty.music.isValidTrackId
@@ -190,7 +195,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         scope,
         ensure = { caches.ensure(it, DownloadPriority.COLLECTION) },
         cached = { caches.cached(it) },
-        onProgress = { p -> Hub.status.update { it.copy(downloads = p) } },
+        onProgress = { p ->
+            Hub.status.update { it.copy(downloads = p) }
+            pushDownloads()
+        },
         log = Hub::log,
     )
     private val player: Player = Player(
@@ -461,8 +469,38 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             // PROTOCOL.md "state": only while the open talk is a host-mic one, so a client that
             // joins mid-talk opens it receive-only too.
             mic = if (larkTalk) Mic.HOST else null,
+            busy = busy,
         ),
     )
+
+    /** The status line's "Searching …" while a voice command's search runs: on both screens. */
+    private var busy: String? = null
+
+    private fun setBusy(text: String?) {
+        if (text == busy) return
+        busy = text
+        Hub.status.update { it.copy(busy = text) }
+        pushState()
+    }
+
+    /** The last `music.downloads` sent, so an unchanged one is not sent again. */
+    private var lastDownloads: MusicDownloads? = null
+
+    /**
+     * PROTOCOL.md "Browsing" step 6: the cached ids and every collection's progress, to the client
+     * when either changed (or to a client that just said `hello`, with [force]). Main.
+     */
+    private fun pushDownloads(force: Boolean = false) {
+        val m = Codec.fit(
+            MusicDownloads(
+                cached = caches.active.ids().sorted(),
+                downloads = downloads.current.map { (ref, p) -> DownloadItem(ref, p.done, p.total, p.failed, p.running) },
+            ),
+        )
+        if (!force && m == lastDownloads) return
+        lastDownloads = m
+        control.send(m)
+    }
 
     /**
      * The last [state] built, for the `hello` + `state` a new connection gets at once: that is
@@ -514,6 +552,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                     Hub.status.update { it.copy(commandWindow = false) }
                 }
                 music.onClientConnected()
+                pushDownloads(force = true)
             }
             is ControlServer.Event.ClientGone -> {
                 Hub.log("client gone: ${e.reason}")
@@ -550,6 +589,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             }
             is MusicEnqueue -> onClientEnqueue(m)
             is MusicEdit -> onClientEdit(m)
+            is MusicDownload -> onClientDownload(m)
             is Bye -> Unit // the server closes the connection and reports ClientGone
             else -> Unit // unknown or host-to-client types: ignored per PROTOCOL.md
         }
@@ -1269,13 +1309,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         val searches = (firstSearch until actions.size).filter { actions[it].searches }
         val found = searches.associateWith { i -> scope.async { search(actions[i]) } }
         if (searches.isNotEmpty()) {
-            Hub.status.update { it.copy(busy = "Searching ${searches.joinToString(", ") { what(actions[it]) }}") }
+            setBusy("Searching ${searches.joinToString(", ") { what(actions[it]) }}")
         }
         scope.launch {
             try {
                 found.values.forEach { it.join() }
             } finally {
-                if (searches.isNotEmpty()) Hub.status.update { it.copy(busy = null) }
+                if (searches.isNotEmpty()) setBusy(null)
             }
             // The music and the reply come after the headset is back in media mode.
             closed?.join()
@@ -1691,6 +1731,22 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         if (!applied) Hub.log("client edit ${m.op} ${m.index} ignored: the queue changed")
     }
 
+    /**
+     * PROTOCOL.md "Browsing" step 6: the client's Download button, through the same
+     * [CollectionDownloads] as ours, keyed by the collection's ref. Progress and the marks go
+     * back in `music.downloads` ([pushDownloads]).
+     */
+    private fun onClientDownload(m: MusicDownload) {
+        if (!isValidTrackId(m.ref)) return Hub.log("client download: bad ref ignored")
+        when (m.op) {
+            DownloadOp.STOP -> downloads.cancel(m.ref)
+            DownloadOp.START -> {
+                val ids = m.ids.orEmpty().filter(::isValidTrackId).distinct().take(QueueEdits.MAX_UPCOMING)
+                if (ids.isEmpty()) Hub.log("client download ${m.ref}: no valid ids") else downloads.start(m.ref, ids)
+            }
+        }
+    }
+
     // ---- play by touch (PROTOCOL.md "Browsing" step 3) ----
 
     /** An enqueue from either screen; a `now` one is a play by touch, which ends an open talk. */
@@ -1731,6 +1787,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private fun refreshCached() {
         val ids = caches.active.ids()
         Hub.status.update { if (it.cached == ids) it else it.copy(cached = ids) }
+        pushDownloads()
     }
 
     /** The cache [refreshCached] last listed: the Opus one until a client cannot decode it. */

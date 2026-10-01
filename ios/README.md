@@ -269,7 +269,9 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   now-playing card (cover from `state.music.art`, progress, previous / play-pause / next as
   `music.control`, the repeat button at the right end (off → queue → track, sent as
   `music.control{action:"repeat", mode}` and shown from `state.music.repeat`; 2026-10-01),
-  "Up next"), the "Voice commands" chips (the same commands as the
+  "Up next", and one status line under it: "Downloading song…", "Paused for talk", or, with a
+  spinner and also with nothing loaded, the host's voice search from `state.busy`
+  (`Searching song "moby"…`, 2026-10-01)), the "Voice commands" chips (the same commands as the
   Pixel's, foldable: say one first after pressing TALK, then it's just talk), and, pinned at
   the bottom, TALK with the app volume; the gear opens Settings (music sync offset, speech
   language, link status, Diagnostics). See "2026-09-30 audit round 3" below.
@@ -277,7 +279,12 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   `music.enqueue{mode:"now"}` with that track, its ⋯ menu (or a swipe) is Play next / Add to
   queue. An album or playlist opens a detail screen (`music.browse`) with Play / Add to queue;
   a track tap enqueues `now` the tracks from that one to the end. Tracks carry the collection
-  title as `album` and its cover as the top-level `art`. **Queue** shows `state.queue`: tap =
+  title as `album` and its cover as the top-level `art`. Under Play / Add to queue, **Download**
+  (2026-10-01, PROTOCOL.md "Browsing" step 6) sends `music.download{op:"start", ref, ids}` and
+  reads as on the Pixel from the host's `music.downloads`: "Downloading 5/14 · Stop" with a
+  spinner (a tap sends `stop`), "Retry · 12/14 saved", "Downloaded". Song rows (search results
+  and collections) show the Pixel's "downloaded" mark (a tinted arrow-down circle before the
+  subtitle) for ids in `music.downloads.cached` (`HostDownloads`). **Queue** shows `state.queue`: tap =
   `music.edit jump`, swipe or ✕ = `remove`, drag = `move`, Clear (confirmed) = `clear`. Every
   edit shows at once (`QueueEdits`). A removal or a clear brings a banner with Undo for 10 s,
   as on Android: Undo of a removal is `music.enqueue{end}` plus a `move` back to its index (the

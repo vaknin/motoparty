@@ -113,6 +113,16 @@ def test_unknown_types_and_fields(case):
         ('{"t":"music.control","action":"repeat","mode":"all"}', "repeat mode outside its set"),
         ('{"t":"music.control","action":"repeat","mode":null}', "null mode"),
         ('{"t":"music.control","action":"pause","mode":"all"}', "mode outside its set on another action"),
+        ('{"t":"music.download","op":"start","ref":"PL1"}', "download start without ids"),
+        ('{"t":"music.download","op":"start","ref":"PL1","ids":"a1"}', "ids not an array"),
+        ('{"t":"music.download","op":"start","ref":"PL1","ids":[null]}', "null id"),
+        ('{"t":"music.download","op":"Start","ref":"PL1","ids":[]}', "download op outside its set"),
+        ('{"t":"music.download","op":"stop"}', "download without ref"),
+        ('{"t":"music.downloads","cached":[]}', "downloads without downloads"),
+        ('{"t":"music.downloads","cached":[1],"downloads":[]}', "cached id not a string"),
+        ('{"t":"music.downloads","cached":[],"downloads":[{"ref":"PL1","done":"1","total":2,"failed":0,"running":true}]}',
+         "string for int in a download"),
+        ('{"t":"state","talk":false,"queue":[],"busy":null}', "null busy"),
         ('{"t":"hello","proto":1,"role":"host","name":"x"}', "host hello without ports"),
         ('{"t":"state","talk":false}', "state without queue"),
         ('{"t":"state","talk":false,"queue":[{"id":"a","title":"b"}]}', "queue item missing artist"),
@@ -138,6 +148,17 @@ def test_enums_match_the_spec():
     assert SCHEMAS["music.control"]["action"][0] == ("pause", "resume", "next", "previous", "repeat")
     assert SCHEMAS["music.control"]["mode"][0] == ("off", "track", "queue")
     assert set(SCHEMAS["talk.close"]["reason"][0]) == {"trigger", "link", "unavailable"}
+    assert SCHEMAS["music.download"]["op"][0] == ("start", "stop")
+
+
+def test_download_messages_round_trip():
+    """PROTOCOL.md "Browsing" 6: a stop needs no ids (and keeps any it gets); state.busy is optional."""
+    for msg in ({"t": "music.download", "op": "stop", "ref": "PL1"},
+                {"t": "music.download", "op": "stop", "ref": "PL1", "ids": ["a"]},
+                {"t": "music.download", "op": "start", "ref": "PL1", "ids": []},
+                {"t": "state", "talk": False, "queue": [], "busy": "Searching song \"x\""}):
+        assert decode_message(encode_message(msg)) == msg
+    assert b"busy" not in encode_message({"t": "state", "talk": False, "queue": []})
 
 
 @pytest.mark.parametrize("mode", ["off", "track", "queue"])

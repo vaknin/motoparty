@@ -49,6 +49,8 @@ val Message.wireType: String
         is MusicResults -> "music.results"
         is MusicEnqueue -> "music.enqueue"
         is MusicEdit -> "music.edit"
+        is MusicDownload -> "music.download"
+        is MusicDownloads -> "music.downloads"
         is Announce -> "announce"
         is State -> "state"
         is Bye -> "bye"

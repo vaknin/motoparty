@@ -773,6 +773,7 @@ class RawClient:
 
     def __init__(self, port: int, name: str) -> None:
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        self.downloads = []
         self.hello = self.read()
         self.state = self.read()
         self.send({"t": "hello", "proto": 1, "role": "client", "name": name})
@@ -791,7 +792,15 @@ class RawClient:
         return buf
 
     def read(self) -> dict:
-        return json.loads(self._exactly(int.from_bytes(self._exactly(4), "big")))
+        """The next frame, past any music.downloads (sent after every client hello), which is
+        kept in `downloads`."""
+        while True:
+            msg = json.loads(self._exactly(int.from_bytes(self._exactly(4), "big")))
+            if msg.get("t") != "music.downloads":
+                return msg
+            self.downloads.append(msg)
+
+    downloads: list[dict]
 
     def close(self) -> None:
         self.sock.close()
@@ -813,6 +822,8 @@ def test_same_name_reconnect_keeps_the_talk_and_another_name_closes_it(tmp_path)
         a.send({"t": "talk.open", "by": "client"})
         assert a.read()["t"] == "talk.open"
         assert a.read()["talk"] is True
+        # PROTOCOL.md "Browsing" 6: the downloads follow the client's hello
+        assert a.downloads == [{"t": "music.downloads", "cached": [], "downloads": []}]
 
         # the same client on a new socket, while the host still holds the old one
         b = RawClient(cp, "Pillion")

@@ -69,7 +69,7 @@ def now_ms() -> int:
 
 # --------------------------------------------------------------------------- control codec
 
-# Field spec: (kind, required). kind is "int", "str", "bool", a tuple of allowed strings
+# Field spec: (kind, required). kind is "int", "str", "bool", "strlist" (array of strings), a tuple of allowed strings
 # (enum), ("obj", schema) or ("list", schema).
 _ROLE = ("host", "client")
 _BY = ("host", "client")
@@ -87,6 +87,8 @@ _MODE = ("now", "next", "end")
 _OP = ("jump", "remove", "clear", "move")
 # state.music.repeat (2026-10-01): absent = off, and the host never sends "off".
 _REPEAT = ("track", "queue")
+# music.download (2026-10-01, PROTOCOL.md "Browsing" 6): ids is required with "start".
+_DOWNLOAD_OP = ("start", "stop")
 
 STATE_MUSIC_SCHEMA: dict[str, tuple[Any, bool]] = {
     "id": ("str", True),
@@ -115,6 +117,14 @@ RESULT_ITEM_SCHEMA: dict[str, tuple[Any, bool]] = {
     "durationMs": ("int", False),
     "count": ("int", False),
     "art": ("str", False),
+}
+
+DOWNLOAD_ITEM_SCHEMA: dict[str, tuple[Any, bool]] = {
+    "ref": ("str", True),
+    "done": ("int", True),
+    "total": ("int", True),
+    "failed": ("int", True),
+    "running": ("bool", True),
 }
 
 ENQUEUE_TRACK_SCHEMA: dict[str, tuple[Any, bool]] = {
@@ -175,6 +185,12 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
     # "ignore the edit" case, not a malformed frame (see host.py). `to` is required (an int >= 0)
     # for "move" (see _check_edit).
     "music.edit": {"op": (_OP, True), "index": ("int", False), "id": ("str", False), "to": ("int", False)},
+    # PROTOCOL.md "Browsing" 6 (2026-10-01): a collection into the host's cache, and the marks.
+    "music.download": {"op": (_DOWNLOAD_OP, True), "ref": ("str", True), "ids": ("strlist", False)},
+    "music.downloads": {
+        "cached": ("strlist", True),
+        "downloads": (("list", DOWNLOAD_ITEM_SCHEMA), True),
+    },
     # ask (only true): the text is a clarifying question (PROTOCOL.md "Commands").
     "announce": {"text": ("str", True), "earcon": (_EARCON, False), "ask": ("bool", False)},
     "state": {
@@ -183,6 +199,8 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
         "queue": (("list", QUEUE_ITEM_SCHEMA), True),
         # Only while talk is true and the talk is host-mic (see _check_state).
         "mic": (_MIC, False),
+        # 2026-10-01: only while a voice command's search runs ("Searching song ...").
+        "busy": ("str", False),
     },
     "bye": {"reason": ("str", False)},
 }
@@ -201,6 +219,10 @@ def _check_value(where: str, kind: Any, value: Any) -> Any:
         if not isinstance(value, str):
             raise ProtocolError(f"{where}: expected string, got {value!r}")
         return value
+    if kind == "strlist":
+        if not isinstance(value, list):
+            raise ProtocolError(f"{where}: expected array, got {value!r}")
+        return [_check_value(f"{where}[{i}]", "str", v) for i, v in enumerate(value)]
     if kind == "bool":
         if not isinstance(value, bool):
             raise ProtocolError(f"{where}: expected boolean, got {value!r}")
@@ -261,6 +283,12 @@ def _check_control(msg: dict[str, Any]) -> None:
         raise ProtocolError("music.control: action 'repeat' requires a 'mode'")
 
 
+def _check_download(msg: dict[str, Any]) -> None:
+    # PROTOCOL.md "Browsing" 6: a start without ids is malformed; a stop ignores them.
+    if msg["op"] == "start" and "ids" not in msg:
+        raise ProtocolError("music.download: op 'start' requires 'ids'")
+
+
 def validate_message(obj: Any) -> dict[str, Any]:
     """Validate a parsed JSON value; return the normalised message.
 
@@ -285,6 +313,8 @@ def validate_message(obj: Any) -> dict[str, Any]:
         _check_edit(out)
     elif t == "music.control":
         _check_control(out)
+    elif t == "music.download":
+        _check_download(out)
     return out
 
 

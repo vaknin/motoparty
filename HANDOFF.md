@@ -18,7 +18,9 @@ typed actions (remove, move, clear, jump incl. played tracks, seek, restart, rep
 play, add, …) run in order by the host; the grammar maps to the same actions. Spec in PROTOCOL.md
 "Voice actions"; built for Android, the peer and (uncompiled) Swift; repeat toggle and drag to
 reorder on the Pixel; the iPhone's repeat button (`music.control repeat`, PROTOCOL.md "Repeat by
-touch") came after, also 2026-10-01. Not yet run on a device (the user: no phone tests for now). The smoke
+touch") came after, also 2026-10-01, then album/playlist Download with progress and Stop plus
+"downloaded" marks on the iPhone (`music.download` / `music.downloads`, PROTOCOL.md "Browsing"
+step 6) and the "Searching …" line there (`state.busy`). Not yet run on a device (the user: no phone tests for now). The smoke
 measurements of the new prompt are in `VOICE-ACTIONS.md` "Measurements".
 
 ## Do now (2026-09-30: implement the audit)

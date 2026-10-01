@@ -47,7 +47,7 @@ object Codec {
         MusicNext.serializer(), MusicStop.serializer(), MusicControl.serializer(), CommandText.serializer(),
         Announce.serializer(), State.serializer(), Bye.serializer(), MusicSearch.serializer(),
         MusicBrowse.serializer(), MusicResults.serializer(), MusicEnqueue.serializer(),
-        MusicEdit.serializer(),
+        MusicEdit.serializer(), MusicDownload.serializer(), MusicDownloads.serializer(),
     ).associateBy { it.descriptor.serialName }
 
     fun encode(message: Message): String {
@@ -84,9 +84,13 @@ object Codec {
 
     /**
      * The field rules a type alone cannot say: `music.edit move` requires a `to` ≥ 0, and
-     * `music.control repeat` a `mode` (its value is checked by [checkEnums]).
+     * `music.control repeat` a `mode` (its value is checked by [checkEnums]), and
+     * `music.download start` its `ids`.
      */
     private fun checkRules(m: Message) {
+        if (m is MusicDownload && m.op == DownloadOp.START && m.ids == null) {
+            throw MalformedMessageException("music.download start needs ids")
+        }
         if (m is MusicControl && m.action == ControlAction.REPEAT && m.mode == null) {
             throw MalformedMessageException("music.control repeat needs a mode")
         }
@@ -158,6 +162,13 @@ object Codec {
         var r = results.copy(items = results.items.map { it.copy(art = null) })
         while (!fits(r)) r = r.copy(items = r.items.dropLast(maxOf(1, r.items.size / 8)))
         return r
+    }
+
+    /** PROTOCOL.md "Browsing" step 6: a `music.downloads` that would not fit drops trailing `cached` ids. */
+    fun fit(downloads: MusicDownloads): MusicDownloads {
+        var d = downloads
+        while (!fits(d) && d.cached.isNotEmpty()) d = d.copy(cached = d.cached.dropLast(maxOf(1, d.cached.size / 8)))
+        return d
     }
 
     /**
