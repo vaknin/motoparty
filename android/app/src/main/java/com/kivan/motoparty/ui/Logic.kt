@@ -174,5 +174,20 @@ val COMMANDS: List<List<String>> = listOf(
     listOf("over  ·  only ends the talk"),
 )
 
+/**
+ * What smart commands also understand (PROTOCOL.md "Voice actions"), in rows like [COMMANDS]:
+ * shown only while the host interprets (Gemini key and the setting on). None of them is in the
+ * grammar. The same words, in the same order, as the iPhone's `VoiceCommandChip.smart`
+ * (`ios/Sources/MotopartyCore/UIModel.swift`): keep the two lists identical.
+ */
+val SMART_COMMANDS: List<List<String>> = listOf(
+    listOf("repeat this song"),
+    listOf("go back 30 seconds"),
+    listOf("start over", "what's next"),
+    listOf("remove the next song"),
+    listOf("move the last song to next"),
+    listOf("clear the queue", "undo"),
+)
+
 /** The one-line reminder on the Ride tab; the sheet behind it has [COMMANDS]. */
 const val COMMANDS_LINE = "play · pause · next · louder · over …"

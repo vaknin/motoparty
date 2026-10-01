@@ -102,6 +102,7 @@ fun RideTab(
     cb: Callbacks,
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
+    smart: Boolean = false,
 ) {
     val phase = TalkPhase.of(s)
     var commandsSheet by rememberSaveable { mutableStateOf(false) }
@@ -113,7 +114,7 @@ fun RideTab(
 
     val link: @Composable () -> Unit = { LinkHeader(s, onLongPress = { if (s.running) confirmStop = true }) }
     val middle: @Composable (Modifier) -> Unit = { m ->
-        if (showCommands) CommandsCard(solo = s.clientName == null, modifier = m) else NowPlaying(s, cb, onOpenQueue, m)
+        if (showCommands) CommandsCard(solo = s.clientName == null, smart = smart, modifier = m) else NowPlaying(s, cb, onOpenQueue, m)
     }
     val hint: @Composable () -> Unit = { SayLine(s.heard.takeIf { s.talkOpen }) { commandsSheet = true } }
     val talk: @Composable (Modifier) -> Unit = { m ->
@@ -154,7 +155,11 @@ fun RideTab(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ) {
-            CommandsList(solo = s.clientName == null, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp).navigationBarsPadding())
+            CommandsList(
+                solo = s.clientName == null,
+                Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp).navigationBarsPadding(),
+                smart = smart,
+            )
         }
     }
     if (permissionsSheet && missing.isNotEmpty()) {
@@ -557,18 +562,19 @@ private fun SayLine(heard: String?, onOpen: () -> Unit) {
 
 /** The command list in place of the music, while the talk's first phrase can still be one. */
 @Composable
-private fun CommandsCard(solo: Boolean, modifier: Modifier) {
+private fun CommandsCard(solo: Boolean, smart: Boolean, modifier: Modifier) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = RoundedCornerShape(20.dp), modifier = modifier) {
-        CommandsList(solo, Modifier.verticalScroll(rememberScrollState()).padding(16.dp), inTalk = true)
+        CommandsList(solo, Modifier.verticalScroll(rememberScrollState()).padding(16.dp), inTalk = true, smart = smart)
     }
 }
 
 /**
  * Every spoken command, readable at a glance: a command is the first phrase of a talk, and in a
- * solo talk every phrase is one. `<…>` is what the rider fills in, drawn lighter.
+ * solo talk every phrase is one. `<…>` is what the rider fills in, drawn lighter. [smart]: the
+ * host interprets (smart commands on), so some of what that understands follows ([SMART_COMMANDS]).
  */
 @Composable
-fun CommandsList(solo: Boolean, modifier: Modifier = Modifier, inTalk: Boolean = false) {
+fun CommandsList(solo: Boolean, modifier: Modifier = Modifier, inTalk: Boolean = false, smart: Boolean = false) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             if (inTalk) "Say a command" else "Voice commands",
@@ -588,6 +594,19 @@ fun CommandsList(solo: Boolean, modifier: Modifier = Modifier, inTalk: Boolean =
         for (row in COMMANDS) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (c in row) CommandChip(c, Modifier.weight(1f))
+            }
+        }
+        if (smart) {
+            Text(
+                "Smart commands are on: say it your own way, like",
+                Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            for (row in SMART_COMMANDS) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (c in row) CommandChip(c, Modifier.weight(1f))
+                }
             }
         }
     }

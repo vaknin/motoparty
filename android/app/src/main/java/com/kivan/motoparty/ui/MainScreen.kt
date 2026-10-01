@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.kivan.motoparty.BuildConfig
 import com.kivan.motoparty.Diagnostics
 import com.kivan.motoparty.Hub
 import com.kivan.motoparty.LinkStatus
@@ -174,7 +175,11 @@ fun Motoparty(
     }
     val screen: @Composable (Modifier) -> Unit = { m ->
         when (tab) {
-            Tab.RIDE -> RideTab(status, permissions, cb, onOpenQueue = { tab = Tab.QUEUE }, modifier = m)
+            Tab.RIDE -> RideTab(
+                status, permissions, cb, onOpenQueue = { tab = Tab.QUEUE }, modifier = m,
+                // The host interprets: the smart-command hints are true.
+                smart = settings.smartCommands && BuildConfig.GEMINI_API_KEY.isNotEmpty(),
+            )
             Tab.SEARCH -> SearchTab(status, cb, m, history)
             Tab.QUEUE -> QueueTab(status, cb, onSearch = { tab = Tab.SEARCH }, modifier = m)
             Tab.SETTINGS -> SettingsTab(status, settings, cb, m, prefs, dev)

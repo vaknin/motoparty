@@ -226,4 +226,21 @@ class LogicTest {
         assertEquals(0.5f, meterStep(shown = 0.5f, level = 0f, elapsedMs = 0), 0f)
         assertEquals(0.5f, meterStep(shown = 0.5f, level = 0f, elapsedMs = -20), 0f)
     }
+
+    @Test
+    fun smartCommandHintsNeedTheInterpreterAndMatchTheIphone() {
+        val words = SMART_COMMANDS.flatten()
+        // Only Gemini understands them: the grammar does not.
+        for (w in words) assertEquals(w, com.kivan.motoparty.core.Command.Unknown, com.kivan.motoparty.core.CommandParser.parse(w))
+        assertEquals(words.size, words.toSet().size)
+        assertTrue(words.size in 6..8)
+        // The iPhone's VoiceCommandChip.smart (ParityTests), word for word.
+        assertEquals(
+            listOf(
+                "repeat this song", "go back 30 seconds", "start over", "what's next",
+                "remove the next song", "move the last song to next", "clear the queue", "undo",
+            ),
+            words,
+        )
+    }
 }
