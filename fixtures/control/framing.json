@@ -61,7 +61,19 @@
   },
   {
    "_doc": "music.edit op outside its set: drop, keep",
+   "json": "{\"t\":\"music.edit\",\"op\":\"swap\",\"index\":0,\"id\":\"x\"}"
+  },
+  {
+   "_doc": "music.edit move without to: drop, keep",
    "json": "{\"t\":\"music.edit\",\"op\":\"move\",\"index\":0,\"id\":\"x\"}"
+  },
+  {
+   "_doc": "music.edit move with a negative to: drop, keep",
+   "json": "{\"t\":\"music.edit\",\"op\":\"move\",\"index\":0,\"id\":\"x\",\"to\":-1}"
+  },
+  {
+   "_doc": "state music.repeat outside its set (off is never sent): drop, keep",
+   "json": "{\"t\":\"state\",\"talk\":false,\"music\":{\"id\":\"x1\",\"title\":\"A\",\"artist\":\"B\",\"playing\":true,\"positionMs\":0,\"atHostTimeMs\":5,\"durationMs\":1000,\"repeat\":\"off\"},\"queue\":[]}"
   },
   {
    "_doc": "music.enqueue track missing durationMs: drop, keep",

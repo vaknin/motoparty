@@ -206,6 +206,13 @@
    "op": "clear"
   },
   {
+   "t": "music.edit",
+   "op": "move",
+   "index": 4,
+   "id": "x1",
+   "to": 0
+  },
+  {
    "t": "announce",
    "text": "Playing Money by Pink Floyd",
    "earcon": "ok"
@@ -297,6 +304,42 @@
   },
   {
    "t": "bye"
+  },
+  {
+   "t": "state",
+   "talk": false,
+   "music": {
+    "id": "x1",
+    "title": "A",
+    "artist": "B",
+    "playing": true,
+    "positionMs": 0,
+    "atHostTimeMs": 5,
+    "durationMs": 1000,
+    "repeat": "track"
+   },
+   "queue": []
+  },
+  {
+   "t": "state",
+   "talk": false,
+   "music": {
+    "id": "x1",
+    "title": "A",
+    "artist": "B",
+    "playing": false,
+    "positionMs": 0,
+    "atHostTimeMs": 5,
+    "durationMs": 1000,
+    "repeat": "queue"
+   },
+   "queue": [
+    {
+     "id": "x2",
+     "title": "C",
+     "artist": "D"
+    }
+   ]
   }
  ]
 }

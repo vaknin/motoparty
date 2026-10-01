@@ -93,7 +93,7 @@ catches up.
 | `music.browse`  | C→H   | `id`: int, `ref`: string — the `ref` of an album or playlist result |
 | `music.results` | H→C   | `id` (echoed), `items`: array of result items, `error` (optional): string to show instead of an empty list |
 | `music.enqueue` | C→H   | `mode`: `"now"`\|`"next"`\|`"end"`, `tracks`: array of tracks, `art` (optional): URL for tracks without their own |
-| `music.edit`    | C→H   | `op`: `"jump"`\|`"remove"`\|`"clear"`, `index` (optional): int, `id` (optional): string |
+| `music.edit`    | C→H   | `op`: `"jump"`\|`"remove"`\|`"clear"`\|`"move"`, `index` (optional): int, `id` (optional): string, `to` (optional): int, the new index for `"move"` (2026-10-01). See Browsing |
 | `announce`      | H→C   | `text`: to be spoken by TTS; `earcon` (optional): `"ok"`\|`"error"`; `ask` (optional, only `true`): the text is a clarifying question, see Commands, "The clarifying question" |
 | `state`         | H→C   | see below |
 | `bye`           | both  | `reason` (optional). Sender closes the socket after it |
@@ -103,13 +103,13 @@ catches up.
 ```json
 {"t":"state","talk":false,
  "music":{"id":"dQw4w9WgXcQ","title":"…","artist":"…","playing":true,"positionMs":1234,
-          "atHostTimeMs":987654,"durationMs":213000,"art":"https://…"},
+          "atHostTimeMs":987654,"durationMs":213000,"art":"https://…","repeat":"track"},
  "queue":[{"id":"…","title":"…","artist":"…"}]}
 ```
 
 `mic` (optional, `"host"`) is present only while `talk` is true and the open talk is a host-mic
 talk (see "Host-mic talk"), so a client that learns of the talk only from `state` (it joined
-mid-talk) opens it the same way. A receiver ignores `mic` on `state{talk:false}` (the message is kept). `music` is omitted when nothing is loaded; its `art` (optional) is a cover image URL. `queue` (required, possibly empty) is the upcoming
+mid-talk) opens it the same way. A receiver ignores `mic` on `state{talk:false}` (the message is kept). `music` is omitted when nothing is loaded; its `art` (optional) is a cover image URL, and its `repeat` (optional, 2026-10-01) is `"track"` (the current track starts again when it ends) or `"queue"` (after the last track the queue starts again from the first track it still holds); absent means off, and the host never sends `"off"`. Any other value drops the `state`. `queue` (required, possibly empty) is the upcoming
 tracks after the current one; an item is `{id, title, artist}` plus optional `durationMs` and `art` (2026-09-30; the host leaves `art` out of every item when `state` would pass 48 KiB). `positionMs`/`atHostTimeMs` form the same anchor as in
 `music.play`; while paused (including during talk) `playing` is false and `positionMs` is the
 pause position.
@@ -357,10 +357,13 @@ the Music flow: an enqueued track is loaded, readied and played exactly as befor
    and `"clear"` leave the talk open.
 4. The client sends `music.edit{op, index, id}` to change the upcoming queue: `"jump"` plays
    `state.queue[index]` now (the tracks before it stay behind the current one, so `previous`
-   still reaches them), `"remove"` drops it, `"clear"` drops every upcoming track and needs
-   neither field. For `"jump"` and `"remove"`, `index` and `id` are required and `id` must equal
-   `state.queue[index].id`; otherwise the queue changed under the client and the host ignores
-   the edit. Every change reaches the client as a new `state`.
+   still reaches them), `"remove"` drops it, `"move"` (2026-10-01, drag to reorder) takes it out
+   and puts it back so that it is `state.queue[to]` afterwards (`to` past the end = the end),
+   `"clear"` drops every upcoming track and needs neither field. For `"jump"`, `"remove"` and
+   `"move"`, `index` and `id` are required and `id` must equal `state.queue[index].id`; otherwise
+   the queue changed under the client and the host ignores the edit. `"move"` also requires `to`
+   (an int ≥ 0); without it, or with a negative one, the message is dropped as malformed. Every
+   change reaches the client as a new `state`.
 5. Size: a `music.results` or `music.enqueue` frame must stay under 64 KiB. The sender drops
    per-item `art` first, then trailing items. Hosts cap a collection at 200 tracks.
 
@@ -532,41 +535,136 @@ text, parsed or not).
   same way on the host.
 - In a solo talk, and for a command typed on the host, an unparsed phrase is interpreted too.
 
-**What the host does with an unparsed candidate.** It asks the interpreter, giving it the text,
-its language tag, the current track (`"<title> – <artist>"` or none, and its album when the host knows it) and up to
-`INTERPRET_UP_NEXT` = 5 upcoming titles, and waits at most **`INTERPRET_TIMEOUT_MS` = 6000 ms**.
-The talk stays open and nothing is said while it waits. The answer is one JSON object,
-`{"action": …, "kind"?: …, "query"?: …, "question"?: …, "where"?: …, "count"?: …}`, mapped to a command text of the grammar
-(or, for `ask`, to a question: next section):
+**What the host does with an unparsed candidate.** It asks the interpreter, giving it the
+phrase and a **context window**, and waits at most **`INTERPRET_TIMEOUT_MS` = 6000 ms**. The
+talk stays open and nothing is said while it waits. The answer is a list of up to
+`MAX_ACTIONS` = 4 typed **voice actions** (next section), run in order by the host; it is
+conversation when the list is empty or nothing in it is usable.
 
-| `action` | command text |
-|----------|--------------|
-| `play` | `play <kind> <query>`; `kind` absent or not one of song/album/artist/playlist → `song`; `query` normalised as above, and empty after that → conversation |
-| `queue` | `queue [next\|instead] [<count>] <kind> <query>` or `queue [next\|instead] [<count>] similar`: `where` `"next"` or `"instead"` gives that word, anything else none; `count` is used when it is an integer 1–50, else left out; `kind` `"similar"` needs no query; otherwise `kind` and `query` as for `play` (no usable query → conversation) |
-| `pause`, `resume`, `next`, `previous`, `shuffle` | the same word |
-| `volumeUp` / `volumeDown` | `volume up` / `volume down` |
-| `nowplaying` | `what is playing` |
-| `end` | `over` |
-| `ask` | a question, see "The clarifying question" |
-| `none`, any other value, no `action`, not a JSON object | conversation |
-
-A command text is then executed exactly as if it had been spoken in those words by the same
-side: it ends the talk, and the replies are the ones above. **Conversation**, a timeout, an HTTP
-or network error, a rate limit and an unreadable answer are all the same: nothing happens, the
-talk stays open, no `announce`, no error earcon (in a solo talk and for a typed command:
-"Didn't catch that", as for any unparsed phrase). Also:
+Conversation, a timeout, an HTTP or network error, a rate limit and an unreadable answer are all
+the same: nothing happens, the talk stays open, no `announce`, no error earcon (in a solo talk and
+for a typed command: "Didn't catch that", as for any unparsed phrase). Also:
 - The answer is acted on only if the talk it was spoken in is still open when it arrives;
   otherwise it is dropped and logged.
-- An interpreted volume command from the passenger (their `command.text`, or their channel in a
-  host-mic talk) is ignored with no `announce`, like a spoken one on that channel.
+- An interpreted volume action from the passenger (their `command.text`, or their channel in a
+  host-mic talk) is ignored with no `announce`, like a spoken one on that channel; the rest of the
+  list runs.
 - With interpretation on, a `command.text` that neither parses nor interprets gets no "Didn't
   catch that" (it is the passenger's conversation). The host-enforced rule is unchanged: one
   `command.text` per talk, only from the opener.
 - When the model's rate limit is hit, the host stops asking for a while (it keeps the grammar);
   it does not queue phrases.
 
-Vectors: `fixtures/interpret.json` (the model's answer → command text, question or conversation;
-this is the mapping only, not what a model says).
+### Voice actions (2026-10-01)
+
+One currency for the grammar, the interpreter and the undo: whatever was said becomes a list of
+voice actions, which one executor runs. The grammar's commands map one to one (so the grammar
+stays the instant, offline path), and the interpreter can say more than the grammar can.
+
+**The context window** (the interpreter's input, one JSON object; the phrase travels in it as
+data, never as loose prompt text):
+
+```json
+{"phrase": "drop the next two and play yellow after this", "lang": "en-US",
+ "playing": {"title": "Porcelain", "artist": "Moby", "album": "Play", "atS": 74, "lengthS": 241},
+ "repeat": "off",
+ "upNext": ["1. Natural Blues – Moby", "2. Why Does My Heart Feel So Bad? – Moby", "3. Yellow – Coldplay"],
+ "queueLength": 14,
+ "played": ["-1. Teardrop – Massive Attack", "-2. Angel – Massive Attack"],
+ "lastVoice": "removed Clocks – Coldplay (3 min ago)"}
+```
+
+- `playing`: the current track, or `null`; `album` only when known; `atS` and `lengthS` are the
+  position and length in whole seconds (`lengthS` absent when unknown).
+- `repeat`: `"off"`, `"track"` or `"queue"` (see `state.music.repeat`).
+- `upNext`: the first `INTERPRET_UP_NEXT` = 25 upcoming tracks, numbered from 1
+  (`"<n>. <title> – <artist>"`, just the title when the artist is empty); `queueLength` is the
+  number of upcoming tracks, which may be more.
+- `played`: up to `INTERPRET_PLAYED` = 5 tracks played before the current one, newest first,
+  numbered from −1 (−1 = the track before this one).
+- `lastVoice`: a short summary of what the last voice action list changed and how long ago, or
+  `null` when there was none in the last `UNDO_MS` (the wording is the host's).
+- `asked`: present only for the reply to a question ("The clarifying question").
+
+The host keeps the **snapshot** it sent: which track id each `upNext` and `played` number stood
+for. Positions in the answer are resolved against it and executed on those ids, so a queue that
+changed while the model was thinking cannot make an edit hit the wrong song (the rule of
+`music.edit`'s `id`). A track that is no longer upcoming is skipped and logged.
+
+**The answer** is `{"actions": [ … ]}` (held to `interpret_schema.json`, which uses only `anyOf`,
+`enum`, `required` and `maxItems`). Each action is an object with a `type`:
+
+| `type` | fields | meaning |
+|--------|--------|---------|
+| `play` | `kind`: `song`\|`album`\|`artist`\|`playlist`\|`similar`, `query` | replace the queue, as the grammar's `play`; `similar` = music like the current track, no query |
+| `add` | `kind`, `query` as for `play`; `where`: `next`\|`end`\|`instead`; `count`: 0–50 | the grammar's `queue` ("Queueing by voice"); `count` 0 = none said |
+| `remove` | `at`: upcoming positions, or `artist` | drop those tracks; `artist` drops every upcoming track by that artist, also past the window |
+| `move` | `at`: upcoming positions, `to`: a position | take them out and put them back, in their order, so the first is at `to` (1 = next; past the end = the end) |
+| `clear` | | drop every upcoming track |
+| `jump` | `at`: an upcoming position, or −1…−5 for `played` | play that track now. Upcoming: as `music.edit jump`. Played: the track is put back right after the current one and played; the queue stays |
+| `pause` `resume` `next` `previous` `shuffle` `end` | | as the grammar's words |
+| `restart` | | the current track from its start |
+| `seek` | `by`: seconds (±), or `to`: seconds | move in the current track, clamped to it |
+| `repeat` | `mode`: `off`\|`track`\|`queue` | `state.music.repeat` |
+| `volumeUp` `volumeDown` | | local, as the grammar's |
+| `tell` | `about`: `track`\|`album`\|`next`\|`remaining`\|`previous` | the host says that fact, in its own words from its own data |
+| `undo` | | "Voice undo", below |
+| `ask` | `question`; fallback in `kind`/`query` | "The clarifying question" |
+| `none` | | conversation |
+
+**Validation** (pure; vectors in `fixtures/interpret.json`, with the window's sizes):
+- An action with an unknown `type`, a missing or mistyped required field, or a value outside its
+  set is dropped; so is the rest of an answer that is not `{"actions": [ … ]}`.
+- `play`/`add`/the `ask` fallback: `query` is normalised as in "Commands"; empty after that (and
+  `kind` not `similar`) drops the action; an unknown `kind` is `song`. `add.where` other than
+  `next`/`instead` is `end`; `count` counts only as an integer 1–50.
+- `remove`: a non-empty `at` wins over `artist`; `artist` must be non-empty after normalisation.
+  `remove` and `move`: every position must be 1…`upNext` size (duplicates count once), else the
+  whole action is dropped. `move.to` must be an integer ≥ 1. `jump.at` must be 1…`upNext` size or
+  −1…−`played` size.
+- `seek`: a non-zero integer `by` wins; else an integer `to` ≥ 0; else dropped.
+- `repeat.mode` and `tell.about` must be in their sets.
+- `none` next to other actions is ignored. More than `MAX_ACTIONS` usable actions: the first four.
+- `ask` counts only alone: next to other actions it is dropped and they run. Its question is
+  whitespace-collapsed and trimmed and must be 1–`ASK_MAX_CHARS` = 80 code points, else the `ask`
+  becomes its fallback (or nothing).
+
+**The grammar's commands as actions:** `play <kind> <query>` → `play`; `queue …` → `add` (`similar`
+→ kind `similar`); `pause`, `resume`, `next`, `previous`, `shuffle`, `over` (→ `end`) and volume
+→ the same; `what's playing` → `tell track`. An unparsed phrase is the empty list.
+
+**Running a list.**
+- Searches in the list (`play`, `add`, `play similar`) start at once and in parallel. The actions
+  then apply in order, each on the queue as the previous one left it (positions always refer to
+  the snapshot). Actions before the first search apply at once, before the talk closes, exactly
+  as the grammar's commands always have; the rest wait for their search and for the headset to be
+  back in media mode.
+- **Effect on the talk**: a list with any action ends the talk, as a command does (`ask` keeps it
+  open; a list of only `end` has no reply). The strongest effect wins: `play` and `jump` replace
+  the music the talk paused, `pause` cancels its resume; otherwise music that was playing resumes.
+- A failed action is named in the reply; the rest of the list still runs.
+- **One spoken line per list**, after the switch to media, made of the parts that need one, in
+  order: `remove` ("Removed <title> by <artist>", "Removed <n> songs"), `clear` ("Cleared the
+  queue"), `move` ("Moved <title> to next" / "to the end" / "to <n>", "Moved <n> songs …"), `tell`,
+  `undo`, `add` (as "Queueing by voice"), `nowplaying`'s and `shuffle`'s replies, and every
+  failure ("Couldn't find …", "Nothing to remove", "Nothing to undo", …; the wording is the
+  host's). `next`, `previous`, `jump`, `seek`, `restart`, `repeat`, `pause`, `resume` and a
+  successful `play` have none: the earcon and the music say it. The earcon is `ok`, or `error`
+  when every part is a failure.
+- `tell`: `track` "<title> by <artist>"; `album` "From <album>" (or "Album unknown"); `next`
+  "Next: <title> by <artist>" (or "Nothing after this"); `remaining` "<n> songs left, about <m>
+  minutes"; `previous` "Before this: <title> by <artist>" (or "Nothing before this").
+
+**Voice undo.** Before a list that changes the upcoming queue or the repeat mode (`add`,
+`remove`, `move`, `clear`, `shuffle`, `repeat`), the host keeps the upcoming track ids and the
+repeat mode as they were. `undo` within **`UNDO_MS` = 600000 ms** (10 minutes) puts them back (the
+current track stays; it is left out of the restored list if it is in it) and says "Put back <n>
+songs" when tracks came back, else "Undone"; otherwise "Nothing to undo". One level: an undo
+cannot be undone, and a `play` or `jump` (a new queue or a new current track) forgets it. Touch
+keeps its own remove-undo.
+
+Vectors: `fixtures/interpret.json` (the model's answer and the window's sizes → actions,
+question or conversation; this is the mapping only, not what a model says).
 
 ### The clarifying question (2026-09-30)
 
@@ -613,7 +711,7 @@ side** is the reply. The model is told to ask rarely: a request with a reasonabl
 
   | the reply's answer | the host |
   |--------------------|----------|
-  | a command | executes it (it ends the talk; an interpreted volume from the passenger is ignored as above) |
+  | an action list | runs it (it ends the talk; an interpreted volume from the passenger is ignored as above) |
   | conversation (`none`: "never mind", or talk to the other rider) | nothing; the talk stays open (solo: "Didn't catch that") |
   | `ask` again | that answer's fallback, else the first answer's fallback, else nothing |
   | a timeout or any other failure | the first answer's fallback, else nothing |
@@ -634,4 +732,4 @@ side** is the reply. The model is told to ask rarely: a request with a reasonabl
 | `fixtures/voice/header.json`     | UDP header encode/decode and rejection |
 | `fixtures/commands.json`         | command parser, including `queue …` |
 | `fixtures/first_phrase.json`     | the first-phrase gate: command text or conversation per phrase, with and without interpretation, and the reply to a question |
-| `fixtures/interpret.json`        | an interpreter answer → command text, question or conversation |
+| `fixtures/interpret.json`        | an interpreter answer → voice actions, question or conversation |

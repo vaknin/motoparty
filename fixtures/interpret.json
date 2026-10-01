@@ -1,114 +1,259 @@
 {
- "_doc": "Interpreter answer → command text, question or conversation. See PROTOCOL.md 'Commands', Interpretation and The clarifying question. answer = the text the model returned (a string, to be parsed as JSON); expect = the command text to execute, null = conversation, or {ask, fallback} = a question to ask (ask: the question, whitespace collapsed and trimmed, 1..askMaxChars code points; fallback: the command text of its kind/query, or null). The query goes through the normalisation of 'Commands'. A queue answer maps to 'queue [next|instead] [<count>] <kind> <query>' or '… similar' (where: next/instead, else none; count: an integer 1..queueMaxCount, else left out).",
+ "_doc": "Interpreter answer → voice actions, a question, or conversation. See PROTOCOL.md 'Commands', Interpretation, Voice actions and The clarifying question. answer = the text the model returned (to be parsed as JSON); window = the sizes of the context window sent ({upNext, played}; absent = {upNext: 25, played: 5}); expect = the list of actions in canonical form, null = conversation, or {ask, fallback} = a question (fallback: a list of at most one play action). Canonical form: play {type, kind, query} (no query for kind similar); add {type, kind, query, where, count} (no query for similar, count only when 1..50); remove {type, at} or {type, artist} (normalised); move {type, at, to}; jump {type, at}; seek {type, by} or {type, to}; repeat {type, mode}; tell {type, about}; the rest {type}.",
  "interpretTimeoutMs": 6000,
- "interpretUpNext": 5,
+ "interpretUpNext": 25,
+ "interpretPlayed": 5,
+ "maxActions": 4,
+ "undoMs": 600000,
  "askMaxChars": 80,
  "answerMs": 10000,
  "answerGraceMs": 2000,
  "queueMaxCount": 50,
  "cases": [
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "play artist moby"
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "artist",
+     "query": "moby"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"song\",\"query\":\"Blinding Lights The Weeknd\"}",
-   "expect": "play song blinding lights the weeknd"
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"song\",\"query\":\"Blinding Lights The Weeknd\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "song",
+     "query": "blinding lights the weeknd"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"play\",\"query\":\"Bohemian Rhapsody\"}",
-   "expect": "play song bohemian rhapsody"
+   "_doc": "no kind: song",
+   "answer": "{\"actions\":[{\"type\":\"play\",\"query\":\"Bohemian Rhapsody\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "song",
+     "query": "bohemian rhapsody"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"mixtape\",\"query\":\"AC/DC\"}",
-   "expect": "play song ac dc"
+   "_doc": "unknown kind: song",
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"mixtape\",\"query\":\"AC/DC\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "song",
+     "query": "ac dc"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"album\",\"query\":\"What’s Going On\"}",
-   "expect": "play album what's going on"
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"album\",\"query\":\"What’s Going On\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "album",
+     "query": "what's going on"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"playlist\",\"query\":\"  80s   Rock! \"}",
-   "expect": "play playlist 80s rock"
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"playlist\",\"query\":\"  80s   Rock! \"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "playlist",
+     "query": "80s rock"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"שלמה ארצי\"}",
-   "expect": "play artist שלמה ארצי"
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"artist\",\"query\":\"שלמה ארצי\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "artist",
+     "query": "שלמה ארצי"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"\"}",
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"artist\",\"query\":\"\"}]}",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":\"?!\"}",
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"artist\",\"query\":\"?!\"}]}",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"artist\"}",
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"artist\"}]}",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"play\",\"kind\":\"artist\",\"query\":7}",
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"artist\",\"query\":7}]}",
    "expect": null
   },
   {
+   "_doc": "similar takes no query",
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"similar\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "similar"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"play\",\"kind\":\"similar\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "similar"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"pause\"}]}",
+   "expect": [
+    {
+     "type": "pause"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"resume\"}]}",
+   "expect": [
+    {
+     "type": "resume"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"next\"}]}",
+   "expect": [
+    {
+     "type": "next"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"previous\"}]}",
+   "expect": [
+    {
+     "type": "previous"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"shuffle\"}]}",
+   "expect": [
+    {
+     "type": "shuffle"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"end\"}]}",
+   "expect": [
+    {
+     "type": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"restart\"}]}",
+   "expect": [
+    {
+     "type": "restart"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"undo\"}]}",
+   "expect": [
+    {
+     "type": "undo"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"volumeUp\"}]}",
+   "expect": [
+    {
+     "type": "volumeUp"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"volumeDown\"}]}",
+   "expect": [
+    {
+     "type": "volumeDown"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"clear\"}]}",
+   "expect": [
+    {
+     "type": "clear"
+    }
+   ]
+  },
+  {
+   "_doc": "extra fields ignored",
+   "answer": "{\"actions\":[{\"type\":\"next\",\"kind\":\"song\",\"query\":\"ignored\"}]}",
+   "expect": [
+    {
+     "type": "next"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"none\"}]}",
+   "expect": null
+  },
+  {
+   "_doc": "empty list: conversation",
+   "answer": "{\"actions\":[]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"dance\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"PAUSE\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":null}]}",
+   "expect": null
+  },
+  {
+   "_doc": "the old shape is not understood",
    "answer": "{\"action\":\"pause\"}",
-   "expect": "pause"
-  },
-  {
-   "answer": "{\"action\":\"resume\"}",
-   "expect": "resume"
-  },
-  {
-   "answer": "{\"action\":\"next\",\"kind\":\"song\",\"query\":\"ignored\"}",
-   "expect": "next"
-  },
-  {
-   "answer": "{\"action\":\"previous\"}",
-   "expect": "previous"
-  },
-  {
-   "answer": "{\"action\":\"shuffle\"}",
-   "expect": "shuffle"
-  },
-  {
-   "answer": "{\"action\":\"volumeUp\"}",
-   "expect": "volume up"
-  },
-  {
-   "answer": "{\"action\":\"volumeDown\"}",
-   "expect": "volume down"
-  },
-  {
-   "answer": "{\"action\":\"nowplaying\"}",
-   "expect": "what is playing"
-  },
-  {
-   "answer": "{\"action\":\"end\"}",
-   "expect": "over"
-  },
-  {
-   "answer": "{\"action\":\"none\"}",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"dance\"}",
+   "answer": "[{\"type\":\"pause\"}]",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"PLAY\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "answer": "{\"actions\":{\"type\":\"pause\"}}",
    "expect": null
   },
   {
-   "answer": "{\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": null
-  },
-  {
-   "answer": "{\"action\":null}",
-   "expect": null
-  },
-  {
-   "answer": "[{\"action\":\"pause\"}]",
+   "answer": "{\"actions\":[\"pause\"]}",
    "expect": null
   },
   {
@@ -116,7 +261,7 @@
    "expect": null
   },
   {
-   "answer": "{\"action\":\"pause\"",
+   "answer": "{\"actions\":[{\"type\":\"pause\"}]",
    "expect": null
   },
   {
@@ -124,137 +269,780 @@
    "expect": null
   },
   {
-   "answer": "Sure! {\"action\":\"pause\"}",
+   "answer": "Sure! {\"actions\":[{\"type\":\"pause\"}]}",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"Which Moby album?\",\"kind\":\"artist\",\"query\":\"Moby\"}",
+   "answer": "{\"actions\":[{\"type\":\"add\",\"kind\":\"album\",\"query\":\"Play Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "album",
+     "query": "play moby",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"where\":\"end\",\"kind\":\"artist\",\"query\":\"Moby\",\"count\":0}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"where\":\"next\",\"kind\":\"song\",\"query\":\"Natural Blues Moby\",\"count\":0}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "song",
+     "query": "natural blues moby",
+     "where": "next"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"where\":\"next\",\"count\":3,\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "next",
+     "count": 3
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"where\":\"instead\",\"kind\":\"similar\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "similar",
+     "where": "instead"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"kind\":\"similar\",\"query\":\"ignored\",\"count\":5}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "similar",
+     "where": "end",
+     "count": 5
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"query\":\"Porcelain\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "song",
+     "query": "porcelain",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"where\":\"sometime\",\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"count\":51,\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"count\":2.5,\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"count\":\"3\",\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"count\":-1,\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "end"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"count\":50,\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "add",
+     "kind": "artist",
+     "query": "moby",
+     "where": "end",
+     "count": 50
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"where\":\"next\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"add\",\"kind\":\"album\",\"query\":\"  \"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[1,2]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "remove",
+     "at": [
+      1,
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "_doc": "duplicates count once, order kept",
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[3,1,3]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "remove",
+     "at": [
+      3,
+      1
+     ]
+    }
+   ]
+  },
+  {
+   "_doc": "past the window",
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[6]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "_doc": "one bad position drops the whole action",
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[2,6]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[0]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[-1]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[1.5]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[\"1\"]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\"}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"artist\":\"Cold Play!\"}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "remove",
+     "artist": "cold play"
+    }
+   ]
+  },
+  {
+   "_doc": "positions win over artist",
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[2],\"artist\":\"Coldplay\"}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "remove",
+     "at": [
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[],\"artist\":\"Coldplay\"}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "remove",
+     "artist": "coldplay"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"artist\":\"  \"}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "_doc": "nothing upcoming",
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[1]}]}",
+   "window": {
+    "upNext": 0,
+    "played": 0
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"move\",\"at\":[3],\"to\":1}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "move",
+     "at": [
+      3
+     ],
+     "to": 1
+    }
+   ]
+  },
+  {
+   "_doc": "past the end = the end; checked by the executor",
+   "answer": "{\"actions\":[{\"type\":\"move\",\"at\":[1,2],\"to\":99}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "move",
+     "at": [
+      1,
+      2
+     ],
+     "to": 99
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"move\",\"at\":[3],\"to\":0}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"move\",\"at\":[3]}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"move\",\"at\":[3],\"to\":\"next\"}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"move\",\"at\":[9],\"to\":1}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"jump\",\"at\":4}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "jump",
+     "at": 4
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"jump\",\"at\":-2}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "jump",
+     "at": -2
+    }
+   ]
+  },
+  {
+   "_doc": "only two played",
+   "answer": "{\"actions\":[{\"type\":\"jump\",\"at\":-3}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"jump\",\"at\":0}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"jump\",\"at\":6}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"jump\"}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"seek\",\"by\":-30}]}",
+   "expect": [
+    {
+     "type": "seek",
+     "by": -30
+    }
+   ]
+  },
+  {
+   "_doc": "a zero by does not count",
+   "answer": "{\"actions\":[{\"type\":\"seek\",\"by\":0,\"to\":90}]}",
+   "expect": [
+    {
+     "type": "seek",
+     "to": 90
+    }
+   ]
+  },
+  {
+   "_doc": "by wins",
+   "answer": "{\"actions\":[{\"type\":\"seek\",\"by\":15,\"to\":90}]}",
+   "expect": [
+    {
+     "type": "seek",
+     "by": 15
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"seek\",\"to\":0}]}",
+   "expect": [
+    {
+     "type": "seek",
+     "to": 0
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"seek\",\"to\":-5}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"seek\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"seek\",\"by\":1.5}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"repeat\",\"mode\":\"off\"}]}",
+   "expect": [
+    {
+     "type": "repeat",
+     "mode": "off"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"repeat\",\"mode\":\"track\"}]}",
+   "expect": [
+    {
+     "type": "repeat",
+     "mode": "track"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"repeat\",\"mode\":\"queue\"}]}",
+   "expect": [
+    {
+     "type": "repeat",
+     "mode": "queue"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"repeat\",\"mode\":\"album\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"repeat\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"tell\",\"about\":\"track\"}]}",
+   "expect": [
+    {
+     "type": "tell",
+     "about": "track"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"tell\",\"about\":\"album\"}]}",
+   "expect": [
+    {
+     "type": "tell",
+     "about": "album"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"tell\",\"about\":\"next\"}]}",
+   "expect": [
+    {
+     "type": "tell",
+     "about": "next"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"tell\",\"about\":\"remaining\"}]}",
+   "expect": [
+    {
+     "type": "tell",
+     "about": "remaining"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"tell\",\"about\":\"previous\"}]}",
+   "expect": [
+    {
+     "type": "tell",
+     "about": "previous"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"tell\",\"about\":\"weather\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"remove\",\"at\":[1,2]},{\"type\":\"add\",\"where\":\"next\",\"kind\":\"song\",\"query\":\"Yellow Coldplay\",\"count\":0}]}",
+   "window": {
+    "upNext": 5,
+    "played": 2
+   },
+   "expect": [
+    {
+     "type": "remove",
+     "at": [
+      1,
+      2
+     ]
+    },
+    {
+     "type": "add",
+     "kind": "song",
+     "query": "yellow coldplay",
+     "where": "next"
+    }
+   ]
+  },
+  {
+   "_doc": "none next to an action is ignored",
+   "answer": "{\"actions\":[{\"type\":\"none\"},{\"type\":\"pause\"}]}",
+   "expect": [
+    {
+     "type": "pause"
+    }
+   ]
+  },
+  {
+   "_doc": "a bad action is dropped, the rest kept",
+   "answer": "{\"actions\":[{\"type\":\"pause\"},{\"type\":\"dance\"},{\"type\":\"next\"}]}",
+   "expect": [
+    {
+     "type": "pause"
+    },
+    {
+     "type": "next"
+    }
+   ]
+  },
+  {
+   "_doc": "at most four",
+   "answer": "{\"actions\":[{\"type\":\"next\"},{\"type\":\"next\"},{\"type\":\"next\"},{\"type\":\"next\"},{\"type\":\"pause\"}]}",
+   "expect": [
+    {
+     "type": "next"
+    },
+    {
+     "type": "next"
+    },
+    {
+     "type": "next"
+    },
+    {
+     "type": "next"
+    }
+   ]
+  },
+  {
+   "_doc": "four usable ones",
+   "answer": "{\"actions\":[{\"type\":\"dance\"},{\"type\":\"next\"},{\"type\":\"next\"},{\"type\":\"next\"},{\"type\":\"pause\"}]}",
+   "expect": [
+    {
+     "type": "next"
+    },
+    {
+     "type": "next"
+    },
+    {
+     "type": "next"
+    },
+    {
+     "type": "pause"
+    }
+   ]
+  },
+  {
+   "_doc": "ask next to an action is dropped",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"Which one?\"},{\"type\":\"pause\"}]}",
+   "expect": [
+    {
+     "type": "pause"
+    }
+   ]
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"none\"},{\"type\":\"none\"}]}",
+   "expect": null
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"Which Moby album?\",\"kind\":\"artist\",\"query\":\"Moby\"}]}",
    "expect": {
     "ask": "Which Moby album?",
-    "fallback": "play artist moby"
+    "fallback": [
+     {
+      "type": "play",
+      "kind": "artist",
+      "query": "moby"
+     }
+    ]
    }
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"  What would you\\n like to hear? \"}",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"  What would you\\n like to hear? \"}]}",
    "expect": {
     "ask": "What would you like to hear?",
-    "fallback": null
+    "fallback": []
    }
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"Which one?\",\"query\":\"Queen\"}",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"Which one?\",\"query\":\"Queen\"}]}",
    "expect": {
     "ask": "Which one?",
-    "fallback": "play song queen"
+    "fallback": [
+     {
+      "type": "play",
+      "kind": "song",
+      "query": "queen"
+     }
+    ]
    }
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"Which one?\",\"kind\":\"album\",\"query\":\"?!\"}",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"Which one?\",\"kind\":\"album\",\"query\":\"?!\"}]}",
    "expect": {
     "ask": "Which one?",
-    "fallback": null
+    "fallback": []
    }
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"איזה אלבום של שלמה ארצי?\",\"kind\":\"artist\",\"query\":\"שלמה ארצי\"}",
+   "_doc": "similar is no fallback",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"Which one?\",\"kind\":\"similar\"}]}",
+   "expect": {
+    "ask": "Which one?",
+    "fallback": []
+   }
+  },
+  {
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"איזה אלבום של שלמה ארצי?\",\"kind\":\"artist\",\"query\":\"שלמה ארצי\"}]}",
    "expect": {
     "ask": "איזה אלבום של שלמה ארצי?",
-    "fallback": "play artist שלמה ארצי"
+    "fallback": [
+     {
+      "type": "play",
+      "kind": "artist",
+      "query": "שלמה ארצי"
+     }
+    ]
    }
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}",
    "expect": {
     "ask": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "fallback": null
+    "fallback": []
    }
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}]}",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "play artist moby"
+   "_doc": "an unusable question is its fallback",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "artist",
+     "query": "moby"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":\"   \",\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "play artist moby"
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":\"   \",\"kind\":\"artist\",\"query\":\"Moby\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "artist",
+     "query": "moby"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"ask\",\"kind\":\"album\",\"query\":\"Play Moby\"}",
-   "expect": "play album play moby"
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"kind\":\"album\",\"query\":\"Play Moby\"}]}",
+   "expect": [
+    {
+     "type": "play",
+     "kind": "album",
+     "query": "play moby"
+    }
+   ]
   },
   {
-   "answer": "{\"action\":\"ask\"}",
+   "answer": "{\"actions\":[{\"type\":\"ask\"}]}",
    "expect": null
   },
   {
-   "answer": "{\"action\":\"ask\",\"question\":7}",
+   "answer": "{\"actions\":[{\"type\":\"ask\",\"question\":7}]}",
    "expect": null
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"kind\":\"album\",\"query\":\"Play Moby\"}",
-   "expect": "queue album play moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"where\":\"end\",\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "queue artist moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"where\":\"next\",\"kind\":\"song\",\"query\":\"Natural Blues Moby\"}",
-   "expect": "queue next song natural blues moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"where\":\"next\",\"count\":3,\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "queue next 3 artist moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"where\":\"instead\",\"kind\":\"similar\"}",
-   "expect": "queue instead similar"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"kind\":\"similar\",\"query\":\"ignored\",\"count\":5}",
-   "expect": "queue 5 similar"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"query\":\"Porcelain\"}",
-   "expect": "queue song porcelain"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"where\":\"sometime\",\"count\":0,\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "queue artist moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"count\":51,\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "queue artist moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"count\":2.5,\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "queue artist moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"count\":\"3\",\"kind\":\"artist\",\"query\":\"Moby\"}",
-   "expect": "queue artist moby"
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"where\":\"next\"}",
-   "expect": null
-  },
-  {
-   "answer": "{\"action\":\"queue\",\"kind\":\"album\",\"query\":\"  \"}",
-   "expect": null
-  },
-  {
-   "answer": "{\"action\":\"play\",\"kind\":\"similar\",\"query\":\"Moby\"}",
-   "expect": "play song moby"
-  },
-  {
-   "answer": "{\"action\":\"ask\",\"question\":\"Which one?\",\"kind\":\"similar\"}",
-   "expect": {
-    "ask": "Which one?",
-    "fallback": null
-   }
   }
  ]
 }
