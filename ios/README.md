@@ -606,8 +606,9 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 
 ## What only a real iPhone can answer
 
-The app has never run on a device. These are the open questions, in the order a ride needs
-them:
+The app ran on the iPhone on 2026-09-29/30 (link, buds routing, passenger→rider voice, music
+sync; see `HANDOFF.md`), but nothing built after 2026-09-30 14:30 has been on the phone. These are
+the open questions, in the order a ride needs them:
 
 - **Does on-device `SFSpeechRecognizer` keep up when fed from the talk's buffers**:
   voice-processed (AGC, noise suppression), 16 kHz mono float, one request per phrase,

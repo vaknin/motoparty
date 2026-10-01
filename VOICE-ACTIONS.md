@@ -1,7 +1,7 @@
 # Plan: full voice control through typed actions (2026-10-01)
 
 Status (2026-10-01): **built and unit-tested (steps 1–6, `c7b224d` spec, `cfc08e4` build); not yet
-run on a device; the Swift is written but not compiled.** See "Build notes" at the end for where
+run on a device; the Swift compiles (`swift test` 225, release build clean after the `51c7c9b` fix).** See "Build notes" at the end for where
 the build differs from this plan and what is still open. Follows `LLM-COMMANDS.md` (the interpreter as
 it is today). The user's request, verbatim:
 
@@ -178,7 +178,9 @@ is today).
 
 Built by four parallel subagents against the committed spec (PROTOCOL.md "Voice actions"), checked
 by the coordinator: Android 540 tests / 0 failed / 7 skipped, lint clean, release APK builds;
-peer 544 passed / 1 skipped (ffmpeg). Swift written, **not compiled** (no iPhone).
+peer 544 passed / 1 skipped (ffmpeg). Swift written, **not compiled** (no iPhone). Compiled 2026-10-01 evening: `swift test` 225 pass;
+the release build failed on `QueueView.onMove` placed after `deleteDisabled` (fixed in `51c7c9b`), and
+`repeat` as an identifier was fine.
 
 Where the build differs from the plan, or settles what it left open:
 - **Repeat track has no gapless.** The track restarts the ordinary way at its end (a short
