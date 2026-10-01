@@ -88,6 +88,7 @@ import com.kivan.motoparty.trigger.Triggers
 import com.kivan.motoparty.voicecmd.Announcer
 import com.kivan.motoparty.voicecmd.CloudGemini
 import com.kivan.motoparty.voicecmd.FirstAnswer
+import com.kivan.motoparty.voicecmd.RateGuard
 import com.kivan.motoparty.voicecmd.Interpreter
 import com.kivan.motoparty.voicecmd.TalkRecognizer
 import kotlinx.coroutines.CancellationException
@@ -151,6 +152,11 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         FirstAnswer(
             CloudGemini.MODELS.map { model -> model.removePrefix("gemini-") to CloudGemini(http, model, key, prompt, schema, clock) },
             noReplies = CloudGemini.NO_REPLIES.map { it.removePrefix("gemini-") }.toSet(),
+            backup = CloudGemini.BACKUP_MODEL to CloudGemini(
+                http, CloudGemini.BACKUP_MODEL, key, prompt, schema, clock, RateGuard(CloudGemini.BACKUP_PER_MINUTE),
+            ),
+            backupAfterMs = CloudGemini.BACKUP_AFTER_MS,
+            limitMs = Interpretation.INTERPRET_TIMEOUT_MS,
         )
     }
     /** PROTOCOL.md "Commands", *Interpretation*: smart commands are on and there is a key. */

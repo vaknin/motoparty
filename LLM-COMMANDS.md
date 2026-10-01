@@ -344,3 +344,22 @@ microphone / headset call route coming up (0.5–1.9 s measured with no headset)
   music for the rest of the queue" → `queue instead similar` in 3.9 s, "Added 20 songs"; "play
   something by movie" → Moby in 2.9 s; "what song is this" → "Porcelain by Moby". Four of the five
   would have failed under the old 3 s limit. **Queueing is now verified on the device.**
+
+### Other models checked, and Gemma 4 as the backup (2026-10-01, 00:10–00:40)
+
+- Free limits (third-party measurements; Google no longer publishes them): 3.5 / 3.6 / 3.7 /
+  3.8 Flash about 20 a day; Omni 1.1 Flash none; Gemma 4 about 1,000–1,500 a day plus 16,000
+  input tokens a minute; both Flash-Lites 500. `gemini-flash-lite-latest` is 3.5 Flash-Lite
+  and shares its quota. 3.7 / 3.8 Flash reject `thinking_level: minimal` and were 3–20 s on `low`.
+- `gemma-4-26b-a4b-it` on `smoke.sh`: 30 of the 33 phrases it answered were right, with p50 1.2 s.
+  Of the 53, 9 were refused with 503 "high demand" and 11 hit its per-minute token limit. Its
+  misses: no clarifying question ("play that song by queen" → plays Queen), `play` for "add
+  some cold play to the queue", and the artist's songs for "any" in reply to "Which Moby album?".
+- So it is the backup, not a racer (`CloudGemini.BACKUP_MODEL`, `FirstAnswer.backup`). It is
+  asked when both Flash-Lites have refused, or when neither has answered after 4 s
+  (`BACKUP_AFTER_MS`). Nothing is waited for past 6 s, and replies to a question never go to it.
+  Its rate guard allows 8 a minute (16,000 tokens / about 1,750 per request). Each Flash-Lite
+  call now times out at 5.9 s, so its own timeout, with its phases, is logged before the
+  overall 6 s limit.
+- Pixel, 00:35: five phrases, all right, all won by 3.1 in 2.3–4.6 s (3.5's quota still used
+  up). The backup did not have to answer, so it is only covered by `FirstAnswerTest` so far.

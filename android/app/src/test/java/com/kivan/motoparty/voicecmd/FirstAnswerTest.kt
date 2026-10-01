@@ -62,4 +62,60 @@ class FirstAnswerTest {
             noReplies = setOf("3.1"),
         ).ask())
     }
+
+    private val reply = Interpreter.Asked("play an album by moby", "Which Moby album?")
+    private fun withBackup(vararg all: Pair<String, Interpreter>, backup: Interpreter, noReplies: Set<String> = emptySet()) =
+        FirstAnswer(all.toList(), noReplies, backup = "gemma" to backup, backupAfterMs = 4_000, limitMs = 6_000)
+
+    @Test
+    fun theBackupIsNotAskedWhenAFlashLiteAnswersInTime() = runTest {
+        var asked = false
+        val gemma = Interpreter { _, _, _, _, _, _ -> asked = true; Interpreter.Text("gemma") }
+        assertEquals(Interpreter.Text("3.5"), withBackup("3.5" to after(3_000, Interpreter.Text("3.5")), backup = gemma).ask())
+        assertEquals(false, asked)
+        assertEquals(3_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun theBackupStartsAsSoonAsAllRefuse() = runTest {
+        val answer = withBackup(
+            "3.5" to after(400, Interpreter.Failed("HTTP 429")),
+            "3.1" to after(500, Interpreter.Failed("HTTP 503")),
+            backup = after(1_200, Interpreter.Text("gemma")),
+        ).ask()
+        assertEquals(Interpreter.Text("gemma"), answer)
+        assertEquals(1_700L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun theBackupJoinsAfterFourSecondsAndCanWin() = runTest {
+        val answer = withBackup(
+            "3.5" to after(5_900, Interpreter.Failed("timeout")),
+            "3.1" to after(5_500, Interpreter.Text("3.1")),
+            backup = after(1_200, Interpreter.Text("gemma")),
+        ).ask()
+        assertEquals(Interpreter.Text("gemma"), answer)
+        assertEquals(5_200L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun nothingIsWaitedForPastTheLimit() = runTest {
+        val answer = withBackup(
+            "3.5" to after(5_900, Interpreter.Failed("timeout (sent 400)")),
+            "3.1" to after(60_000, Interpreter.Text("late")),
+            backup = after(30_000, Interpreter.Text("late")),
+        ).ask()
+        assertEquals(Interpreter.Failed("3.5: timeout (sent 400); 3.1: timeout; gemma: timeout"), answer)
+        assertEquals(6_000L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun aReplyNeverGoesToTheBackupWhenItIsExcluded() = runTest {
+        val answer = withBackup(
+            "3.5" to after(100, Interpreter.Failed("HTTP 503")),
+            backup = after(10, Interpreter.Text("gemma")),
+            noReplies = setOf("gemma"),
+        ).interpret("any", "en-US", null, null, emptyList(), reply)
+        assertEquals(Interpreter.Failed("3.5: HTTP 503"), answer)
+    }
 }

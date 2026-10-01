@@ -46,7 +46,8 @@ class CloudGemini(
     /** The phases of the call in flight (calls are one at a time), for the log line of a timeout. */
     @Volatile private var phases: Phases? = null
     private val http = http.newBuilder()
-        .callTimeout(Interpretation.INTERPRET_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        // Just inside [FirstAnswer]'s limit, so a timeout is logged with its phases.
+        .callTimeout(Interpretation.INTERPRET_TIMEOUT_MS - 100, TimeUnit.MILLISECONDS)
         .eventListenerFactory { Phases().also { phases = it } }
         .build()
     private val schema = Json.parseToJsonElement(schema)
@@ -113,9 +114,20 @@ class CloudGemini(
         val MODELS = listOf("gemini-3.5-flash-lite", "gemini-3.1-flash-lite")
         /**
          * Not asked for a reply to a question: 3.1 turned road talk ("watch out for that truck") in
-         * reply to "Which Moby album?" into playing an album, 2 of 3 times (2026-09-30).
+         * reply to "Which Moby album?" into playing an album, 2 of 3 times (2026-09-30). Gemma turned
+         * "any" into the artist's songs; the question's own fallback is better (2026-10-01).
          */
-        val NO_REPLIES = setOf("gemini-3.1-flash-lite")
+        val NO_REPLIES = setOf("gemini-3.1-flash-lite", "gemma-4-26b-a4b-it")
+        /**
+         * Asked only when the [MODELS] cannot answer (all refused, or none answered by
+         * [BACKUP_AFTER_MS]): about 1,000+ free a day and p50 1.2 s, but 30/33 right on `smoke.sh`
+         * against the Flash-Lites' 49–53/53, with 9 of 53 refused for "high demand" (2026-10-01).
+         */
+        const val BACKUP_MODEL = "gemma-4-26b-a4b-it"
+        /** Its answer (about 1.2 s) still lands inside [Interpretation.INTERPRET_TIMEOUT_MS]. */
+        const val BACKUP_AFTER_MS = 4_000L
+        /** Its free tier allows 16,000 input tokens a minute, about 9 of our 1,750-token requests. */
+        const val BACKUP_PER_MINUTE = 8
         /** Latency is what matters here: about 1 s a phrase with `minimal` (LLM-COMMANDS.md). */
         const val THINKING_LEVEL = "minimal"
         /** Free tier, per Cloud project (measured in capture, 2026-09-20): 15 a minute, 500 a day. */
