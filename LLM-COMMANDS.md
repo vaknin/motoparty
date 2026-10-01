@@ -1,6 +1,9 @@
 # Plan: spoken commands understood by an LLM (2026-09-30)
 
-Status: **being built (see "Progress" at the end); the cloud spike waits for the user's API key.** Owner: the coordinator session. User's request, verbatim:
+Status: **built and in use; superseded for the answer shape by `VOICE-ACTIONS.md` (2026-10-01):**
+Gemini now answers with a list of typed voice actions, not one `action` object, and gets a
+numbered context window (PROTOCOL.md "Voice actions"). The history below (the race, the latency
+root cause, Gemma as the backup) still holds. Owner: the coordinator session. User's request, verbatim:
 
 > can we make it smarter somehow, more LLM'y? e.g., instead of having a fixed set of rules and
 > words and sentences, i want it to be more intelligent so instead of telling it play honey by

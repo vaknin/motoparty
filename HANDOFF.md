@@ -11,6 +11,15 @@ was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Andro
 F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
 and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
+## Latest (2026-10-01): full voice control built
+
+`VOICE-ACTIONS.md` is the plan and its "Build notes" the state: Gemini answers with up to four
+typed actions (remove, move, clear, jump incl. played tracks, seek, restart, repeat, tell, undo,
+play, add, …) run in order by the host; the grammar maps to the same actions. Spec in PROTOCOL.md
+"Voice actions"; built for Android, the peer and (uncompiled) Swift; repeat toggle and drag to
+reorder on the Pixel. Not yet run on a device (the user: no phone tests for now). The smoke
+measurements of the new prompt are in `VOICE-ACTIONS.md` "Measurements".
+
 ## Do now (2026-09-30: implement the audit)
 
 `AUDIT.md` is the full finding list of a seven-agent read-only scan of `7cedc94` (bugs, voice

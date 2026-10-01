@@ -1,6 +1,8 @@
 # Plan: full voice control through typed actions (2026-10-01)
 
-Status: **plan agreed in brainstorming, not built.** Follows `LLM-COMMANDS.md` (the interpreter as
+Status (2026-10-01): **built and unit-tested (steps 1–6, `c7b224d` spec, `cfc08e4` build); not yet
+run on a device; the Swift is written but not compiled.** See "Build notes" at the end for where
+the build differs from this plan and what is still open. Follows `LLM-COMMANDS.md` (the interpreter as
 it is today). The user's request, verbatim:
 
 > I would like to /handoff to a new agent to see if we can/should add more command types for the
@@ -171,3 +173,34 @@ is today).
   set gets road-talk traps.
 - **Quota**: unchanged per phrase (one request); the smoke runs cost about 200 of the day's 500
   on each Flash-Lite.
+
+## Build notes (2026-10-01)
+
+Built by four parallel subagents against the committed spec (PROTOCOL.md "Voice actions"), checked
+by the coordinator: Android 540 tests / 0 failed / 7 skipped, lint clean, release APK builds;
+peer 544 passed / 1 skipped (ffmpeg). Swift written, **not compiled** (no iPhone).
+
+Where the build differs from the plan, or settles what it left open:
+- **Repeat track has no gapless.** The track restarts the ordinary way at its end (a short
+  gap); announcing the same id in `music.next` was judged too risky for the clients.
+- **Ask fallback stays `kind`/`query`** (one `play`), not a nested action list: smaller schema,
+  same behaviour as before.
+- **`move.to` is one integer**: 1 = next, past the end = the end (no `next`/`end` words).
+- `played` comes from the History store (the current track dropped), so it survives a `play`.
+- A list with `play` or `jump` saves no undo, and forgets the one there was. Touch move and
+  touch repeat do not clear the voice undo.
+- Wordings the spec left to the host: "That song is gone from the queue", "Put back 1 song",
+  `tell remaining` counts the rest of the current track too.
+- Prompt choices: a song already upcoming asked for "next" becomes `move`, not a second copy;
+  "put it back" with no `lastVoice` is conversation; "go back one" stays `previous`.
+- `smoke.sh` contexts: empty, a `title – artist`, or `@queue` (a 12-track sample queue with 3
+  played and a lastVoice). `SMOKE_PHRASES` / `SMOKE_SPACING_S` pick another phrase file and
+  spacing (Gemma: 13 s).
+
+Known gaps: Android drag-to-reorder does not auto-scroll at the screen's edge; on iOS a dragged
+row may snap back until the host's `state` arrives; `repeat` as a Swift identifier is the
+likeliest compile error when the iPhone is back. The peer's fake host restarts a `repeat queue`
+from history rather than from the queue's first track (test scaffolding only).
+
+Still to do: step 7's measurements (below, as they come in) and step 8, the Pixel run (the user
+said no phone tests for now).

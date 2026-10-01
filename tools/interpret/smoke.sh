@@ -5,6 +5,7 @@
 # schema are the app's own (android/app/src/main/res/raw/interpret_prompt.txt, interpret_schema.json).
 #
 #   tools/interpret/smoke.sh                        every line of tools/interpret/phrases.tsv
+#   SMOKE_PHRASES=<file> SMOKE_SPACING_S=12 …        another phrase file, more time between requests (Gemma: 16,000 tokens a minute)
 #   tools/interpret/smoke.sh "play some moby"       one phrase, nothing playing
 #   tools/interpret/smoke.sh "drop the next two" @queue           one phrase, the sample queue
 #   tools/interpret/smoke.sh "any" "" "play a moby album" "Which Moby album?"   a reply to a question
@@ -111,7 +112,7 @@ ok=0; n=0; times=()
 # Tabs are whitespace to `read` (empty fields would collapse), so split on U+001F instead.
 while IFS=$'\x1f' read -r phrase ctx expect first question; do
     [[ -z $phrase ]] && continue
-    (( n > 0 )) && sleep 4.2
+    (( n > 0 )) && sleep "${SMOKE_SPACING_S:-4.2}"
     IFS=$'\t' read -r ms got < <(one "$phrase" "$ctx" "$first" "$question")
     mark=FAIL
     # shellcheck disable=SC2053
@@ -119,6 +120,6 @@ while IFS=$'\x1f' read -r phrase ctx expect first question; do
     n=$((n + 1)); times+=("$ms")
     [[ -n $question ]] && phrase="$first / $question / $phrase"
     printf '%-4s %5s ms  %-45s → %s%s\n' "$mark" "$ms" "\"$phrase\"" "$got" "$([[ $mark == FAIL ]] && echo "   (expected $expect)")"
-done < <(tr '\t' '\037' < "$here/phrases.tsv")
+done < <(tr '\t' '\037' < "${SMOKE_PHRASES:-$here/phrases.tsv}")
 sorted=($(printf '%s\n' "${times[@]}" | sort -n))
 echo "$ok/$n as expected; latency p50 ${sorted[$((n / 2))]} ms, p95 ${sorted[$(( (n * 95 + 99) / 100 - 1 ))]} ms, max ${sorted[-1]} ms"
