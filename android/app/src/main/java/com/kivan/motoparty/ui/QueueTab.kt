@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -31,13 +32,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kivan.motoparty.LinkStatus
 import com.kivan.motoparty.UiAction
@@ -47,7 +51,8 @@ import kotlinx.coroutines.delay
 
 /**
  * What's playing and what comes next. Tap a song to jump to it, ✕ to drop it (with Undo), press
- * and hold to drag it somewhere else in the queue.
+ * and hold to drag it somewhere else in the queue; held at the top or bottom edge, the list scrolls
+ * under it.
  */
 @Composable
 fun QueueTab(s: LinkStatus, cb: Callbacks, onSearch: () -> Unit, modifier: Modifier = Modifier) {
@@ -82,6 +87,30 @@ fun QueueTab(s: LinkStatus, cb: Callbacks, onSearch: () -> Unit, modifier: Modif
     val queue = drag.order ?: s.queue
     val keys = remember(queue) { queueKeys(queue) }
     val latest by rememberUpdatedState(s.queue)
+    // The lazy index of the first upcoming row: the headings and the "nothing next" line come first.
+    val firstRow = (if (now != null) 2 else 0) + 1 + (if (s.queue.isEmpty()) 1 else 0)
+    SideEffect { drag.firstRow = firstRow }
+    val density = LocalDensity.current
+    // A held row near an edge scrolls the list, faster the deeper the finger is into the edge zone,
+    // and the row stays under the finger while the others pass beneath it (QueueDrag.scrolled).
+    LaunchedEffect(drag.key != null) {
+        if (drag.key == null) return@LaunchedEffect
+        val zone = with(density) { EDGE_ZONE.toPx() }
+        val max = with(density) { EDGE_SPEED_PER_S.toPx() }
+        var last = withFrameNanos { it }
+        while (true) {
+            val frame = withFrameNanos { it }
+            val seconds = (frame - last) / 1e9f
+            last = frame
+            val y = drag.fingerY(listState) ?: continue
+            val info = listState.layoutInfo
+            val speed = edgeScrollSpeed(y, info.viewportStartOffset.toFloat(), info.viewportEndOffset.toFloat(), zone, max)
+            if (speed == 0f) continue
+            // 0 at either end of the list: the scroll just stops there.
+            val moved = listState.dispatchRawDelta(speed * seconds)
+            if (moved != 0f) drag.scrolled(moved, listState)
+        }
+    }
     LazyColumn(modifier.fillMaxSize(), state = listState) {
         if (now != null) {
             item(key = "now-heading") { Heading(if (s.playing) "Now playing" else "Paused", Modifier.animateItem()) }
@@ -128,8 +157,8 @@ fun QueueTab(s: LinkStatus, cb: Callbacks, onSearch: () -> Unit, modifier: Modif
                 t.art,
                 Modifier.pointerInput(key) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = {
-                            if (drag.start(key, latest)) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onDragStart = { at ->
+                            if (drag.start(key, latest, at.y)) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         },
                         onDrag = { change, amount ->
                             change.consume()
@@ -174,6 +203,12 @@ fun QueueTab(s: LinkStatus, cb: Callbacks, onSearch: () -> Unit, modifier: Modif
 /** How long the rows a drop left behind wait for the host's new queue before they give up. */
 private const val DROP_WAIT_MS = 1_500L
 
+/** How deep the edge zones are that scroll the list while a row is held ([edgeScrollSpeed]). */
+private val EDGE_ZONE: Dp = 56.dp
+
+/** The scroll speed with the finger at the very edge, per second: about a Pixel 8 screen of queue. */
+private val EDGE_SPEED_PER_S: Dp = 900.dp
+
 /**
  * Drag to reorder the upcoming rows (PROTOCOL.md "Browsing", `music.edit move`): while a row is
  * held, [order] is the queue as the screen shows it, with the row moved wherever it was dragged;
@@ -189,11 +224,15 @@ private class QueueDrag {
     var offset by mutableFloatStateOf(0f)
     /** When the last drop happened ([SystemClock.uptimeMillis]); 0 = none yet. */
     var droppedAt by mutableLongStateOf(0L)
+    /** The lazy index of [order]'s first row (set on every composition). */
+    var firstRow = 0
     private var from = -1
     private var id = ""
+    /** Where the finger is on the held row, px from its top. */
+    private var grabY = 0f
 
-    /** [key]'s row of [queue] is held. False when it is not there any more. */
-    fun start(key: String, queue: List<Track>): Boolean {
+    /** [key]'s row of [queue] is held, by a finger [grabY] px below its top. False when it is not there any more. */
+    fun start(key: String, queue: List<Track>, grabY: Float): Boolean {
         val i = queueKeys(queue).indexOf(key)
         if (i < 0) return false
         order = queue
@@ -201,8 +240,23 @@ private class QueueDrag {
         from = i
         id = queue[i].id
         offset = 0f
+        this.grabY = grabY
         return true
     }
+
+    /** Where the finger is, px from the top of [list]'s viewport; null = no drag, or the row is not laid out. */
+    fun fingerY(list: LazyListState): Float? {
+        val k = key ?: return null
+        val me = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == k } ?: return null
+        return me.offset + offset + grabY
+    }
+
+    /**
+     * The list scrolled [px] under the held row (positive = toward the end): every row moved up by
+     * [px], so the held row's offset grows by as much to stay under the finger, and the rows it
+     * now covers swap with it as if the finger had moved.
+     */
+    fun scrolled(px: Float, list: LazyListState) = by(px, list)
 
     /**
      * The finger moved [dy] px. Once the held row's middle passes a neighbour's middle, the two
@@ -216,12 +270,19 @@ private class QueueDrag {
         val me = visible.firstOrNull { it.key == k } ?: return
         val keys = queueKeys(rows)
         val i = keys.indexOf(k)
+        // The last swap is not laid out yet: the rows on screen are still in the old order.
+        if (me.index != firstRow + i) return
         val j = if (offset > 0) i + 1 else i - 1
         val other = keys.getOrNull(j)?.let { nk -> visible.firstOrNull { it.key == nk } } ?: return
         val middle = me.offset + me.size / 2 + offset
         val passed = if (offset > 0) middle > other.offset + other.size / 2 else middle < other.offset + other.size / 2
         // The same song twice: swapping the two would only change which one is held.
         if (!passed || rows[j].id == rows[i].id) return
+        // A LazyColumn keeps its first visible row in place by key; when that row is one of the two
+        // swapping, it would scroll after it. Pin the scroll position by index instead.
+        if (list.firstVisibleItemIndex == me.index || list.firstVisibleItemIndex == other.index) {
+            list.requestScrollToItem(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset)
+        }
         order = rows.toMutableList().apply { add(j, removeAt(i)) }
         key = queueKeys(order!!)[j]
         offset += if (offset > 0) -other.size.toFloat() else other.size.toFloat()

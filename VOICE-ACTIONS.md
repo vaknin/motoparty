@@ -199,8 +199,9 @@ Where the build differs from the plan, or settles what it left open:
   played and a lastVoice). `SMOKE_PHRASES` / `SMOKE_SPACING_S` pick another phrase file and
   spacing (Gemma: 13 s).
 
-Known gaps: Android drag-to-reorder does not auto-scroll at the screen's edge; on iOS a dragged
-row may snap back until the host's `state` arrives; `repeat` as a Swift identifier is the
+Known gaps: Android drag-to-reorder auto-scrolls at the list's edges since 2026-10-02 (56 dp
+zones, up to 900 dp/s with depth; `ui/EdgeScroll.kt`, `QueueTabTest`) but is not yet tried on the
+Pixel; on iOS a dragged row may snap back until the host's `state` arrives; `repeat` as a Swift identifier is the
 likeliest compile error when the iPhone is back. The peer's fake host restarts a `repeat queue`
 from history rather than from the queue's first track (test scaffolding only).
 
