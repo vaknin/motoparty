@@ -7,7 +7,8 @@ import MotopartyCore
 enum AudioRoute: String {
     /// `.playback`: AirPods on A2DP (stereo, full quality). Mic closed.
     case media
-    /// `.playAndRecord` + `.voiceChat` + Bluetooth HFP: talk (voice processing),
+    /// `.playAndRecord` + `.voiceChat`: talk (voice processing) on the best
+    /// headset (Bluetooth HFP, else a wired or USB headset; `TalkRoute`),
     /// and, in a talk this phone opened, the speech recognition of its first
     /// phrase, which listens to the talk's mic.
     case talk
@@ -73,16 +74,16 @@ final class SessionController {
         case .talk:
             // `.defaultToSpeaker`: with no headset the talk (and its earcons)
             // plays on the loudspeaker, not the quiet earpiece. A Bluetooth
-            // HFP or wired headset still wins; voice processing cancels the
-            // speaker's echo.
+            // HFP, wired or USB headset still wins (`preferTalkInput`); voice
+            // processing cancels the speaker's echo.
             try session.setCategory(.playAndRecord, mode: .voiceChat,
                                     options: [.allowBluetoothHFP, .defaultToSpeaker])
             try? session.setPreferredSampleRate(16_000)
             try? session.setPreferredIOBufferDuration(0.01)
         }
         try session.setActive(true)
-        if newRoute == .talk { preferBluetoothInput() }
         route = newRoute
+        if newRoute == .talk { preferTalkInput() }
         avoidReceiver()
         Log.audio.info("session → \(newRoute.rawValue, privacy: .public), out: \(self.outputName, privacy: .public) (\(self.describe, privacy: .public))")
     }
@@ -111,8 +112,16 @@ final class SessionController {
     var inputName: String { session.currentRoute.inputs.first?.portName ?? "none" }
     var outputLatencyMs: Double { session.outputLatency * 1000 }
     var hasHeadphones: Bool {
-        session.currentRoute.outputs.contains { [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .headphones].contains($0.portType) }
+        session.currentRoute.outputs.contains { [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .headphones, .usbAudio].contains($0.portType) }
     }
+    /// The output is Bluetooth HFP: the earbuds are in call mode. Read just
+    /// before the switch back to media (`AnnounceGate`: only an HFP talk has
+    /// a profile switch to wait for) and at each route change after it.
+    var outputIsBluetoothHFP: Bool {
+        session.currentRoute.outputs.contains { $0.portType == .bluetoothHFP }
+    }
+    /// The output's port type, for the `announce gate:` line.
+    var outputType: String { session.currentRoute.outputs.first?.portType.rawValue ?? "none" }
 
     /// `.granted` / `.denied` / `.undetermined` — checked before opening talk,
     /// because a missing permission means "cannot", not "won't".
@@ -168,9 +177,40 @@ final class SessionController {
         }
     }
 
-    private func preferBluetoothInput() {
-        let bt = session.availableInputs?.first { $0.portType == .bluetoothHFP }
-        if let bt { try? session.setPreferredInput(bt) }
+    /// The talk's microphone, and with it its output (`TalkRoute.plan`): the
+    /// earbuds on HFP, else a wired headset, else a USB one, else the phone
+    /// (speaker). Run when the talk session comes up and whenever a device
+    /// comes or goes during it. nil clears the preference, so a headset that
+    /// was unplugged leaves no stale choice behind.
+    private func preferTalkInput() {
+        guard route == .talk else { return }
+        let inputs = session.availableInputs ?? []
+        let ports = inputs.map { TalkRoute.Port(kind: Self.kind(of: $0.portType), uid: $0.uid) }
+        let onSpeaker = session.currentRoute.outputs.contains { $0.portType == .builtInSpeaker }
+        let plan = TalkRoute.plan(available: ports, outputOnSpeaker: onSpeaker)
+        let port = plan.input.flatMap { chosen in inputs.first { $0.uid == chosen.uid } }
+        do {
+            try session.setPreferredInput(port)
+        } catch {
+            Log.audio.error("preferred input failed: \(error.localizedDescription, privacy: .public)")
+        }
+        if plan.clearSpeakerOverride {
+            // The speaker override takes the mic with it (built-in speaker
+            // *and* microphone): off, so the headset carries both ways.
+            try? session.overrideOutputAudioPort(.none)
+        }
+        let kind = plan.input?.kind ?? .other
+        let name = port?.portName ?? "phone default"
+        Log.audio.info("talk input: \(kind.word, privacy: .public) (\(name, privacy: .public)), \(inputs.count) available")
+    }
+
+    private static func kind(of type: AVAudioSession.Port) -> TalkRoute.Kind {
+        switch type {
+        case .bluetoothHFP: return .bluetoothHFP
+        case .headsetMic: return .headsetMic
+        case .usbAudio: return .usbAudio
+        default: return .other
+        }
     }
 
     private func interruption(_ n: Notification) {
@@ -195,8 +235,13 @@ final class SessionController {
         guard let raw = n.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: raw) else { return }
         Log.audio.info("route change \(raw): out=\(self.outputName, privacy: .public) in=\(self.inputName, privacy: .public)")
-        // A headset dropped mid-talk: back to the speaker, not the earpiece.
-        if reason == .oldDeviceUnavailable { avoidReceiver() }
+        // A headset plugged in or unplugged mid-talk: the talk picks its
+        // input again (a wired headset takes over from the phone's mic; gone,
+        // the earbuds or the phone and the speaker), and never the earpiece.
+        if route == .talk, TalkRoute.replans(reason: raw) {
+            preferTalkInput()
+            avoidReceiver()
+        }
         onRouteChange?(reason)
     }
 }
