@@ -211,6 +211,8 @@ said no phone tests for now).
 |-------|-------------|-----------------------------|-------------------------|-----------------------|
 | `gemini-3.1-flash-lite` (07:50) | 81/93 | 8 | 4/85 | 3.2 s / 4.5 s |
 | `gemma-4-26b-a4b-it`, every 3rd phrase, 13 s apart (07:50) | 24/31 | 4 | 3/27 | 1.3 s / 1.7 s |
+| `gemini-3.5-flash-lite` (10:10, just after the daily reset) | 91/93 | 0 | 2/93 | 1.3 s / 3.3 s |
+| `gemini-3.5-flash-lite`, **old** prompt at `3c9a756`, 53 phrases (10:02) | 53/53 | 0 | 0/53 | 1.1 s / 1.5 s |
 
 - 3.1's p50 was 3.6 s with the old, smaller prompt (2026-09-30 night): the bigger prompt costs no
   visible latency next to Google's queue.
@@ -221,3 +223,13 @@ said no phone tests for now).
 - Gemma's: "play fix you next" added a second copy instead of moving the upcoming one; "remove
   all the queen songs and add some u2" did only the remove; **"put it back in the tank bag" →
   `undo`** (a road-talk trap). Gemma answers only as the backup.
+- 3.5 on the old prompt, without `temperature`, scored 53/53 (49–53/53 with it): removing it changed
+  nothing.
+- 3.5's two wrong answers: "play that song by queen" → `play song queen` instead of asking (3.1
+  made the same mistake); "play something like this instead" → `add instead similar` (3.1 too).
+  Every road-talk trap came back empty, "put it back in the tank bag" included.
+- 3.5's tail: three answers took 6.2–6.7 s ("more like this please", "take yellow out of the
+  queue", "play fix you next"), past the app's 6 s `INTERPRET_TIMEOUT_MS`; in the app those three
+  would have fallen back. The rest were under 4 s.
+- Speed depends on the time of day more than on the prompt: right after the daily reset 3.5 ran at
+  p50 1.1–1.3 s on both prompts, against 3+ s for 3.1 at 07:50 and for 3.5 the night before.
