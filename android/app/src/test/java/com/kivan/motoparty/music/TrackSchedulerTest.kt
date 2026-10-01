@@ -82,7 +82,7 @@ class TrackSchedulerTest {
 
     private val server = Server()
     private val resolves: MutableList<String> = Collections.synchronizedList(mutableListOf<String>())
-    private var now = 1_000_000L
+    @Volatile private var now = 1_000_000L
 
     private fun cache(
         maxBytes: Long = 1L shl 30,
