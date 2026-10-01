@@ -113,9 +113,10 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 223 tests: fixtures, command parser + first-phrase gate, app volume +
+swift test            # 268 tests: fixtures, command parser + first-phrase gate, app volume +
                       # volume-key gate, talk mode (host-mic), music status line,
-                      # search history, jitter buffer, Opus, drift controller
+                      # search history, jitter buffer, Opus, drift controller, the
+                      # screens' wording, ambient tint and per-route sync offset
 ```
 
 Opus prints "compiling without optimization" in debug builds. That is expected. Use
@@ -270,14 +271,31 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   `music.control`, the repeat button at the right end (off → queue → track, sent as
   `music.control{action:"repeat", mode}` and shown from `state.music.repeat`; 2026-10-01),
   "Up next"), the "Voice commands" chips (the same commands as the
-  Pixel's, foldable: say one first after pressing TALK, then it's just talk), and, pinned at
-  the bottom, TALK with the app volume; the gear opens Settings (music sync offset, speech
-  language, link status, Diagnostics). See "2026-09-30 audit round 3" below.
+  Pixel's, foldable: say one first after pressing TALK, then it's just talk; while the host
+  interprets, `hello.interpret`, they are followed by eight smart-command examples such as
+  "repeat this song", "go back 30 seconds", "undo": `VoiceCommandChip.smart`, the same words
+  as Android's `SMART_COMMANDS`), and, pinned at the bottom, TALK with the app volume. While a
+  phrase of an open talk can still be a command (the first-phrase window, or the reply to the
+  host's question: `AppModel.commandWindow`), a "Say a command" card with the list takes the
+  place of the now-playing card, as on the Pixel. Behind it all, the cover's colour as a faint
+  gradient (`Ambient` in MotopartyCore, Android's `Ambient.kt` rule: the first coloured swatch,
+  saturation capped, lightness banded, darkened until text keeps its contrast; read once per
+  cover from a 24 px copy); the blurred cover stays the card's own backdrop. The gear opens
+  Settings: name, speech language (Android's 14), "Keep screen on while riding" (while Ride
+  shows; off by default), "Beep when the mic is live" (off by default, as on Android), the
+  music sync offset of the output in use now (below), link status, version, Diagnostics. See
+  "2026-09-30 audit round 3" below.
   **Search** sends `music.search` (Songs / Albums / Playlists); a song tap is
   `music.enqueue{mode:"now"}` with that track, its ⋯ menu (or a swipe) is Play next / Add to
   queue. An album or playlist opens a detail screen (`music.browse`) with Play / Add to queue;
   a track tap enqueues `now` the tracks from that one to the end. Tracks carry the collection
-  title as `album` and its cover as the top-level `art`. **Queue** shows `state.queue`: tap =
+  title as `album` and its cover as the top-level `art`. A Play next / Add to queue by touch
+  says what it did in a toast above the mini player for 4 s, with Android's words ("Playing
+  next: X", "Added to queue: X", "Added N songs"; nothing while nothing is loaded, since the
+  host then plays it at once): `Toast` in MotopartyCore, fed from `AppModel.enqueue`, drawn
+  with the Queue tab's banner. Once the box is edited after a search, "Results for “x”" heads
+  the results. **Queue** shows `state.queue` under the current song (artist · album, as on
+  the Pixel): tap =
   `music.edit jump`, swipe or ✕ = `remove`, drag = `move`, Clear (confirmed) = `clear`. Every
   edit shows at once (`QueueEdits`). A removal or a clear brings a banner with Undo for 10 s,
   as on Android: Undo of a removal is `music.enqueue{end}` plus a `move` back to its index (the
@@ -286,7 +304,10 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   (`BrowseHistory`, JSON in UserDefaults `browseHistory`): **Recent searches** (last 10 sent,
   newest first, one per query ignoring case, with its latest kind; tap re-runs it, Clear
   empties it) and **Recently played** (last 20 distinct tracks named by `state.music`, newest
-  first; tap = `music.enqueue{mode:"now"}` with that track).
+  first; tap = `music.enqueue{mode:"now"}` with that track; its ⋯ menu or a swipe is Play
+  next / Add to queue, as for a song result). The mini player on Search and Queue has a 2 pt
+  progress line along its top (in the iOS 26 accessory, along its bottom), from
+  `displayPositionMs()`, as the Pixel's has.
 - **Play by touch during a talk** (PROTOCOL.md "Browsing" step 3, 2026-09-30): the client
   sends `music.enqueue{now}` and `music.edit{jump}` during a talk like at any other time. The
   host ends the talk and sends `talk.close`; the client closes nothing itself.
@@ -367,7 +388,9 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   blocks the sink thread (it flips a flag under an unfair lock and hops to Main). `AppModel`
   arms the cue when the voice engine starts and plays it on that callback, at most once per
   talk open, with a 3.5 s fallback timer (the same number as Android's `LiveCue.TIMEOUT_MS`)
-  so a talk whose capture never delivers still beeps. Which one fired is logged as
+  so a talk whose capture never delivers still beeps. The beep itself only sounds with
+  Settings → "Beep when the mic is live" on (off by default since 2026-10-01, as on Android);
+  the moment, TALK turning red and recognition starting, is the same either way. Which one fired is logged as
   `live cue: fired +<n> ms (capture up|fallback)` in the `audio` category. A talk that ends
   before the mic was live never beeps. Android's SCO/`MicLive` conditions are deliberately
   **not** ported: iOS gives no equivalent route signal, and the sink's first buffer is the
@@ -469,7 +492,10 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 - **Music:** each track is downloaded in full, then `music.ready` is sent. Playback uses
   `AVPlayer.setRate(1, time:, atHostTime:)`, converting host clock → local clock → CMClock host
   time. The player starts early by this phone's output delay —
-  `AVAudioSession.outputLatency` plus the latency trim (Settings, 10 ms steps) — so the *sound*, not
+  `AVAudioSession.outputLatency` plus the latency trim of the current output (Settings, 10 ms
+  steps; `LatencyTrims` since 2026-10-01, as on Android: one per Bluetooth/AirPlay device, keyed
+  by its address so A2DP and HFP are one route, and one shared by the speaker, wired and USB
+  outputs; the old single trim became the wireless default) — so the *sound*, not
   the player, lands on the anchor. An anchor further ahead (the host's lead is now its own start
   delay, up to ~1.5 s) starts exactly at it: nothing is clamped or skipped, and the drift check
   waits until the start has passed.

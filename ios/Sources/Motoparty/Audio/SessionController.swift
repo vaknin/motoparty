@@ -1,6 +1,7 @@
 #if os(iOS)
 import AVFoundation
 import Foundation
+import MotopartyCore
 
 /// Which AVAudioSession configuration is active.
 enum AudioRoute: String {
@@ -95,6 +96,11 @@ final class SessionController {
     }
 
     var outputName: String { session.currentRoute.outputs.first?.portName ?? "none" }
+    /// The output as far as the music sync offset cares (`LatencyTrims`).
+    var outputRoute: OutputRoute {
+        let out = session.currentRoute.outputs.first
+        return OutputRoute.of(portType: out?.portType.rawValue, uid: out?.uid ?? "", name: out?.portName ?? "")
+    }
     /// `category/mode, out <type/name>+…, in <type/name>+…` for the log.
     var describe: String {
         let route = session.currentRoute

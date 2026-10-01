@@ -162,4 +162,76 @@ struct ArtBackdrop: View {
         }
     }
 }
+
+/// The cover's colour as a faint glow behind all of Ride, as on the Pixel
+/// (`Ambient.kt`): nothing at the top edge, strongest behind the cover, gone
+/// before TALK. The colour is `Ambient.tint` (tamed so text stays readable),
+/// read once per cover; none while it loads, for a grey cover, or without one.
+struct AmbientGlow: View {
+    let url: String?
+
+    @State private var tint: UInt32?
+
+    var body: some View {
+        ZStack {
+            if let tint {
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: Self.color(tint), location: 0.3),
+                    .init(color: .clear, location: 0.85),
+                ], startPoint: .top, endPoint: .bottom)
+                .id(tint)
+                .transition(.opacity)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: url) {
+            guard let url, !url.isEmpty else { return withAnimation(.easeInOut(duration: 0.7)) { tint = nil } }
+            if let known = ArtTints.known[url] { return withAnimation(.easeInOut(duration: 0.7)) { tint = known } }
+            guard let image = await ArtLoader.shared.image(url, pixels: ArtURL.buckets[0]) else { return }
+            let found = await Task.detached(priority: .utility) { ArtTints.tint(of: image) }.value
+            guard !Task.isCancelled else { return }
+            ArtTints.known[url] = found
+            withAnimation(.easeInOut(duration: 0.7)) { tint = found }
+        }
+    }
+
+    private static func color(_ rgb: UInt32) -> Color {
+        Color(red: Double(rgb >> 16 & 0xFF) / 255, green: Double(rgb >> 8 & 0xFF) / 255, blue: Double(rgb & 0xFF) / 255)
+            .opacity(Ambient.alpha)
+    }
+}
+
+/// Cover tints by art URL, so a cover is read once: going back to a song is
+/// instant. Main-queue cache; `tint(of:)` runs anywhere.
+enum ArtTints {
+    /// nil inside: "this cover has no colour", remembered like a colour.
+    static var known: [String: UInt32?] = [:]
+
+    /// The cover drawn at 24 × 24 px, its pixels grouped into swatches
+    /// (`Ambient.swatches`), and the first that is a colour, tamed.
+    static func tint(of image: UIImage) -> UInt32? {
+        guard let cgImage = image.cgImage else { return nil }
+        let edge = 24
+        var bytes = [UInt8](repeating: 0, count: edge * edge * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: edge, height: edge, bitsPerComponent: 8,
+                                          bytesPerRow: edge * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+            context.interpolationQuality = .medium
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: edge, height: edge))
+            return true
+        }
+        guard drawn else { return nil }
+        var pixels: [UInt32] = []
+        pixels.reserveCapacity(edge * edge)
+        for i in stride(from: 0, to: bytes.count, by: 4) {
+            let r = UInt32(bytes[i]), g = UInt32(bytes[i + 1]), b = UInt32(bytes[i + 2])
+            pixels.append(r << 16 | g << 8 | b)
+        }
+        return Ambient.tint(Ambient.swatches(pixels))
+    }
+}
 #endif

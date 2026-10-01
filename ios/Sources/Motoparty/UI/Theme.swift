@@ -42,6 +42,43 @@ struct GlyphButtonStyle: ButtonStyle {
     }
 }
 
+/// A line at the bottom of a tab, Android's snackbar: "Removed: <title>"
+/// with Undo on the Queue tab, "Added to queue: <title>" (no action) after
+/// a touch enqueue anywhere.
+struct Banner: View {
+    let text: String
+    var actionTitle: String?
+    var action: () -> Void = {}
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(text)
+                .font(.subheadline)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            if let actionTitle {
+                Button(action: action) {
+                    Text(actionTitle)
+                        .font(.body.weight(.semibold))
+                        .frame(minWidth: 64, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(GlyphButtonStyle())
+                .foregroundStyle(Brand.orange)
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, actionTitle == nil ? 16 : 6)
+        .padding(.vertical, 4)
+        .background(Brand.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+        .shadow(color: .black.opacity(0.4), radius: 8, y: 2)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// Lays its subviews out in rows, wrapping to the next row when one is full:
 /// the command chips. Never wider than the width it is given.
 struct FlowLayout: Layout {

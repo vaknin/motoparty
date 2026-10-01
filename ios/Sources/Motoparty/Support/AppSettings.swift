@@ -6,9 +6,16 @@ final class AppSettings: ObservableObject {
     private let defaults = UserDefaults.standard
 
     @Published var deviceName: String { didSet { defaults.set(deviceName, forKey: "deviceName") } }
-    /// Output-latency trim (ms). Positive = this phone's audio comes out late
+    /// Output-latency trims (ms), one per output route (`LatencyTrims`, as on
+    /// Android). Positive = this phone's audio comes out late on that route
     /// (Bluetooth), so its player runs ahead by this much.
-    @Published var latencyTrimMs: Double { didSet { defaults.set(latencyTrimMs, forKey: "latencyTrimMs") } }
+    @Published var trims: LatencyTrims { didSet { defaults.set(trims.encoded(), forKey: "latencyTrims") } }
+    /// The "live" beep when a talk's microphone is on. Off by default, as on
+    /// Android (`Settings.liveBeep`).
+    @Published var liveBeep: Bool { didSet { defaults.set(liveBeep, forKey: "liveBeep") } }
+    /// The screen stays on while the Ride tab is showing (Android's
+    /// `UiPrefs.keepScreenOn`). Off by default: there is no charger on the bike.
+    @Published var keepScreenOn: Bool { didSet { defaults.set(keepScreenOn, forKey: "keepScreenOn") } }
     /// Whether the player also runs ahead by `AVAudioSession.outputLatency`
     /// (audit M2: AVPlayer may already account for it, which would count it
     /// twice). On = the behaviour so far, until a click-track session decides.
@@ -37,7 +44,17 @@ final class AppSettings: ObservableObject {
 
     init() {
         deviceName = defaults.string(forKey: "deviceName") ?? "iPhone"
-        latencyTrimMs = defaults.object(forKey: "latencyTrimMs") as? Double ?? 0
+        // Before 2026-10-01: one trim for every route. It was set for a
+        // Bluetooth headset, so it becomes the wireless default.
+        let legacyTrim = defaults.object(forKey: "latencyTrimMs") as? Double
+        let loadedTrims = LatencyTrims.load(defaults.data(forKey: "latencyTrims"), legacy: legacyTrim)
+        trims = loadedTrims
+        if legacyTrim != nil {
+            defaults.set(loadedTrims.encoded(), forKey: "latencyTrims")
+            defaults.removeObject(forKey: "latencyTrimMs")
+        }
+        liveBeep = defaults.object(forKey: "liveBeep") as? Bool ?? false
+        keepScreenOn = defaults.object(forKey: "keepScreenOn") as? Bool ?? false
         compensateOutputLatency = defaults.object(forKey: "compensateOutputLatency") as? Bool ?? true
         speechLanguage = defaults.string(forKey: "speechLanguage") ?? "en-US"
         // Removed 2026-09-29: the command mode, and headset buttons as talk
@@ -47,6 +64,7 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    static let languages = ["en-US", "en-GB", "he-IL", "de-DE", "fr-FR", "es-ES", "it-IT", "ru-RU"]
+    /// The speech languages Settings offers: Android's 14, and the one set.
+    var languages: [String] { SpeechLanguages.offered(current: speechLanguage) }
 }
 #endif

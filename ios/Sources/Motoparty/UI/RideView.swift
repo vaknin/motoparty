@@ -18,15 +18,27 @@ struct RideView: View {
                     VStack(spacing: 12) {
                         PermissionsCard()
                         ProblemBanner()
-                        NowPlayingCard(artSize: Self.artSize(viewport: geometry.size.height))
+                        // While a phrase can still be a command, the list of
+                        // them takes the place of the (paused) music, as on
+                        // the Pixel.
+                        if commandsInPlace {
+                            CommandsCard()
+                                .transition(.opacity)
+                        } else {
+                            NowPlayingCard(artSize: Self.artSize(viewport: geometry.size.height))
+                                .transition(.opacity)
+                        }
                         StatusLines()
-                        VoiceCommands()
+                        if !commandsInPlace { VoiceCommands() }
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 8)
+                    .animation(.easeInOut(duration: 0.2), value: commandsInPlace)
                 }
                 .scrollBounceBehavior(.basedOnSize)
             }
+            // The cover's colour, faintly, behind it all (Android's `Ambient.kt`).
+            .background { AmbientGlow(url: model.nowPlaying == nil ? nil : model.hostState?.music?.art) }
             .safeAreaInset(edge: .bottom, spacing: 0) { TalkDock() }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -46,6 +58,8 @@ struct RideView: View {
             }
         }
     }
+
+    private var commandsInPlace: Bool { model.talkOpen && model.commandWindow }
 
     /// The cover is as big as the room above TALK allows: nil (a small cover
     /// beside the title) when there is little, up to 200 pt when there is a lot.
@@ -181,26 +195,16 @@ private struct TalkButtonStyle: ButtonStyle {
 }
 
 /// What the first phrase of a talk this phone opened may be (PROTOCOL.md
-/// "Commands"), the same list as the Pixel's, as chips. Folded away by who
-/// knows them; the choice is remembered.
+/// "Commands"), the same list as the Pixel's, as chips; with smart commands
+/// on (`hello.interpret`), some of what those understand too. Folded away by
+/// who knows them; the choice is remembered.
 private struct VoiceCommands: View {
     @AppStorage("voiceCommandsExpanded") private var expanded = true
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Press TALK and say one of these first: it is done and the talk ends. Anything else is just talk.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                FlowLayout(spacing: 6) {
-                    ForEach(VoiceCommandChip.all, id: \.words) { chip in
-                        CommandChip(chip: chip)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.top, 8)
+            CommandsList(inTalk: false)
+                .padding(.top, 8)
         } label: {
             Label("Voice commands", systemImage: "text.bubble")
                 .font(.subheadline.weight(.semibold))
@@ -210,6 +214,56 @@ private struct VoiceCommands: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(Brand.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+/// The command list in place of now playing, while the talk's first phrase
+/// (or the reply to the host's question) can still be one: Android's
+/// `CommandsCard`.
+private struct CommandsCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Say a command", systemImage: "text.bubble")
+                .font(.title3.weight(.semibold))
+            CommandsList(inTalk: true)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.card, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+/// Every command as a chip, then (smart commands on) the smart ones.
+private struct CommandsList: View {
+    @EnvironmentObject private var model: AppModel
+    let inTalk: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(inTalk ? "Only the first thing you say: it is done and the talk ends. Anything else is just talk."
+                        : "Press TALK and say one of these first: it is done and the talk ends. Anything else is just talk.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            chips(VoiceCommandChip.all)
+            if model.hostInterprets {
+                Text("Smart commands are on: say it your own way, like")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                chips(VoiceCommandChip.smart)
+            }
+        }
+    }
+
+    private func chips(_ list: [VoiceCommandChip]) -> some View {
+        FlowLayout(spacing: 6) {
+            ForEach(list, id: \.words) { chip in
+                CommandChip(chip: chip)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -65,6 +65,15 @@ struct SearchView: View {
                 if !connected {
                     NotConnectedHint().listRowSeparator(.hidden)
                 }
+                // The box was edited since: say whose results these are, as
+                // the Pixel does.
+                if let heading = SearchWording.staleHeading(searched: model.searchedQuery, box: query) {
+                    Text(heading)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .listRowSeparator(.hidden)
+                }
                 ForEach(Array(list.items.enumerated()), id: \.offset) { _, item in
                     Group {
                         if model.searchedKind == .songs {
@@ -126,9 +135,9 @@ extension SearchView {
             if !history.played.isEmpty {
                 Section("Recently played") {
                     ForEach(history.played, id: \.id) { track in
-                        PlayedRow(track: track, isCurrent: track.id == model.nowPlaying?.id) {
-                            model.playAgain(track)
-                        }
+                        PlayedRow(track: track, isCurrent: track.id == model.nowPlaying?.id,
+                                  play: { model.playAgain(track) },
+                                  onEnqueue: { model.enqueue($0, tracks: [track.enqueueTrack]) })
                         .disabled(!connected)
                     }
                 }
@@ -150,39 +159,75 @@ extension SearchView {
     }
 }
 
-/// A recently played track: a tap plays it now. The one that is playing is
-/// marked and not a button (a tap would restart it, and end a talk: UI10).
+/// A recently played track: a tap plays it now, the trailing menu (or a
+/// swipe) queues it, as a song result does. The one that is playing is
+/// marked and its tap does nothing (a tap would restart it, and end a talk:
+/// UI10); it can still be queued.
 private struct PlayedRow: View {
     let track: BrowseHistory.Track
     let isCurrent: Bool
     let play: () -> Void
+    let onEnqueue: (EnqueueMode) -> Void
     @State private var tapped = 0
 
     var body: some View {
-        Button {
-            play()
-            tapped += 1
-        } label: {
-            HStack(spacing: 12) {
-                Artwork(url: track.art, size: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title).font(.body.weight(.medium)).lineLimit(1)
-                        .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
-                    Text(TrackTime.joined([isCurrent ? "Now playing" : nil, track.artist,
-                                           TrackTime.clock(Double(track.durationMs))]))
-                        .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+        HStack(spacing: 4) {
+            Button { tap(play) } label: {
+                HStack(spacing: 12) {
+                    Artwork(url: track.art, size: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(track.title).font(.body.weight(.medium)).lineLimit(1)
+                            .foregroundStyle(isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+                        Text(TrackTime.joined([isCurrent ? "Now playing" : nil, track.artist,
+                                               TrackTime.clock(Double(track.durationMs))]))
+                            .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    if isCurrent {
+                        Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint).accessibilityHidden(true)
+                    }
                 }
-                Spacer(minLength: 0)
-                if isCurrent {
-                    Image(systemName: "speaker.wave.2.fill").foregroundStyle(.tint).accessibilityHidden(true)
-                }
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            .buttonStyle(RowButtonStyle())
+            .disabled(isCurrent)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(isCurrent ? "" : "Plays it now")
+            EnqueueMenu(title: track.title) { mode in tap { onEnqueue(mode) } }
         }
-        .buttonStyle(RowButtonStyle())
-        .disabled(isCurrent)
+        .swipeActions(edge: .leading) {
+            Button { tap { onEnqueue(.next) } } label: { Label("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+                .tint(Brand.orange)
+        }
+        .swipeActions(edge: .trailing) {
+            Button { tap { onEnqueue(.end) } } label: { Label("Add to queue", systemImage: "text.append") }
+                .tint(.blue)
+        }
         .sensoryFeedback(.success, trigger: tapped)
+    }
+
+    private func tap(_ action: () -> Void) {
+        action()
+        tapped += 1
+    }
+}
+
+/// "Play next" / "Add to queue" behind a 48 pt ⋯ button, always visible
+/// because swipes are hard with gloves.
+private struct EnqueueMenu: View {
+    let title: String
+    let enqueue: (EnqueueMode) -> Void
+
+    var body: some View {
+        Menu {
+            Button { enqueue(.next) } label: { Label("Play next", systemImage: "text.line.first.and.arrowtriangle.forward") }
+            Button { enqueue(.end) } label: { Label("Add to queue", systemImage: "text.append") }
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.title2).frame(width: 48, height: 48).contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityLabel("More options for \(title)")
     }
 }
 

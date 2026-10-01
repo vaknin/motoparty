@@ -46,7 +46,7 @@ struct QueueView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let undo {
-                    UndoBanner(text: undo.text) { self.undo(undo, queue: queue) }
+                    Banner(text: undo.text, actionTitle: "Undo") { self.undo(undo, queue: queue) }
                         .disabled(!connected)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -172,42 +172,10 @@ struct QueueView: View {
             case let .edit(op, index, id, to):
                 model.editQueue(op, index: index, id: id, to: to)
             case let .enqueueEnd(tracks):
-                model.enqueue(.end, tracks: tracks)
+                model.enqueue(.end, tracks: tracks, confirm: false)
             }
         }
         sent += 1
-    }
-}
-
-/// "Removed: <title>" and Undo, at the bottom of the tab: Android's snackbar.
-private struct UndoBanner: View {
-    let text: String
-    let undo: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(text)
-                .font(.subheadline)
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: undo) {
-                Text("Undo")
-                    .font(.body.weight(.semibold))
-                    .frame(minWidth: 64, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(GlyphButtonStyle())
-            .foregroundStyle(Brand.orange)
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 6)
-        .padding(.vertical, 4)
-        .background(Brand.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
-        .shadow(color: .black.opacity(0.4), radius: 8, y: 2)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .accessibilityElement(children: .contain)
     }
 }
 
@@ -224,7 +192,7 @@ private struct NowPlayingRow: View {
             Artwork(url: model.hostState?.music?.art, size: 56)
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title).font(.body.weight(.semibold)).lineLimit(1)
-                Text(TrackTime.joined([track.artist, TrackTime.clock(Double(track.durationMs))]))
+                Text(TrackTime.joined([track.artist, track.album]))
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }
             .accessibilityElement(children: .combine)

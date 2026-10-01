@@ -1,6 +1,7 @@
 #if os(iOS)
 import MotopartyCore
 import SwiftUI
+import UIKit
 
 enum AppTab: Hashable {
     case ride, search, queue
@@ -13,19 +14,23 @@ enum AppTab: Hashable {
 /// into each of the two tabs. Never both.
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.scenePhase) private var scenePhase
     @State private var tab: AppTab = .ride
 
     var body: some View {
         TabView(selection: $tab) {
+            // No toast on Ride: it would cover TALK, and nothing there enqueues.
             RideView()
                 .tabItem { Label("Ride", systemImage: "dot.radiowaves.left.and.right") }
                 .tag(AppTab.ride)
             SearchView()
+                .modifier(ToastOverlay())
                 .modifier(MiniPlayerInset { tab = .ride })
                 .tabItem { Label("Search", systemImage: "magnifyingglass") }
                 .tag(AppTab.search)
             QueueView(openSearch: { tab = .search })
+                .modifier(ToastOverlay())
                 .modifier(MiniPlayerInset { tab = .ride })
                 .tabItem { Label("Queue", systemImage: "list.bullet") }
                 .badge(QueueText.badge(model.hostState?.queue.count ?? 0).map { Text(verbatim: $0) })
@@ -36,6 +41,29 @@ struct ContentView: View {
             // Back from the Settings app, perhaps with a permission granted.
             if phase == .active { model.refreshPermissions() }
         }
+        // Settings → "Keep screen on while riding": while Ride shows, as on
+        // the Pixel (`UiPrefs.keepScreenOn`).
+        .onChange(of: settings.keepScreenOn && tab == .ride, initial: true) { _, on in
+            UIApplication.shared.isIdleTimerDisabled = on
+        }
+    }
+}
+
+/// The toast after a touch enqueue ("Added to queue: …", `AppModel.toast`),
+/// at the bottom of Search and Queue, above the mini player. It goes by
+/// itself after `Toast.durationMs`.
+private struct ToastOverlay: ViewModifier {
+    @EnvironmentObject private var model: AppModel
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .bottom) {
+            if let toast = model.toast {
+                Banner(text: toast.text)
+                    .id(toast.untilMs)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.toast)
     }
 }
 
@@ -141,13 +169,21 @@ struct MiniPlayer: View {
                     .padding(.trailing, 4)
                     .padding(.vertical, 6)
                     .background(.bar)
-                    .overlay(alignment: .top) { Divider() }
+                    .overlay(alignment: .top) {
+                        if model.nowPlaying != nil { progressLine } else { Divider() }
+                    }
                     .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             case .accessory, .inlineAccessory:
                 // The capsule has a fixed height: two lines fit up to xxxLarge.
+                // The line runs along its bottom edge, inside the capsule.
                 content
                     .padding(.leading, 12)
                     .padding(.trailing, 4)
+                    .overlay(alignment: .bottom) {
+                        if model.nowPlaying != nil, style == .accessory {
+                            progressLine.padding(.horizontal, 18)
+                        }
+                    }
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             }
         }
@@ -190,6 +226,24 @@ struct MiniPlayer: View {
             .accessibilityLabel(playingHere ? "Pause" : "Play")
             .sensoryFeedback(.success, trigger: pressed)
         }
+    }
+
+    /// A 2 pt line of how far the track is, along the top of the bar, as on
+    /// the Pixel's mini player (`Common.kt`). Only this redraws each second.
+    private var progressLine: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let duration = Double(max(model.nowPlaying?.durationMs ?? 0, 1))
+            let fraction = min(1, max(0, (model.displayPositionMs() ?? 0) / duration))
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(Color.primary.opacity(0.12))
+                    Rectangle().fill(Brand.orange).frame(width: geometry.size.width * fraction)
+                }
+            }
+            .frame(height: 2)
+            .animation(.linear(duration: 1), value: fraction)
+        }
+        .accessibilityHidden(true)
     }
 
     /// "LIVE" / "Connecting…" on the talk's colour; only the microphone where

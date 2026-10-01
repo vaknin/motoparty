@@ -42,6 +42,8 @@ final class LinkStats: ObservableObject {
     @Published fileprivate(set) var rttMs: Double?
     @Published fileprivate(set) var driftMs: Double?
     @Published fileprivate(set) var audioRoute = ""
+    /// The output whose music sync offset Settings edits (`LatencyTrims`).
+    @Published fileprivate(set) var outputRoute = OutputRoute.speaker
 }
 
 /// Owns every component and implements the client side of PROTOCOL.md:
@@ -71,6 +73,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var talkRequested = false {
         didSet { if talkRequested != oldValue { armTalkRequestTimeout() } }
     }
+    /// A phrase of the open talk can still be a command (its first-phrase
+    /// window, or the reply to the host's question): Ride shows the command
+    /// list in place of now playing, as Android does (`commandWindow`).
+    @Published private(set) var commandWindow = false
+    /// The host's latest `hello.interpret`: it interprets unparsed first
+    /// phrases (smart commands), so Ride lists what those understand too.
+    @Published private(set) var hostInterprets = false
+    /// "Added to queue: …" after a touch enqueue (`Toast`), at the bottom of
+    /// Search and Queue until `untilMs`.
+    @Published private(set) var toast: Toast?
     @Published private(set) var hostState: HostState?
     @Published private(set) var nowPlaying: MusicLoad? {
         didSet { if nowPlaying?.id != oldValue?.id { musicStatusTracker.setCurrent(nowPlaying?.id) } }
@@ -161,8 +173,6 @@ final class AppModel: ObservableObject {
     private var hostName = "host"
     private var voicePort = LinkDefaults.voicePort
     private var httpPort = LinkDefaults.httpPort
-    /// The host's latest `hello.interpret`: it interprets unparsed first phrases.
-    private var hostInterprets = false
     private var loads: [String: MusicLoad] = [:]
     private var musicStatusTracker = MusicStatusTracker() {
         didSet {
@@ -412,7 +422,7 @@ final class AppModel: ObservableObject {
         voice?.stop()
         voice = nil
         hostAddress = nil
-        hostInterprets = false
+        assign(\.hostInterprets, false)
         talkRequested = false
         talkOpener = nil
         talkOpenPending = false
@@ -478,7 +488,7 @@ final class AppModel: ObservableObject {
             clearProblem(on: .connected)
             let newVoice = hello.voicePort ?? LinkDefaults.voicePort
             httpPort = hello.httpPort ?? LinkDefaults.httpPort
-            hostInterprets = hello.interpret ?? false
+            assign(\.hostInterprets, hello.interpret ?? false)
             if newVoice != voicePort || voice == nil {
                 voicePort = newVoice
                 startVoiceSocket()
@@ -682,7 +692,7 @@ final class AppModel: ObservableObject {
     }
 
     private func outputDelay() -> OutputDelay {
-        OutputDelay(outputLatencyMs: session.outputLatencyMs, trimMs: settings.latencyTrimMs,
+        OutputDelay(outputLatencyMs: session.outputLatencyMs, trimMs: settings.trims.of(session.outputRoute),
                     compensate: settings.compensateOutputLatency, route: session.describe)
     }
 
@@ -936,7 +946,10 @@ final class AppModel: ObservableObject {
         let ms = Int((MonotonicClock.nowMs() - openedAtMs).rounded())
         let why = fallback ? "fallback" : talkMode.liveSignal
         Log.audio.info("live cue: fired +\(ms) ms (\(why, privacy: .public))")
-        earcons.play("live")
+        // The beep is a setting (Settings → "Beep when the mic is live"),
+        // off by default as on Android; TALK turns red either way. The live
+        // moment itself (recognition, the timer) does not depend on it.
+        if settings.liveBeep { earcons.play("live") }
         talkLive = true
         talkLiveSince = Date()
         updateLiveActivity()
@@ -1057,6 +1070,7 @@ final class AppModel: ObservableObject {
         guard talkMode.recognisesCommands(opener: talkOpener) else { return }
         let now = MonotonicClock.nowMs()
         firstPhrase = FirstPhraseGate(role: .opener, liveAtMs: now, interpret: hostInterprets)
+        assign(\.commandWindow, true)
         firstPhraseTimer?.invalidate()
         // A phrase still in progress at the deadline would arrive too late
         // anyway. A little past it, since the window's edge is inclusive.
@@ -1101,6 +1115,7 @@ final class AppModel: ObservableObject {
         var gate = FirstPhraseGate(role: .opener, liveAtMs: now, interpret: true)
         gate.ask(atMs: now)
         firstPhrase = gate
+        assign(\.commandWindow, true)
         firstPhraseTimer?.invalidate()
         firstPhraseTimer = Timer.scheduledTimer(withTimeInterval: FirstPhraseGate.answerMs / 1000 + 0.05,
                                                 repeats: false) { [weak self] _ in
@@ -1148,6 +1163,7 @@ final class AppModel: ObservableObject {
     private func stopRecognition() {
         transcriber.stop()
         firstPhrase = nil
+        assign(\.commandWindow, false)
         firstPhraseTimer?.invalidate()
         firstPhraseTimer = nil
     }
@@ -1221,11 +1237,29 @@ final class AppModel: ObservableObject {
     /// Sent during a talk too: play by touch (`now`, or a `jump` edit) ends
     /// the talk on the host, which sends the usual `talk.close` (PROTOCOL.md
     /// "Browsing" step 3), so nothing here waits for the talk or closes it.
-    func enqueue(_ mode: EnqueueMode, tracks: [EnqueueTrack], art: String? = nil) {
+    ///
+    /// `confirm`: say what it did ("Added to queue: …", `Toast`), as Android's
+    /// snackbar does; off for the Queue tab's Undo, which has its own banner.
+    func enqueue(_ mode: EnqueueMode, tracks: [EnqueueTrack], art: String? = nil, confirm: Bool = true) {
         let message = MusicEnqueue(mode: mode, tracks: tracks, art: art).fitted()
         guard !message.tracks.isEmpty else { return }
         if mode == .now { releaseRouteHold() }
+        let nothingLoaded = nowPlaying == nil
+        guard link.isConnected else { return }
         send(.musicEnqueue(message))
+        if confirm, let text = Toast.enqueued(mode, titles: message.tracks.map(\.title), nothingLoaded: nothingLoaded) {
+            showToast(Toast(text, nowMs: MonotonicClock.nowMs()))
+        }
+    }
+
+    /// Shows `toast` in place of any other, until its `untilMs`.
+    private func showToast(_ toast: Toast) {
+        self.toast = toast
+        lineTimers["toast"]?.invalidate()
+        lineTimers["toast"] = Timer.scheduledTimer(withTimeInterval: Toast.durationMs / 1000, repeats: false) { [weak self] _ in
+            guard let self, self.toast == toast else { return }
+            self.toast = nil
+        }
     }
 
     /// Plays a track from the Search tab's history now.
@@ -1394,6 +1428,8 @@ final class AppModel: ObservableObject {
     private func noteAudioRoute() {
         let name = session.outputName
         if stats.audioRoute != name { stats.audioRoute = name }
+        let route = session.outputRoute
+        if stats.outputRoute != route { stats.outputRoute = route }
     }
 
     // MARK: - UI helpers
@@ -1450,8 +1486,14 @@ final class AppModel: ObservableObject {
         trackPositionMs()
     }
 
-    func adjustTrim(by deltaMs: Double) {
-        settings.latencyTrimMs = max(-500, min(1_000, settings.latencyTrimMs + deltaMs))
+    /// Settings → "Music sync offset": the trim of the output in use now
+    /// (`LatencyTrims`, one per route, as on Android). A playing track
+    /// re-syncs to it.
+    func setTrim(_ ms: Double) {
+        let route = session.outputRoute
+        noteAudioRoute()
+        guard ms != settings.trims.of(route) else { return }
+        settings.trims = settings.trims.with(route, ms)
         if player.isPlaying { resumeMusic() }
     }
 

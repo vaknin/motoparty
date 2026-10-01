@@ -448,9 +448,65 @@ public enum SearchWording {
         return query.isEmpty ? "No results" : "Nothing found for “\(query)”"
     }
 
+    /// Over the results once the box was edited after the search, so they
+    /// are not taken for the new words' (Android's `SearchTab`, UA10). Nil
+    /// while the box still holds the searched words, or is empty.
+    public static func staleHeading(searched: String, box: String) -> String? {
+        let box = box.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !searched.isEmpty, !box.isEmpty, box != searched else { return nil }
+        return "Results for “\(searched)”"
+    }
+
     /// Under a failed search or album: what to do about it.
     public static let retryHint = "Try again when there is signal."
     public static let emptyCollection = "No songs in this one"
+}
+
+// MARK: - Settings
+
+public enum SpeechLanguages {
+    /// The speech languages offered in Settings, as BCP-47 tags: Android's
+    /// 14 (`SPEECH_LANGUAGES` in `ui/Logic.kt`), in its order.
+    public static let all = [
+        "en-US", "en-GB", "en-AU", "en-IN", "de-DE", "es-ES", "es-US", "fr-FR", "it-IT", "nl-NL", "pt-BR", "pl-PL",
+        "ru-RU", "he-IL",
+    ]
+
+    /// `all`, plus `current` when it is not one of them (set before the list
+    /// changed), so the picker still shows it.
+    public static func offered(current: String) -> [String] {
+        all.contains(current) || current.isEmpty ? all : all + [current]
+    }
+}
+
+// MARK: - Toasts
+
+/// A short line at the bottom of the app after a touch action, with nothing
+/// to press: Android's `SnackbarDuration.Short` snackbar.
+public struct Toast: Equatable, Sendable {
+    /// Material's `SnackbarDuration.Short`, as on Android.
+    public static let durationMs: Double = 4_000
+
+    public let text: String
+    /// When it goes by itself.
+    public let untilMs: Double
+
+    public init(_ text: String, nowMs: Double) {
+        self.text = text
+        untilMs = nowMs + Self.durationMs
+    }
+
+    /// What a touch enqueue says, as on Android (`confirmation` in
+    /// `ui/Logic.kt`): "Playing next: X", "Added to queue: X", "Added N
+    /// songs". Nothing for a play (the screen shows it), for no songs, or
+    /// while nothing is loaded (the host then plays it at once, and Ride
+    /// shows that).
+    public static func enqueued(_ mode: EnqueueMode, titles: [String], nothingLoaded: Bool) -> String? {
+        guard let first = titles.first, mode != .now, !nothingLoaded else { return nil }
+        let what = titles.count == 1 ? first : QueueText.songs(titles.count)
+        if mode == .next { return "Playing next: \(what)" }
+        return titles.count == 1 ? "Added to queue: \(what)" : "Added \(what)"
+    }
 }
 
 // MARK: - Voice commands
@@ -488,6 +544,26 @@ public struct VoiceCommandChip: Equatable, Sendable {
         VoiceCommandChip("queue next", argument: "song", note: "plays it after this one"),
         VoiceCommandChip("over", note: "only ends the talk"),
     ]
+
+    /// What smart commands also understand (PROTOCOL.md "Voice actions"),
+    /// shown only while the host interprets (`hello.interpret`). None of them
+    /// is in the grammar. The same words as Android's `SMART_COMMANDS`
+    /// (`ui/Logic.kt`): keep the two lists identical.
+    public static let smart: [VoiceCommandChip] = [
+        VoiceCommandChip("repeat this song"),
+        VoiceCommandChip("go back 30 seconds"),
+        VoiceCommandChip("start over"),
+        VoiceCommandChip("what's next"),
+        VoiceCommandChip("remove the next song"),
+        VoiceCommandChip("move the last song to next"),
+        VoiceCommandChip("clear the queue"),
+        VoiceCommandChip("undo"),
+    ]
+
+    /// The chips for a host that does (`interprets`) or does not interpret.
+    public static func shown(interprets: Bool) -> [VoiceCommandChip] {
+        interprets ? all + smart : all
+    }
 
     public var accessibilityText: String {
         TrackTime.joined([argument.map { "\(words) \($0)" } ?? words, note]).replacingOccurrences(of: " · ", with: ", ")
