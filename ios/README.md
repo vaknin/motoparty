@@ -284,7 +284,7 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   saturation capped, lightness banded, darkened until text keeps its contrast; read once per
   cover from a 24 px copy); the blurred cover stays the card's own backdrop. The gear opens
   Settings: name, speech language (Android's 14), "Keep screen on while riding" (while Ride
-  shows; off by default), "Beep when the mic is live" (off by default, as on Android), the
+  shows; off by default), "Beep when the mic is live" (on by default, unlike Android: iOS mutes haptics while recording), the
   music sync offset of the output in use now (below), link status, version, Diagnostics. See
   "2026-09-30 audit round 3" below.
   **Search** sends `music.search` (Songs / Albums / Playlists); a song tap is
@@ -396,7 +396,7 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   arms the cue when the voice engine starts and plays it on that callback, at most once per
   talk open, with a 3.5 s fallback timer (the same number as Android's `LiveCue.TIMEOUT_MS`)
   so a talk whose capture never delivers still beeps. The beep itself only sounds with
-  Settings → "Beep when the mic is live" on (off by default since 2026-10-01, as on Android);
+  Settings → "Beep when the mic is live" on (on by default; iOS mutes haptics while recording);
   the moment, TALK turning red and recognition starting, is the same either way. Which one fired is logged as
   `live cue: fired +<n> ms (capture up|fallback)` in the `audio` category. A talk that ends
   before the mic was live never beeps. Android's SCO/`MicLive` conditions are deliberately

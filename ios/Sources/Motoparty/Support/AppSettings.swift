@@ -10,8 +10,9 @@ final class AppSettings: ObservableObject {
     /// Android). Positive = this phone's audio comes out late on that route
     /// (Bluetooth), so its player runs ahead by this much.
     @Published var trims: LatencyTrims { didSet { defaults.set(trims.encoded(), forKey: "latencyTrims") } }
-    /// The "live" beep when a talk's microphone is on. Off by default, as on
-    /// Android (`Settings.liveBeep`).
+    /// The "live" beep when a talk's microphone is on. On by default, unlike
+    /// Android: iOS mutes haptics while recording, so in a pocket the beep is
+    /// the only sign the mic is live.
     @Published var liveBeep: Bool { didSet { defaults.set(liveBeep, forKey: "liveBeep") } }
     /// The screen stays on while the Ride tab is showing (Android's
     /// `UiPrefs.keepScreenOn`). Off by default: there is no charger on the bike.
@@ -53,7 +54,7 @@ final class AppSettings: ObservableObject {
             defaults.set(loadedTrims.encoded(), forKey: "latencyTrims")
             defaults.removeObject(forKey: "latencyTrimMs")
         }
-        liveBeep = defaults.object(forKey: "liveBeep") as? Bool ?? false
+        liveBeep = defaults.object(forKey: "liveBeep") as? Bool ?? true
         keepScreenOn = defaults.object(forKey: "keepScreenOn") as? Bool ?? false
         compensateOutputLatency = defaults.object(forKey: "compensateOutputLatency") as? Bool ?? true
         speechLanguage = defaults.string(forKey: "speechLanguage") ?? "en-US"

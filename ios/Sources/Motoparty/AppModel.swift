@@ -954,7 +954,7 @@ final class AppModel: ObservableObject {
         let why = fallback ? "fallback" : talkMode.liveSignal
         Log.audio.info("live cue: fired +\(ms) ms (\(why, privacy: .public))")
         // The beep is a setting (Settings → "Beep when the mic is live"),
-        // off by default as on Android; TALK turns red either way. The live
+        // on by default (unlike Android); TALK turns red either way. The live
         // moment itself (recognition, the timer) does not depend on it.
         if settings.liveBeep { earcons.play("live") }
         talkLive = true
