@@ -132,85 +132,324 @@ final class UIModelTests: XCTestCase {
         XCTAssertEqual(after.last?.index, 2)
     }
 
+    private func keys(_ edits: QueueEdits, _ queue: [HostState.QueueItem]) -> [String] {
+        edits.visible(queue).map(\.key)
+    }
+
     func testRemovedRowIsHiddenAtOnce() {
         let queue = [item("a"), item("b"), item("c")]
-        var removals = QueueRemovals()
-        XCTAssertEqual(removals.visible(queue).map(\.key), ["a#0", "b#0", "c#0"])
-        removals.remove(QueueRow.rows(queue)[1], nowMs: 1_000)
-        XCTAssertFalse(removals.isEmpty)
-        XCTAssertEqual(removals.visible(queue).map(\.key), ["a#0", "c#0"])
+        var edits = QueueEdits()
+        XCTAssertEqual(keys(edits, queue), ["a#0", "b#0", "c#0"])
+        let removed = edits.remove([QueueRow.rows(queue)[1]], in: queue, nowMs: 1_000)
+        XCTAssertEqual(removed, [QueueUndo.Removed(item: item("b"), at: 1)])
+        XCTAssertEqual(removed.map(\.command), [.edit(.remove, index: 1, id: "b")])
+        XCTAssertFalse(edits.isEmpty)
+        XCTAssertEqual(keys(edits, queue), ["a#0", "c#0"])
         // The same row twice is one removal.
-        removals.remove(QueueRow.rows(queue)[1], nowMs: 1_500)
-        XCTAssertEqual(removals.nextExpiryMs, 1_000 + QueueRemovals.timeoutMs)
+        XCTAssertEqual(edits.remove([QueueRow.rows(queue)[1]], in: queue, nowMs: 1_500), [])
+        XCTAssertEqual(edits.nextExpiryMs, 1_000 + QueueEdits.timeoutMs)
     }
 
     func testWireIndexCountsRemovalsInFlightAbove() {
         let queue = [item("a"), item("b"), item("c"), item("d")]
         let rows = QueueRow.rows(queue)
-        var removals = QueueRemovals()
-        XCTAssertEqual(removals.wireIndex(of: rows[2], in: queue), 2)
-        removals.remove(rows[1], nowMs: 0)
+        var edits = QueueEdits()
+        XCTAssertEqual(edits.wireIndex(of: rows[2], in: queue), 2)
+        edits.remove([rows[1]], in: queue, nowMs: 0)
         // The host will have dropped "b" by the time it reads the next edit.
-        XCTAssertEqual(removals.wireIndex(of: rows[0], in: queue), 0)
-        XCTAssertEqual(removals.wireIndex(of: rows[2], in: queue), 1)
-        XCTAssertEqual(removals.wireIndex(of: rows[3], in: queue), 2)
-        removals.remove(rows[2], nowMs: 0)
-        XCTAssertEqual(removals.wireIndex(of: rows[3], in: queue), 1)
+        XCTAssertEqual(edits.wireIndex(of: rows[0], in: queue), 0)
+        XCTAssertEqual(edits.wireIndex(of: rows[2], in: queue), 1)
+        XCTAssertEqual(edits.wireIndex(of: rows[3], in: queue), 2)
+        let removed = edits.remove([rows[2]], in: queue, nowMs: 0)
+        XCTAssertEqual(removed.map(\.at), [1])
+        XCTAssertEqual(edits.wireIndex(of: rows[3], in: queue), 1)
+    }
+
+    func testSeveralRowsAreRemovedFromTheBottomUp() {
+        let queue = [item("a"), item("b"), item("c"), item("d")]
+        var edits = QueueEdits()
+        let rows = edits.visible(queue)
+        let removed = edits.remove([rows[1], rows[3]], in: queue, nowMs: 0)
+        // "d" first, so "b" is still at 1 when the host reads its remove.
+        XCTAssertEqual(removed.map(\.command), [.edit(.remove, index: 3, id: "d"), .edit(.remove, index: 1, id: "b")])
+        XCTAssertEqual(keys(edits, queue), ["a#0", "c#0"])
     }
 
     func testTheHostsStateConfirmsARemoval() {
         let old = [item("a"), item("b"), item("c")]
-        var removals = QueueRemovals()
-        removals.remove(QueueRow.rows(old)[1], nowMs: 0)
+        var edits = QueueEdits()
+        edits.remove([QueueRow.rows(old)[1]], in: old, nowMs: 0)
         let new = [item("a"), item("c")]
-        removals.queueChanged(from: old, to: new)
-        XCTAssertTrue(removals.isEmpty)
-        XCTAssertEqual(removals.visible(new).map(\.key), ["a#0", "c#0"])
+        edits.queueChanged(from: old, to: new)
+        XCTAssertTrue(edits.isEmpty)
+        XCTAssertEqual(keys(edits, new), ["a#0", "c#0"])
     }
 
     func testAnotherChangeKeepsTheRowHidden() {
         // The head of the queue started playing before the host read the
         // remove: the removed row must not come back for a moment.
         let old = [item("a"), item("b"), item("c")]
-        var removals = QueueRemovals()
-        removals.remove(QueueRow.rows(old)[1], nowMs: 0)
+        var edits = QueueEdits()
+        edits.remove([QueueRow.rows(old)[1]], in: old, nowMs: 0)
         let headGone = [item("b"), item("c")]
-        removals.queueChanged(from: old, to: headGone)
-        XCTAssertFalse(removals.isEmpty)
-        XCTAssertEqual(removals.visible(headGone).map(\.key), ["c#0"])
-        XCTAssertEqual(removals.wireIndex(of: QueueRow.rows(headGone)[1], in: headGone), 0)
-        removals.queueChanged(from: headGone, to: [item("c")])
-        XCTAssertTrue(removals.isEmpty)
+        edits.queueChanged(from: old, to: headGone)
+        XCTAssertFalse(edits.isEmpty)
+        XCTAssertEqual(keys(edits, headGone), ["c#0"])
+        XCTAssertEqual(edits.wireIndex(of: QueueRow.rows(headGone)[1], in: headGone), 0)
+        edits.queueChanged(from: headGone, to: [item("c")])
+        XCTAssertTrue(edits.isEmpty)
     }
 
     func testRemovingOneOfTwoCopiesShowsTheOther() {
         let old = [item("a"), item("x"), item("a")]
-        var removals = QueueRemovals()
-        removals.remove(QueueRow.rows(old)[2], nowMs: 0)
-        XCTAssertEqual(removals.visible(old).map(\.key), ["a#0", "x#0"])
+        var edits = QueueEdits()
+        edits.remove([QueueRow.rows(old)[2]], in: old, nowMs: 0)
+        XCTAssertEqual(keys(edits, old), ["a#0", "x#0"])
         let new = [item("a"), item("x")]
-        removals.queueChanged(from: old, to: new)
-        XCTAssertTrue(removals.isEmpty)
-        XCTAssertEqual(removals.visible(new).map(\.key), ["a#0", "x#0"])
+        edits.queueChanged(from: old, to: new)
+        XCTAssertTrue(edits.isEmpty)
+        XCTAssertEqual(keys(edits, new), ["a#0", "x#0"])
+    }
+
+    func testOneCopyGoneConfirmsOneRemovalOfIt() {
+        let old = [item("a"), item("x"), item("a")]
+        var edits = QueueEdits()
+        edits.remove(edits.visible(old).filter { $0.item.id == "a" }, in: old, nowMs: 0)
+        XCTAssertEqual(keys(edits, old), ["x#0"])
+        let half = [item("x"), item("a")]
+        edits.queueChanged(from: old, to: half)
+        XCTAssertFalse(edits.isEmpty)
+        XCTAssertEqual(keys(edits, half), ["x#0"])
+        edits.queueChanged(from: half, to: [item("x")])
+        XCTAssertTrue(edits.isEmpty)
     }
 
     func testAnUnconfirmedRemovalComesBack() {
         let queue = [item("a"), item("b")]
-        var removals = QueueRemovals()
-        removals.remove(QueueRow.rows(queue)[0], nowMs: 1_000)
-        XCTAssertFalse(removals.expire(nowMs: 1_000 + QueueRemovals.timeoutMs - 1))
-        XCTAssertEqual(removals.visible(queue).count, 1)
-        XCTAssertTrue(removals.expire(nowMs: 1_000 + QueueRemovals.timeoutMs))
-        XCTAssertEqual(removals.visible(queue).count, 2)
-        XCTAssertNil(removals.nextExpiryMs)
+        var edits = QueueEdits()
+        edits.remove([QueueRow.rows(queue)[0]], in: queue, nowMs: 1_000)
+        XCTAssertFalse(edits.expire(nowMs: 1_000 + QueueEdits.timeoutMs - 1))
+        XCTAssertEqual(edits.visible(queue).count, 1)
+        XCTAssertTrue(edits.expire(nowMs: 1_000 + QueueEdits.timeoutMs))
+        XCTAssertEqual(edits.visible(queue).count, 2)
+        XCTAssertNil(edits.nextExpiryMs)
     }
 
     func testAClearedQueueDropsEveryRemoval() {
         let old = [item("a"), item("b")]
-        var removals = QueueRemovals()
-        removals.remove(QueueRow.rows(old)[0], nowMs: 0)
-        removals.queueChanged(from: old, to: [])
-        XCTAssertTrue(removals.isEmpty)
+        var edits = QueueEdits()
+        edits.remove([QueueRow.rows(old)[0]], in: old, nowMs: 0)
+        edits.queueChanged(from: old, to: [])
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    // MARK: Queue: drag to reorder
+
+    func testADraggedRowStaysWhereItWasDropped() {
+        let queue = [item("a"), item("b"), item("c"), item("d")]
+        var edits = QueueEdits()
+        // SwiftUI's offset 3 is the gap above "d": "a" ends up at 2.
+        XCTAssertEqual(edits.move(from: 0, insertBefore: 3, in: queue, nowMs: 0), .edit(.move, index: 0, id: "a", to: 2))
+        XCTAssertEqual(keys(edits, queue), ["b#0", "c#0", "a#0", "d#0"])
+        // Up: "d" to the top.
+        XCTAssertEqual(edits.move(from: 3, insertBefore: 0, in: queue, nowMs: 0), .edit(.move, index: 3, id: "d", to: 0))
+        XCTAssertEqual(keys(edits, queue), ["d#0", "b#0", "c#0", "a#0"])
+        // Past the end is the end.
+        XCTAssertEqual(edits.move(from: 0, insertBefore: 9, in: queue, nowMs: 0), .edit(.move, index: 0, id: "d", to: 3))
+    }
+
+    func testADropInPlaceSendsNothing() {
+        let queue = [item("a"), item("b"), item("a")]
+        var edits = QueueEdits()
+        XCTAssertNil(edits.move(from: 1, insertBefore: 1, in: queue, nowMs: 0))
+        XCTAssertNil(edits.move(from: 1, insertBefore: 2, in: queue, nowMs: 0))
+        XCTAssertNil(edits.move(from: 5, insertBefore: 0, in: queue, nowMs: 0))
+        XCTAssertTrue(edits.isEmpty)
+        // Past a copy of itself: the same queue.
+        let twice = [item("a"), item("a")]
+        XCTAssertNil(edits.move(from: 0, insertBefore: 2, in: twice, nowMs: 0))
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testTheHostsStateConfirmsAMove() {
+        let old = [item("a"), item("b"), item("c")]
+        var edits = QueueEdits()
+        edits.move(from: 2, insertBefore: 0, in: old, nowMs: 0)
+        let new = [item("c"), item("a"), item("b")]
+        XCTAssertEqual(keys(edits, old), QueueRow.rows(new).map(\.key))
+        edits.queueChanged(from: old, to: new)
+        XCTAssertTrue(edits.isEmpty)
+        XCTAssertEqual(keys(edits, new), ["c#0", "a#0", "b#0"])
+    }
+
+    func testAMoveAfterARemovalNamesTheHostsIndexes() {
+        let queue = [item("a"), item("b"), item("c"), item("d")]
+        var edits = QueueEdits()
+        edits.remove([QueueRow.rows(queue)[1]], in: queue, nowMs: 0)
+        // The host will have [a, c, d]: "d" is at 2 there.
+        XCTAssertEqual(edits.move(from: 2, insertBefore: 0, in: queue, nowMs: 0), .edit(.move, index: 2, id: "d", to: 0))
+        XCTAssertEqual(keys(edits, queue), ["d#0", "a#0", "c#0"])
+        // The removal's state first: the move still shows.
+        let removed = [item("a"), item("c"), item("d")]
+        edits.queueChanged(from: queue, to: removed)
+        XCTAssertFalse(edits.isEmpty)
+        XCTAssertEqual(keys(edits, removed), ["d#0", "a#0", "c#0"])
+        let moved = [item("d"), item("a"), item("c")]
+        edits.queueChanged(from: removed, to: moved)
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testARemovalAfterAMoveNamesTheHostsIndexes() {
+        let queue = [item("a"), item("b"), item("c")]
+        var edits = QueueEdits()
+        edits.move(from: 2, insertBefore: 0, in: queue, nowMs: 0)
+        let rows = edits.visible(queue)
+        XCTAssertEqual(edits.wireIndex(of: rows[1], in: queue), 1)
+        let removed = edits.remove([rows[2]], in: queue, nowMs: 0)
+        XCTAssertEqual(removed.map(\.command), [.edit(.remove, index: 2, id: "b")])
+        XCTAssertEqual(keys(edits, queue), ["c#0", "a#0"])
+        // Both in one state.
+        edits.queueChanged(from: queue, to: [item("c"), item("a")])
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testAnUnconfirmedMoveRollsBack() {
+        let queue = [item("a"), item("b"), item("c")]
+        var edits = QueueEdits()
+        edits.move(from: 0, insertBefore: 3, in: queue, nowMs: 1_000)
+        // A state that does not show it (another song added) keeps it.
+        let more = queue + [item("z")]
+        edits.queueChanged(from: queue, to: more)
+        XCTAssertEqual(keys(edits, more), ["b#0", "c#0", "a#0", "z#0"])
+        XCTAssertEqual(edits.nextExpiryMs, 1_000 + QueueEdits.timeoutMs)
+        XCTAssertTrue(edits.expire(nowMs: 1_000 + QueueEdits.timeoutMs))
+        XCTAssertEqual(keys(edits, more), ["a#0", "b#0", "c#0", "z#0"])
+    }
+
+    func testAMovedRowThatIsGoneEndsTheMove() {
+        let queue = [item("a"), item("b"), item("c")]
+        var edits = QueueEdits()
+        edits.move(from: 0, insertBefore: 3, in: queue, nowMs: 0)
+        edits.queueChanged(from: queue, to: [item("b"), item("c")])
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testAnExpiredEditTakesTheLaterOnesWithIt() {
+        let queue = [item("a"), item("b"), item("c")]
+        var edits = QueueEdits()
+        edits.remove([QueueRow.rows(queue)[0]], in: queue, nowMs: 0)
+        edits.move(from: 1, insertBefore: 0, in: queue, nowMs: 3_000)
+        XCTAssertEqual(keys(edits, queue), ["c#0", "b#0"])
+        XCTAssertTrue(edits.expire(nowMs: QueueEdits.timeoutMs))
+        XCTAssertTrue(edits.isEmpty)
+        XCTAssertEqual(keys(edits, queue), ["a#0", "b#0", "c#0"])
+    }
+
+    // MARK: Queue: Undo
+
+    func testUndoBannerText() {
+        let one = QueueUndo.removed([QueueUndo.Removed(item: item("b"), at: 1)], nowMs: 2_000)
+        XCTAssertEqual(one?.text, "Removed: Tb")
+        XCTAssertEqual(one?.untilMs, 2_000 + QueueUndo.durationMs)
+        XCTAssertEqual(QueueUndo.durationMs, 10_000)
+        let two = QueueUndo.removed([QueueUndo.Removed(item: item("b"), at: 1), QueueUndo.Removed(item: item("c"), at: 2)], nowMs: 0)
+        XCTAssertEqual(two?.text, "Removed 2 songs")
+        XCTAssertNil(QueueUndo.removed([], nowMs: 0))
+        XCTAssertEqual(QueueUndo.cleared([item("a")], nowMs: 0)?.text, "Queue cleared")
+        XCTAssertNil(QueueUndo.cleared([], nowMs: 0))
+    }
+
+    func testUndoPutsARemovedRowBackAtOnce() {
+        let queue = [item("a"), item("b"), item("c")]
+        var edits = QueueEdits()
+        let removed = edits.remove([QueueRow.rows(queue)[1]], in: queue, nowMs: 0)
+        let undo = QueueUndo.removed(removed, nowMs: 0)!
+        // Before the host's state: the host's queue will be [a, c], then
+        // [a, c, b] after the enqueue, and the move takes "b" from 2 to 1.
+        let sent = undo.undo(&edits, queue: queue, nothingLoaded: false, nowMs: 100)
+        XCTAssertEqual(sent, [.enqueueEnd([EnqueueTrack(item("b"))]), .edit(.move, index: 2, id: "b", to: 1)])
+        XCTAssertEqual(keys(edits, queue), ["a#0", "b#0", "c#0"])
+        // One state per message, as the host sends them: the row never moves.
+        let removedState = [item("a"), item("c")]
+        edits.queueChanged(from: queue, to: removedState)
+        XCTAssertEqual(keys(edits, removedState), ["a#0", "b#0", "c#0"])
+        let enqueued = [item("a"), item("c"), item("b")]
+        edits.queueChanged(from: removedState, to: enqueued)
+        XCTAssertEqual(keys(edits, enqueued), ["a#0", "b#0", "c#0"])
+        XCTAssertFalse(edits.isEmpty)
+        edits.queueChanged(from: enqueued, to: queue)
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testUndoAfterTheRemovalWasConfirmed() {
+        let queue = [item("a"), item("b"), item("c")]
+        var edits = QueueEdits()
+        let removed = edits.remove([QueueRow.rows(queue)[1]], in: queue, nowMs: 0)
+        let after = [item("a"), item("c")]
+        edits.queueChanged(from: queue, to: after)
+        XCTAssertTrue(edits.isEmpty)
+        let sent = QueueUndo.removed(removed, nowMs: 0)!.undo(&edits, queue: after, nothingLoaded: false, nowMs: 0)
+        XCTAssertEqual(sent, [.enqueueEnd([EnqueueTrack(item("b"))]), .edit(.move, index: 2, id: "b", to: 1)])
+        XCTAssertEqual(keys(edits, after), ["a#0", "b#0", "c#0"])
+        // Enqueue and move in one state.
+        edits.queueChanged(from: after, to: queue)
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testUndoOfTheLastRowNeedsNoMove() {
+        let queue = [item("a"), item("b")]
+        var edits = QueueEdits()
+        let removed = edits.remove([QueueRow.rows(queue)[1]], in: queue, nowMs: 0)
+        let sent = QueueUndo.removed(removed, nowMs: 0)!.undo(&edits, queue: queue, nothingLoaded: false, nowMs: 0)
+        XCTAssertEqual(sent, [.enqueueEnd([EnqueueTrack(item("b"))])])
+        XCTAssertEqual(keys(edits, queue), ["a#0", "b#0"])
+        edits.queueChanged(from: queue, to: [item("a")])
+        edits.queueChanged(from: [item("a")], to: queue)
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testUndoOfSeveralPutsEachBackInItsPlace() {
+        let queue = [item("a"), item("b"), item("c"), item("d")]
+        var edits = QueueEdits()
+        let rows = edits.visible(queue)
+        let removed = edits.remove([rows[1], rows[3]], in: queue, nowMs: 0)
+        let sent = QueueUndo.removed(removed, nowMs: 0)!.undo(&edits, queue: queue, nothingLoaded: false, nowMs: 0)
+        XCTAssertEqual(sent, [
+            .enqueueEnd([EnqueueTrack(item("b"))]), .edit(.move, index: 2, id: "b", to: 1),
+            .enqueueEnd([EnqueueTrack(item("d"))]),
+        ])
+        XCTAssertEqual(keys(edits, queue), ["a#0", "b#0", "c#0", "d#0"])
+    }
+
+    func testAnUnconfirmedUndoGoesWithItsRemoval() {
+        let queue = [item("a"), item("b")]
+        var edits = QueueEdits()
+        let removed = edits.remove([QueueRow.rows(queue)[0]], in: queue, nowMs: 0)
+        _ = QueueUndo.removed(removed, nowMs: 0)!.undo(&edits, queue: queue, nothingLoaded: false, nowMs: 4_000)
+        // Nothing confirmed: both go together, and the queue is as it was.
+        XCTAssertTrue(edits.expire(nowMs: QueueEdits.timeoutMs))
+        XCTAssertEqual(keys(edits, queue), ["a#0", "b#0"])
+    }
+
+    func testUndoWithNothingLoadedDoesNothing() {
+        let queue = [item("a"), item("b")]
+        var edits = QueueEdits()
+        let removed = edits.remove([QueueRow.rows(queue)[0]], in: queue, nowMs: 0)
+        edits.queueChanged(from: queue, to: [item("b")])
+        let sent = QueueUndo.removed(removed, nowMs: 0)!.undo(&edits, queue: [item("b")], nothingLoaded: true, nowMs: 0)
+        XCTAssertEqual(sent, [])
+        XCTAssertTrue(edits.isEmpty)
+    }
+
+    func testUndoOfAClearQueuesTheSongsAgain() {
+        var edits = QueueEdits()
+        let songs = [item("a"), HostState.QueueItem(id: "b", title: "Tb", artist: "A", durationMs: 200_000, art: "https://x/b.jpg")]
+        let sent = QueueUndo.cleared(songs, nowMs: 0)!.undo(&edits, queue: [], nothingLoaded: true, nowMs: 0)
+        XCTAssertEqual(sent, [.enqueueEnd([
+            EnqueueTrack(id: "a", title: "Ta", artist: "A", durationMs: 0),
+            EnqueueTrack(id: "b", title: "Tb", artist: "A", durationMs: 200_000, art: "https://x/b.jpg"),
+        ])])
+        XCTAssertTrue(edits.isEmpty)
     }
 
     // MARK: Search

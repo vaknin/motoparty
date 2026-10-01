@@ -3,24 +3,27 @@ import MotopartyCore
 import SwiftUI
 
 /// Now playing and the host's upcoming queue (`state.queue`). Every edit is a
-/// `music.edit`. A removed row goes at once and stays gone while the host's
-/// next `state` is on its way (`QueueRemovals`, audit UI3). A dragged row is
-/// not reordered here: the host's next `state` brings the new order.
+/// `music.edit` (an Undo also a `music.enqueue`) and shows at once, before
+/// the host's next `state` confirms it (`QueueEdits`, audit UI3): a removed
+/// row goes, a dragged row stays where it was dropped, an undone removal is
+/// back in its place. A removal or a clear brings a banner with Undo for 10 s,
+/// like Android's snackbar (`QueueUndo`).
 struct QueueView: View {
     @EnvironmentObject private var model: AppModel
     /// The empty queue's "Search" button.
     let openSearch: () -> Void
     @State private var confirmClear = false
-    @State private var removals = QueueRemovals()
+    @State private var edits = QueueEdits()
+    @State private var undo: QueueUndo?
     /// Counts the edits sent, for the haptic.
-    @State private var edits = 0
+    @State private var sent = 0
 
     private var queue: [HostState.QueueItem] { model.hostState?.queue ?? [] }
     private var connected: Bool { model.link.isConnected }
 
     var body: some View {
         let queue = queue
-        let rows = removals.visible(queue)
+        let rows = edits.visible(queue)
         NavigationStack {
             Group {
                 if model.nowPlaying == nil && rows.isEmpty {
@@ -41,6 +44,13 @@ struct QueueView: View {
                     list(rows, queue: queue)
                 }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let undo {
+                    UndoBanner(text: undo.text) { self.undo(undo, queue: queue) }
+                        .disabled(!connected)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
             .navigationTitle("Queue")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -52,24 +62,33 @@ struct QueueView: View {
             .confirmationDialog("Clear the queue?", isPresented: $confirmClear, titleVisibility: .visible) {
                 Button("Clear queue", role: .destructive) {
                     model.editQueue(.clear)
-                    edits += 1
+                    sent += 1
+                    show(QueueUndo.cleared(rows.map(\.item), nowMs: MonotonicClock.nowMs()))
                 }
             } message: {
                 Text(QueueText.clearMessage(rows.count))
             }
         }
-        .sensoryFeedback(.success, trigger: edits)
+        .sensoryFeedback(.success, trigger: sent)
         .onChange(of: queue) { old, new in
-            withAnimation { removals.queueChanged(from: old, to: new) }
+            withAnimation { edits.queueChanged(from: old, to: new) }
         }
-        // A removal the host never confirmed (the queue had moved, the link
-        // dropped) brings its row back.
-        .task(id: removals.nextExpiryMs) {
-            guard let at = removals.nextExpiryMs else { return }
+        // An edit the host never confirmed (the queue had moved, the link
+        // dropped) is undone on screen.
+        .task(id: edits.nextExpiryMs) {
+            guard let at = edits.nextExpiryMs else { return }
             let wait = max(0, at - MonotonicClock.nowMs()) + 50
             try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000))
             guard !Task.isCancelled else { return }
-            withAnimation { _ = removals.expire(nowMs: MonotonicClock.nowMs()) }
+            withAnimation { _ = edits.expire(nowMs: MonotonicClock.nowMs()) }
+        }
+        // The banner goes by itself after `QueueUndo.durationMs`.
+        .task(id: undo?.untilMs) {
+            guard let until = undo?.untilMs else { return }
+            let wait = max(0, until - MonotonicClock.nowMs())
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000))
+            guard !Task.isCancelled, undo?.untilMs == until else { return }
+            show(nil)
         }
     }
 
@@ -77,7 +96,7 @@ struct QueueView: View {
         List {
             if let track = model.nowPlaying {
                 Section(model.musicPlaying ? "Now playing" : "Paused") {
-                    NowPlayingRow(track: track) { edits += 1 }
+                    NowPlayingRow(track: track) { sent += 1 }
                 }
             }
             Section(QueueText.upNext(rows.count)) {
@@ -86,7 +105,7 @@ struct QueueView: View {
                 }
                 ForEach(Array(rows.enumerated()), id: \.element.key) { position, row in
                     QueueEntry(number: position + 1, item: row.item,
-                               jump: { jump(row, queue: queue) },
+                               jump: { jump(row) },
                                remove: { remove([row], queue: queue) })
                         .disabled(!connected)
                 }
@@ -96,7 +115,7 @@ struct QueueView: View {
                 // onMove belongs to the ForEach, so it goes before the
                 // modifiers that return a plain View.
                 .onMove { source, destination in
-                    move(source, to: destination, rows: rows, queue: queue)
+                    move(source, to: destination, queue: queue)
                 }
                 .deleteDisabled(!connected)
                 .moveDisabled(!connected)
@@ -108,35 +127,87 @@ struct QueueView: View {
         .animation(.default, value: rows.map(\.key))
     }
 
-    private func jump(_ row: QueueRow, queue: [HostState.QueueItem]) {
-        model.editQueue(.jump, index: removals.wireIndex(of: row, in: queue), id: row.item.id)
-        edits += 1
+    /// `row` is a row of `edits.visible`, so its index is the one the host
+    /// will have when it reads this edit.
+    private func jump(_ row: QueueRow) {
+        model.editQueue(.jump, index: row.index, id: row.item.id)
+        sent += 1
     }
 
-    /// A drag of one row (`source` holds one offset). `destination` is the
-    /// insertion offset in `rows` before the move; the row's place afterwards
-    /// is one less when it moves down. The host applies the removals in
-    /// flight first, so its queue then is `rows`, and that place is `to`.
-    private func move(_ source: IndexSet, to destination: Int, rows: [QueueRow], queue: [HostState.QueueItem]) {
-        guard source.count == 1, let from = source.first, rows.indices.contains(from) else { return }
-        let to = destination > from ? destination - 1 : destination
-        guard to != from else { return }
-        let row = rows[from]
-        model.editQueue(.move, index: removals.wireIndex(of: row, in: queue), id: row.item.id, to: to)
-        edits += 1
-    }
-
-    /// Each remove names the row's index in the queue the host will have when
-    /// it reads it: its own, less the removals sent before it.
-    private func remove(_ removed: [QueueRow], queue: [HostState.QueueItem]) {
-        guard !removed.isEmpty else { return }
+    /// A drag of one row (`source` holds one offset). It stays where it was
+    /// dropped until the host's `state` has it there too.
+    private func move(_ source: IndexSet, to destination: Int, queue: [HostState.QueueItem]) {
+        guard source.count == 1, let from = source.first else { return }
         withAnimation {
-            for row in removed.sorted(by: { $0.index < $1.index }) {
-                model.editQueue(.remove, index: removals.wireIndex(of: row, in: queue), id: row.item.id)
-                removals.remove(row, nowMs: MonotonicClock.nowMs())
+            if let command = edits.move(from: from, insertBefore: destination, in: queue, nowMs: MonotonicClock.nowMs()) {
+                send([command])
             }
         }
-        edits += 1
+    }
+
+    private func remove(_ rows: [QueueRow], queue: [HostState.QueueItem]) {
+        let now = MonotonicClock.nowMs()
+        withAnimation {
+            let removed = edits.remove(rows, in: queue, nowMs: now)
+            send(removed.map(\.command))
+            if !removed.isEmpty { show(QueueUndo.removed(removed, nowMs: now)) }
+        }
+    }
+
+    private func undo(_ undo: QueueUndo, queue: [HostState.QueueItem]) {
+        withAnimation {
+            send(undo.undo(&edits, queue: queue, nothingLoaded: model.nowPlaying == nil, nowMs: MonotonicClock.nowMs()))
+        }
+        show(nil)
+    }
+
+    private func show(_ banner: QueueUndo?) {
+        withAnimation(.easeOut(duration: 0.2)) { undo = banner }
+    }
+
+    private func send(_ commands: [QueueCommand]) {
+        guard !commands.isEmpty else { return }
+        for command in commands {
+            switch command {
+            case let .edit(op, index, id, to):
+                model.editQueue(op, index: index, id: id, to: to)
+            case let .enqueueEnd(tracks):
+                model.enqueue(.end, tracks: tracks)
+            }
+        }
+        sent += 1
+    }
+}
+
+/// "Removed: <title>" and Undo, at the bottom of the tab: Android's snackbar.
+private struct UndoBanner: View {
+    let text: String
+    let undo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(text)
+                .font(.subheadline)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: undo) {
+                Text("Undo")
+                    .font(.body.weight(.semibold))
+                    .frame(minWidth: 64, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(GlyphButtonStyle())
+            .foregroundStyle(Brand.orange)
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 6)
+        .padding(.vertical, 4)
+        .background(Brand.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+        .shadow(color: .black.opacity(0.4), radius: 8, y: 2)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
     }
 }
 
