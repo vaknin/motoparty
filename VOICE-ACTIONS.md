@@ -204,3 +204,20 @@ from history rather than from the queue's first track (test scaffolding only).
 
 Still to do: step 7's measurements (below, as they come in) and step 8, the Pixel run (the user
 said no phone tests for now).
+
+## Measurements (2026-10-01, `tools/interpret/smoke.sh`, new prompt and schema, 93 phrases)
+
+| Model | As expected | Refused (503 "high demand") | Wrong of those answered | p50 / p95 of answered |
+|-------|-------------|-----------------------------|-------------------------|-----------------------|
+| `gemini-3.1-flash-lite` (07:50) | 81/93 | 8 | 4/85 | 3.2 s / 4.5 s |
+| `gemma-4-26b-a4b-it`, every 3rd phrase, 13 s apart (07:50) | 24/31 | 4 | 3/27 | 1.3 s / 1.7 s |
+
+- 3.1's p50 was 3.6 s with the old, smaller prompt (2026-09-30 night): the bigger prompt costs no
+  visible latency next to Google's queue.
+- 3.1's wrong answers: two are replies to a question ("any" → `play artist moby` instead of
+  `play album moby`; road talk "watch out for that truck" → an album), which 3.1 is not asked in
+  the app (`NO_REPLIES`); "play that song by queen" played instead of asking; "play something like
+  this instead" → `add instead similar` rather than `play similar` (much the same result).
+- Gemma's: "play fix you next" added a second copy instead of moving the upcoming one; "remove
+  all the queen songs and add some u2" did only the remove; **"put it back in the tank bag" →
+  `undo`** (a road-talk trap). Gemma answers only as the backup.
