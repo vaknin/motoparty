@@ -267,7 +267,9 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 - **Screens:** three tabs. **Ride** has the link pill (the Pixel's name, or what the link is
   doing), a permissions card and a dismissible problem line when there is one, the
   now-playing card (cover from `state.music.art`, progress, previous / play-pause / next as
-  `music.control`, "Up next"), the "Voice commands" chips (the same commands as the
+  `music.control`, the repeat button at the right end (off → queue → track, sent as
+  `music.control{action:"repeat", mode}` and shown from `state.music.repeat`; 2026-10-01),
+  "Up next"), the "Voice commands" chips (the same commands as the
   Pixel's, foldable: say one first after pressing TALK, then it's just talk), and, pinned at
   the bottom, TALK with the app volume; the gear opens Settings (music sync offset, speech
   language, link status, Diagnostics). See "2026-09-30 audit round 3" below.

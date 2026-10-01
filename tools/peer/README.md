@@ -73,6 +73,7 @@ Stdin commands:
 | `hear <phrase>` | a phrase the phone's ASR recognised **in a talk** (PROTOCOL.md "Commands", The first phrase decides). Only in a talk this client opened (`talk.open{by:"client"}`), only its first phrase that is not empty after normalisation, and only if it arrives within 8 s of the talk opening (the peer's stand-in for the live earcon) and parses: then it sends `command.text` with the normalised text (`hey`/`please` kept). Anything else logs `conversation (<why>), not sent`, with no "Didn't catch that"; a volume command is handled locally like `vol+` and, being a command, ends the talk: the client sends `talk.close{by:"client",reason:"trigger"}`. Outside a talk it sends nothing (`hear: no talk open`) |
 | `say <text>` | `command.text{text, lang}` as is, no first-phrase gate (the bench's `hotspot_test.sh` uses it) — but the parser runs locally first, and a volume phrase (`louder`, `volume down`, …) is handled here and **not** sent. The host only acts on it as the first `command.text` of a talk the client opened |
 | `pause` `resume` `next` `previous` | `music.control{action}` |
+| `repeat off\|track\|queue` | `music.control{action:"repeat", mode}`, the repeat button (PROTOCOL.md "Repeat by touch") |
 | `vol+` `vol-` | nothing: volume is local (the peer has no real volume, so it just logs it) |
 | `unavailable` | toggles "my mic is dead": while on, the host's `talk.open` is answered with `talk.close{by:"client",reason:"unavailable"}` and talk never opens locally; `talk` will not ask for talk either |
 | `search <kind> <query>` | `music.search{id, kind, query}` (`songs`/`albums`/`playlists`, empty query allowed); the newest request's results print numbered |
@@ -211,6 +212,9 @@ and `state`, then the host logs the close; nothing else changes.
   from the client is dropped from the list; from the host it is local.
 - A `music.control` with a volume action is not a valid message any more; it is dropped as
   malformed (logged as `dropped invalid frame`) and the connection stays up.
+- A client `music.control{action:"repeat", mode}` (2026-10-01) sets the repeat mode like the
+  stdin `repeat` (a `state` only when it changes) and leaves the voice undo alone; a `repeat`
+  without a `mode` is dropped as malformed.
 
 Stdin commands: `load` (sends `music.load`, then `music.play` 300 ms ahead once
 `music.ready` arrives, or after 8 s / on `music.error`), `play`, `pause`, `stop`, `talk`,

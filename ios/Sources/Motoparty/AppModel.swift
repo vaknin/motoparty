@@ -1176,6 +1176,16 @@ final class AppModel: ObservableObject {
         send(.musicControl(MusicControl(action: action)))
     }
 
+    /// The host's repeat mode, as the repeat button shows it.
+    var repeatSetting: RepeatSetting { RepeatSetting(hostState?.music?.repeat) }
+
+    /// The Ride screen's repeat button: asks the host for the mode after the
+    /// one in its last `state` (off → queue → track); the button changes when
+    /// the host's `state` says so (PROTOCOL.md "Repeat by touch").
+    func repeatButton() {
+        send(.musicControl(.setRepeat(repeatSetting.next)))
+    }
+
     // MARK: - Browsing
 
     /// How long a search or browse may take before the list gives up. The host

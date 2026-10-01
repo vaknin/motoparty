@@ -1033,6 +1033,22 @@ class MusicControllerTest {
         assertNull(rig.music.musicState()?.repeat)
     }
 
+    /** The client's `music.control repeat` (LinkHost maps its `mode` with [RepeatMode.of]). */
+    @Test
+    fun `a touch repeat from the client sets the mode with one state push, and the same mode none`() = runTest {
+        val rig = Rig(this)
+        rig.music.setQueue(listOf(a, b))
+        playing(rig, a)
+        for ((word, wire) in listOf("queue" to "queue", "track" to "track", "off" to null)) {
+            val pushes = rig.states.size
+            rig.music.setRepeat(RepeatMode.of(word)!!)
+            assertEquals(pushes + 1, rig.states.size)
+            assertEquals(wire, rig.states.last()?.repeat)
+            rig.music.setRepeat(RepeatMode.of(word)!!)
+            assertEquals("$word again changes nothing", pushes + 1, rig.states.size)
+        }
+    }
+
     @Test
     fun `move puts a track at its new upcoming index, and a stale one is refused`() = runTest {
         val rig = Rig(this)

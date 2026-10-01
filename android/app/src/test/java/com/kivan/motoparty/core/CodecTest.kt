@@ -116,6 +116,34 @@ class CodecTest {
         assertEquals(Announce("hi", null), Codec.decode("""{"t":"announce","text":"hi"}"""))
     }
 
+    /** PROTOCOL.md "Repeat by touch": `repeat` carries the mode to set, `off` included, and needs it. */
+    @Test
+    fun repeatControlCarriesItsMode() {
+        for (mode in RepeatMode.entries) {
+            val m = MusicControl(ControlAction.REPEAT, mode.word)
+            assertEquals("""{"t":"music.control","action":"repeat","mode":"${mode.word}"}""", Codec.encode(m))
+            assertEquals(m, Codec.decode(Codec.encode(m)))
+        }
+        // The other actions never send a mode.
+        assertEquals("""{"t":"music.control","action":"next"}""", Codec.encode(MusicControl(ControlAction.NEXT)))
+        // A valid mode on another action is ignored by the host (kept by the codec).
+        assertEquals(MusicControl("pause", "track"), Codec.decode("""{"t":"music.control","action":"pause","mode":"track"}"""))
+        for (json in listOf(
+            """{"t":"music.control","action":"repeat"}""",
+            """{"t":"music.control","action":"repeat","mode":"all"}""",
+            """{"t":"music.control","action":"repeat","mode":"Track"}""",
+            """{"t":"music.control","action":"repeat","mode":null}""",
+            """{"t":"music.control","action":"repeat","mode":1}""",
+            """{"t":"music.control","action":"pause","mode":"all"}""",
+        )) {
+            try {
+                Codec.decode(json)
+                fail("accepted $json")
+            } catch (_: MalformedMessageException) {
+            }
+        }
+    }
+
     /** PROTOCOL.md "Host-mic talk": `mic` is optional on `talk.open` and `state`, and only ever "host". */
     @Test
     fun hostMicIsOptionalAndOnlyHost() {

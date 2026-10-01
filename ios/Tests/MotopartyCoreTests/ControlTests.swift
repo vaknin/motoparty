@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 41)
+        XCTAssertEqual(messages.count, 43)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -54,6 +54,41 @@ final class MessageFixtureTests: XCTestCase {
             .init(id: "b", title: "T", artist: "A", durationMs: 2000),
             .init(id: "c", title: "T", artist: "A"),
         ])))
+    }
+
+    /// PROTOCOL.md "Repeat by touch": `repeat` carries the mode to set, `off` included, and needs it.
+    func testRepeatControlCarriesItsMode() throws {
+        for mode in RepeatSetting.allCases {
+            let message = ControlMessage.musicControl(.setRepeat(mode))
+            let encoded = try ControlCodec.encode(message)
+            XCTAssertEqual(try Fixtures.canonical(jsonData: encoded),
+                           try Fixtures.canonical(["t": "music.control", "action": "repeat", "mode": mode.rawValue]))
+            XCTAssertEqual(try ControlCodec.decode(encoded), message)
+        }
+        // The other actions send no mode.
+        let next = String(decoding: try ControlCodec.encode(.musicControl(MusicControl(action: .next))), as: UTF8.self)
+        XCTAssertFalse(next.contains("mode"))
+        for json in [#"{"t":"music.control","action":"repeat"}"#,
+                     #"{"t":"music.control","action":"repeat","mode":"all"}"#,
+                     #"{"t":"music.control","action":"repeat","mode":"Track"}"#,
+                     #"{"t":"music.control","action":"repeat","mode":null}"#,
+                     #"{"t":"music.control","action":"repeat","mode":1}"#,
+                     #"{"t":"music.control","action":"pause","mode":"all"}"#] {
+            XCTAssertThrowsError(try ControlCodec.decode(Data(json.utf8)), json) { error in
+                XCTAssertFalse((error as? ControlCodecError)?.closesConnection ?? true, json)
+            }
+        }
+    }
+
+    /// The button cycles like the Pixel's, from the mode in the host's last `state`.
+    func testRepeatButtonCycle() {
+        XCTAssertEqual(RepeatSetting(nil), .off)
+        XCTAssertEqual(RepeatSetting(.queue), .queue)
+        XCTAssertEqual(RepeatSetting(.track), .track)
+        XCTAssertEqual(RepeatSetting.off.next, .queue)
+        XCTAssertEqual(RepeatSetting.queue.next, .track)
+        XCTAssertEqual(RepeatSetting.track.next, .off)
+        XCTAssertEqual(RepeatSetting.allCases.map(\.label), ["Repeat off", "Repeat this song", "Repeat the queue"])
     }
 
     func testOptionalFieldsAreOmittedNotNull() throws {
@@ -217,7 +252,7 @@ final class FramingFixtureTests: XCTestCase {
     func testMalformedMessagesAreDroppedNotFatal() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let malformed = try XCTUnwrap(fixture["malformed"] as? [[String: Any]])
-        XCTAssertEqual(malformed.count, 18, "every malformed vector must be exercised")
+        XCTAssertEqual(malformed.count, 21, "every malformed vector must be exercised")
         for m in malformed {
             let json = try XCTUnwrap(m["json"] as? String)
             // Framed and received like any other frame…

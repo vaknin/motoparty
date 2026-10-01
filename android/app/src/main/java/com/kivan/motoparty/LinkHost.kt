@@ -53,6 +53,7 @@ import com.kivan.motoparty.core.ResultItem
 import com.kivan.motoparty.core.MusicError
 import com.kivan.motoparty.core.MusicReady
 import com.kivan.motoparty.core.QueueItem
+import com.kivan.motoparty.core.RepeatMode
 import com.kivan.motoparty.core.Role
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.core.State
@@ -532,7 +533,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is TalkClose -> onClientTalkClose(m.reason)
             is MusicReady -> music.onClientReady(m.id)
             is MusicError -> music.onClientError(m.id, m.message)
-            is MusicControl -> onMusicControl(m.action, "client")
+            is MusicControl -> onMusicControl(m.action, "client", m.mode)
             is CommandText -> onClientCommand(m.text)
             is MusicSearch -> onClientSearch(m.id) {
                 if (m.kind == SearchKind.SONGS) {
@@ -1464,14 +1465,20 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
-    private fun onMusicControl(action: String, from: String) {
-        Hub.log("music control $action from $from")
-        // Values outside this set never get here: the codec drops them as malformed.
+    /**
+     * [mode] is the `repeat` action's mode (PROTOCOL.md "Repeat by touch"): set like our own
+     * repeat button ([UiAction.Repeat]), so it leaves the voice undo alone.
+     */
+    private fun onMusicControl(action: String, from: String, mode: String? = null) {
+        Hub.log("music control $action${mode?.let { " $it" } ?: ""} from $from")
+        // Values outside this set (and a repeat without a mode) never get here: the codec drops
+        // them as malformed.
         when (action) {
             ControlAction.PAUSE -> music.pause()
             ControlAction.RESUME -> music.resume()
             ControlAction.NEXT -> music.next()
             ControlAction.PREVIOUS -> music.previous()
+            ControlAction.REPEAT -> RepeatMode.of(mode)?.let(music::setRepeat)
         }
     }
 

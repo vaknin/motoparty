@@ -109,6 +109,10 @@ def test_unknown_types_and_fields(case):
         ('{"t":"music.control","action":"volume_up"}', "bad enum"),
         ('{"t":"music.control","action":"volumeUp"}', "volume is local, not a wire action"),
         ('{"t":"music.control","action":"volumeDown"}', "volume is local, not a wire action"),
+        ('{"t":"music.control","action":"repeat"}', "repeat without mode"),
+        ('{"t":"music.control","action":"repeat","mode":"all"}', "repeat mode outside its set"),
+        ('{"t":"music.control","action":"repeat","mode":null}', "null mode"),
+        ('{"t":"music.control","action":"pause","mode":"all"}', "mode outside its set on another action"),
         ('{"t":"hello","proto":1,"role":"host","name":"x"}', "host hello without ports"),
         ('{"t":"state","talk":false}', "state without queue"),
         ('{"t":"state","talk":false,"queue":[{"id":"a","title":"b"}]}', "queue item missing artist"),
@@ -131,8 +135,17 @@ def test_enums_match_the_spec():
     """PROTOCOL.md: music.control has no volume actions; talk.close has "unavailable"."""
     from motoparty_peer.protocol import SCHEMAS
 
-    assert SCHEMAS["music.control"]["action"][0] == ("pause", "resume", "next", "previous")
+    assert SCHEMAS["music.control"]["action"][0] == ("pause", "resume", "next", "previous", "repeat")
+    assert SCHEMAS["music.control"]["mode"][0] == ("off", "track", "queue")
     assert set(SCHEMAS["talk.close"]["reason"][0]) == {"trigger", "link", "unavailable"}
+
+
+@pytest.mark.parametrize("mode", ["off", "track", "queue"])
+def test_repeat_control_round_trips(mode):
+    """PROTOCOL.md "Repeat by touch": the mode to set, "off" included."""
+    msg = {"t": "music.control", "action": "repeat", "mode": mode}
+    assert encode_message(msg) == f'{{"t":"music.control","action":"repeat","mode":"{mode}"}}'.encode()
+    assert decode_message(encode_message(msg)) == msg
 
 
 @pytest.mark.parametrize("by", ["host", "client"])

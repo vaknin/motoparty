@@ -478,7 +478,7 @@ class Host:
                 log(f"   ({t} for {msg['id']!r}, which is not being loaded)")
             self._music_changed()  # the next track just became ready: music.next
         elif t == "music.control":
-            self._music_control(msg["action"])
+            self._music_control(msg["action"], msg.get("mode"))
         elif t == "command.text":
             self._client_command(msg["text"])
         elif t in ("music.search", "music.browse"):
@@ -774,8 +774,20 @@ class Host:
         self.send({"t": "music.stop"})
         self.send_state()
 
-    def _music_control(self, action: str) -> None:
-        if action == "pause":
+    def _set_repeat(self, mode: str) -> None:
+        """Touch repeat (ours or the client's): like the Pixel's button, it leaves the voice undo alone."""
+        repeat = None if mode == "off" else mode
+        if repeat == self.repeat:
+            return
+        self.repeat = repeat
+        log(f"   repeat {mode}")
+        self.send_state()
+
+    def _music_control(self, action: str, mode: str | None = None) -> None:
+        if action == "repeat":
+            # The codec drops a repeat without a mode, so there is always one here.
+            self._set_repeat(mode or "off")
+        elif action == "pause":
             self._pause() or log("   (nothing playing)")
         elif action == "resume":
             self._resume() or log("   (nothing paused)")
@@ -1176,8 +1188,7 @@ class Host:
                 if arg not in ("off", "track", "queue"):
                     log("usage: repeat off|track|queue")
                     continue
-                self.repeat = None if arg == "off" else arg
-                self.send_state()
+                self._set_repeat(arg)
             elif cmd == "talk":
                 if self.talk:
                     self._close_talk("host", "trigger")

@@ -34,6 +34,9 @@ object ControlAction {
     const val RESUME = "resume"
     const val NEXT = "next"
     const val PREVIOUS = "previous"
+
+    /** The repeat button (2026-10-01): sets [MusicControl.mode], required with it. */
+    const val REPEAT = "repeat"
 }
 
 /** PROTOCOL.md "Browsing": what `music.search` looks for. */
@@ -77,7 +80,9 @@ internal val ENUM_FIELDS: Map<Pair<String, String>, Set<String>> = mapOf(
     ("talk.close" to "reason") to
         setOf(CloseReason.TRIGGER, CloseReason.LINK, CloseReason.UNAVAILABLE),
     ("music.control" to "action") to
-        setOf(ControlAction.PAUSE, ControlAction.RESUME, ControlAction.NEXT, ControlAction.PREVIOUS),
+        setOf(ControlAction.PAUSE, ControlAction.RESUME, ControlAction.NEXT, ControlAction.PREVIOUS, ControlAction.REPEAT),
+    // Unlike `state.music.repeat`, `off` is a value here: the mode to set.
+    ("music.control" to "mode") to RepeatMode.entries.map { it.word }.toSet(),
     ("announce" to "earcon") to setOf(Earcon.OK, Earcon.ERROR),
     ("music.search" to "kind") to setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS),
     ("music.enqueue" to "mode") to setOf(EnqueueMode.NOW, EnqueueMode.NEXT, EnqueueMode.END),
@@ -162,7 +167,11 @@ data object MusicStop : Message
 
 @Serializable
 @SerialName("music.control")
-data class MusicControl(val action: String) : Message
+data class MusicControl(
+    val action: String,
+    /** [RepeatMode.word] for [ControlAction.REPEAT] (required there, `off` included); absent otherwise. */
+    val mode: String? = null,
+) : Message
 
 @Serializable
 @SerialName("command.text")

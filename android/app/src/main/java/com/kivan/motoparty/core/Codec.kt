@@ -82,8 +82,14 @@ object Codec {
         return message
     }
 
-    /** The field rules a type alone cannot say: `music.edit move` requires a `to` ≥ 0. */
+    /**
+     * The field rules a type alone cannot say: `music.edit move` requires a `to` ≥ 0, and
+     * `music.control repeat` a `mode` (its value is checked by [checkEnums]).
+     */
     private fun checkRules(m: Message) {
+        if (m is MusicControl && m.action == ControlAction.REPEAT && m.mode == null) {
+            throw MalformedMessageException("music.control repeat needs a mode")
+        }
         if (m is MusicEdit && m.op == EditOp.MOVE && (m.to == null || m.to < 0)) {
             throw MalformedMessageException("music.edit move needs a to >= 0, got ${m.to}")
         }

@@ -72,6 +72,8 @@ public enum TalkCloseReason: String, Codable, Sendable {
 /// malformed message and is dropped.
 public enum MusicAction: String, Codable, Sendable, CaseIterable {
     case pause, resume, next, previous
+    /// The repeat button (2026-10-01): needs `MusicControl.mode`.
+    case `repeat`
 }
 
 public enum Earcon: String, Codable, Sendable { case ok, error }
@@ -87,6 +89,39 @@ public enum QueueEditOp: String, Codable, Sendable { case jump, remove, clear, m
 
 /// `state.music.repeat`; absent means off (the host never sends `"off"`).
 public enum RepeatMode: String, Codable, Sendable { case track, queue }
+
+/// The mode a `music.control` `repeat` sets (PROTOCOL.md "Repeat by touch").
+/// Unlike `state`, `off` is sent here.
+public enum RepeatSetting: String, Codable, Sendable, CaseIterable {
+    case off, track, queue
+
+    /// The host's mode as `state` gives it (`nil` is off).
+    public init(_ mode: RepeatMode?) {
+        switch mode {
+        case nil: self = .off
+        case .track: self = .track
+        case .queue: self = .queue
+        }
+    }
+
+    /// The button's order, as on the Pixel: off → queue → track → off.
+    public var next: RepeatSetting {
+        switch self {
+        case .off: .queue
+        case .queue: .track
+        case .track: .off
+        }
+    }
+
+    /// What the button says it is now (the Pixel's words).
+    public var label: String {
+        switch self {
+        case .off: "Repeat off"
+        case .queue: "Repeat the queue"
+        case .track: "Repeat this song"
+        }
+    }
+}
 
 // MARK: - Payloads
 
@@ -197,7 +232,26 @@ public struct MusicNext: Codable, Equatable, Sendable {
 
 public struct MusicControl: Codable, Equatable, Sendable {
     public var action: MusicAction
-    public init(action: MusicAction) { self.action = action }
+    /// For `repeat` (required): the mode to set. Absent with the other actions.
+    public var mode: RepeatSetting?
+    public init(action: MusicAction, mode: RepeatSetting? = nil) { self.action = action; self.mode = mode }
+
+    /// The repeat button's message.
+    public static func setRepeat(_ mode: RepeatSetting) -> MusicControl { MusicControl(action: .repeat, mode: mode) }
+
+    private enum CodingKeys: String, CodingKey { case action, mode }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        action = try c.decode(MusicAction.self, forKey: .action)
+        // A mode outside the set fails here whatever the action.
+        mode = try c.decodeIfPresent(RepeatSetting.self, forKey: .mode)
+        // `repeat` without a mode is malformed.
+        if action == .repeat, mode == nil {
+            throw DecodingError.dataCorruptedError(forKey: .mode, in: c,
+                                                   debugDescription: "repeat needs a mode")
+        }
+    }
 }
 
 public struct CommandText: Codable, Equatable, Sendable {

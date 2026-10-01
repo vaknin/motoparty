@@ -34,7 +34,7 @@ HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase r
           say <text> (command.text as is) | pause | resume | next | previous | vol+ | vol- (local) |
           unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
           browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit move <i> <to> |
-          edit clear |
+          edit clear | repeat off|track|queue |
           stats | raw <json> (send unvalidated) | quit"""
 
 MUSIC_CONTROL = {"pause": "pause", "resume": "resume", "next": "next", "previous": "previous"}
@@ -817,6 +817,12 @@ class Client:
                     f"nothing sent (the peer has no real volume)")
             elif cmd in MUSIC_CONTROL:
                 self.send({"t": "music.control", "action": MUSIC_CONTROL[cmd]})
+            elif cmd == "repeat":
+                mode = rest.strip().lower()
+                if mode not in ("off", "track", "queue"):
+                    log("usage: repeat off|track|queue")
+                    continue
+                self.send({"t": "music.control", "action": "repeat", "mode": mode})
             elif cmd in ("search", "browse", "enqueue", "edit"):
                 self._browse_cmd(cmd, rest)
             elif cmd == "stats":

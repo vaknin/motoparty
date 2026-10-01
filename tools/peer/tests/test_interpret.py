@@ -372,6 +372,29 @@ def test_music_edit_move():
     asyncio.run(run())
 
 
+def test_client_touch_repeat_sets_the_mode_and_keeps_the_voice_undo():
+    """PROTOCOL.md "Repeat by touch": music.control repeat sets the mode, one state per change."""
+    async def run():
+        h = _queued()
+        _say(h, "drop the next one", '{"actions":[{"type":"remove","at":[1]}]}')
+        undo = h.undo
+        assert undo is not None
+        for mode, wire in (("queue", "queue"), ("track", "track"), ("off", None)):
+            del h.sent[:]
+            msg = validate_message({"t": "music.control", "action": "repeat", "mode": mode})
+            await h._on_message(h.current, msg, now_ms())
+            states = [m for m in h.sent if m["t"] == "state"]
+            assert len(states) == 1 and states[0]["music"].get("repeat") == wire
+            assert validate_message(states[0]) == states[0]
+            del h.sent[:]
+            await h._on_message(h.current, msg, now_ms())  # the same mode again changes nothing
+            assert [m for m in h.sent if m["t"] == "state"] == []
+        assert h.undo is undo
+        _say(h, "put it back", '{"actions":[{"type":"undo"}]}')
+        assert _announces(h)[-1] == "Put back 1 song"
+    asyncio.run(run())
+
+
 def test_repeat_at_the_end_of_a_track():
     async def run():
         h = _queued()

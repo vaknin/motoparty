@@ -60,7 +60,7 @@ final class CommandFixtureTests: XCTestCase {
         XCTAssertFalse(CommandParser.parse("play louder").isVolume)
         // …and is not a wire action any more.
         XCTAssertNil(MusicAction(rawValue: "volumeUp"))
-        XCTAssertEqual(MusicAction.allCases.map(\.rawValue), ["pause", "resume", "next", "previous"])
+        XCTAssertEqual(MusicAction.allCases.map(\.rawValue), ["pause", "resume", "next", "previous", "repeat"])
     }
 
     func testEnd() {

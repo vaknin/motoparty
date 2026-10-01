@@ -76,7 +76,10 @@ _BY = ("host", "client")
 _REASON = ("trigger", "link", "unavailable")
 _MIC = ("host",)
 # Volume is local (PROTOCOL.md "Commands"): volumeUp/volumeDown are not wire actions.
-_ACTION = ("pause", "resume", "next", "previous")
+_ACTION = ("pause", "resume", "next", "previous", "repeat")
+# music.control mode (2026-10-01): the repeat mode to set; required with "repeat" (see
+# _check_control). Unlike state.music.repeat, "off" is sent.
+_SET_REPEAT = ("off", "track", "queue")
 _EARCON = ("ok", "error")
 # Browsing (PROTOCOL.md "Browsing")
 _KIND = ("songs", "albums", "playlists")
@@ -154,7 +157,7 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
     # H->C: track id starts at position 0 at atHostTimeMs, gapless (PROTOCOL.md "Music flow" 6).
     "music.next": {"id": ("str", True), "atHostTimeMs": ("int", True)},
     "music.stop": {},
-    "music.control": {"action": (_ACTION, True)},
+    "music.control": {"action": (_ACTION, True), "mode": (_SET_REPEAT, False)},
     "command.text": {"text": ("str", True), "lang": ("str", True)},
     "music.search": {"id": ("int", True), "kind": (_KIND, True), "query": ("str", True)},
     "music.browse": {"id": ("int", True), "ref": ("str", True)},
@@ -252,6 +255,12 @@ def _check_edit(msg: dict[str, Any]) -> None:
         raise ProtocolError(f"music.edit: op 'move' requires an integer 'to' >= 0, got {msg.get('to')!r}")
 
 
+def _check_control(msg: dict[str, Any]) -> None:
+    # PROTOCOL.md "Repeat by touch": a repeat without a mode is malformed.
+    if msg["action"] == "repeat" and "mode" not in msg:
+        raise ProtocolError("music.control: action 'repeat' requires a 'mode'")
+
+
 def validate_message(obj: Any) -> dict[str, Any]:
     """Validate a parsed JSON value; return the normalised message.
 
@@ -274,6 +283,8 @@ def validate_message(obj: Any) -> dict[str, Any]:
         _check_state(out)
     elif t == "music.edit":
         _check_edit(out)
+    elif t == "music.control":
+        _check_control(out)
     return out
 
 

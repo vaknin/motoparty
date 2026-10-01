@@ -330,7 +330,7 @@ private struct NowPlayingCard: View {
                 }
             }
             if let track = model.nowPlaying {
-                TrackProgress(durationMs: track.durationMs, repeatMode: model.hostState?.music?.repeat)
+                TrackProgress(durationMs: track.durationMs)
                 MusicStatusLine(status: model.musicStatus)
             }
             TransportControls()
@@ -369,12 +369,11 @@ private struct NowPlayingCard: View {
 }
 
 /// The bar and the two clocks, from the host's anchor once a second. Only
-/// this view redraws for it. Between the clocks, the host's repeat mode when
-/// it is on (display only: the passenger changes it by voice).
+/// this view redraws for it. The repeat mode is on its button
+/// (`TransportControls`).
 private struct TrackProgress: View {
     @EnvironmentObject private var model: AppModel
     let durationMs: Int64
-    let repeatMode: RepeatMode?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
@@ -385,11 +384,6 @@ private struct TrackProgress: View {
                     Text(TrackTime.clock(position))
                         .contentTransition(.numericText())
                     Spacer()
-                    if let repeatMode {
-                        Image(systemName: repeatMode == .track ? "repeat.1" : "repeat")
-                            .foregroundStyle(.tint)
-                    }
-                    Spacer()
                     Text(TrackTime.clock(Double(durationMs)))
                 }
                 .font(.caption.monospacedDigit())
@@ -398,16 +392,7 @@ private struct TrackProgress: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Position")
-            .accessibilityValue(accessibilityValue(position))
-        }
-    }
-
-    private func accessibilityValue(_ position: Double) -> String {
-        let clocks = "\(TrackTime.clock(position)) of \(TrackTime.clock(Double(durationMs)))"
-        switch repeatMode {
-        case .track: return clocks + ", repeating this song"
-        case .queue: return clocks + ", repeating the queue"
-        case nil: return clocks
+            .accessibilityValue("\(TrackTime.clock(position)) of \(TrackTime.clock(Double(durationMs)))")
         }
     }
 }
@@ -436,7 +421,9 @@ private struct MusicStatusLine: View {
 }
 
 /// Previous / play-pause / next, sent to the host as `music.control`: plain
-/// large glyphs, each at least 64 pt to press.
+/// large glyphs, each at least 64 pt to press. The repeat button (off → queue
+/// → track) sits at the right end, balanced by an empty slot on the left so
+/// play stays in the middle, as on the Pixel.
 private struct TransportControls: View {
     @EnvironmentObject private var model: AppModel
     @State private var pressed = 0
@@ -445,13 +432,20 @@ private struct TransportControls: View {
     /// is then Play, for this phone's speaker.
     private var playingHere: Bool { model.musicPlaying && !model.musicHeldForRoute }
 
+    /// The repeat button's side, and the empty slot's.
+    private static let repeatSize: CGFloat = 44
+
     var body: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 0) {
+            Color.clear.frame(width: Self.repeatSize, height: Self.repeatSize)
+                .accessibilityHidden(true)
+            Spacer(minLength: 0)
             Button { press { model.musicControl(.previous) } } label: {
                 Image(systemName: "backward.fill").font(.system(size: 28)).frame(width: 64, height: 64)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Previous track")
+            Spacer(minLength: 0)
             Button { press { model.playPauseButton() } } label: {
                 Image(systemName: playingHere ? "pause.fill" : "play.fill")
                     .font(.system(size: 44))
@@ -461,16 +455,38 @@ private struct TransportControls: View {
             }
             .disabled(model.nowPlaying == nil)
             .accessibilityLabel(playingHere ? "Pause" : "Play")
+            Spacer(minLength: 0)
             Button { press { model.musicControl(.next) } } label: {
                 Image(systemName: "forward.fill").font(.system(size: 28)).frame(width: 64, height: 64)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel("Next track")
+            Spacer(minLength: 0)
+            repeatButton
         }
+        .frame(maxWidth: .infinity)
         .buttonStyle(GlyphButtonStyle())
         .foregroundStyle(.primary)
         .disabled(!model.link.isConnected)
         .sensoryFeedback(.success, trigger: pressed)
+    }
+
+    /// Off: a quiet glyph. Queue or track: lit, on a tinted circle; track
+    /// shows the "1". It changes when the host's `state` does.
+    private var repeatButton: some View {
+        let mode = model.repeatSetting
+        let on = mode != .off
+        return Button { press { model.repeatButton() } } label: {
+            Image(systemName: mode == .track ? "repeat.1" : "repeat")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(on ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: Self.repeatSize, height: Self.repeatSize)
+                .background { if on { Circle().fill(.tint.opacity(0.2)) } }
+                .contentShape(Rectangle())
+        }
+        .disabled(model.nowPlaying == nil)
+        .accessibilityLabel(mode.label)
     }
 
     private func press(_ action: () -> Void) {

@@ -110,6 +110,16 @@
    "action": "previous"
   },
   {
+   "t": "music.control",
+   "action": "repeat",
+   "mode": "queue"
+  },
+  {
+   "t": "music.control",
+   "action": "repeat",
+   "mode": "off"
+  },
+  {
    "t": "command.text",
    "text": "play album dark side of the moon",
    "lang": "en-US"

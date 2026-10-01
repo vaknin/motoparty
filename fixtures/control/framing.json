@@ -72,6 +72,18 @@
    "json": "{\"t\":\"music.edit\",\"op\":\"move\",\"index\":0,\"id\":\"x\",\"to\":-1}"
   },
   {
+   "_doc": "music.control repeat without mode: drop, keep",
+   "json": "{\"t\":\"music.control\",\"action\":\"repeat\"}"
+  },
+  {
+   "_doc": "music.control repeat with a mode outside its set: drop, keep",
+   "json": "{\"t\":\"music.control\",\"action\":\"repeat\",\"mode\":\"all\"}"
+  },
+  {
+   "_doc": "music.control repeat with a non-string mode: drop, keep",
+   "json": "{\"t\":\"music.control\",\"action\":\"repeat\",\"mode\":1}"
+  },
+  {
    "_doc": "state music.repeat outside its set (off is never sent): drop, keep",
    "json": "{\"t\":\"state\",\"talk\":false,\"music\":{\"id\":\"x1\",\"title\":\"A\",\"artist\":\"B\",\"playing\":true,\"positionMs\":0,\"atHostTimeMs\":5,\"durationMs\":1000,\"repeat\":\"off\"},\"queue\":[]}"
   },

@@ -87,7 +87,7 @@ catches up.
 | `music.pause`   | H→C   | `id`, `positionMs` |
 | `music.next`    | H→C   | `id`, `atHostTimeMs` — the track that follows the current one without a gap, see Music flow 6 |
 | `music.stop`    | H→C   | (nothing) |
-| `music.control` | C→H   | `action`: `"pause"`\|`"resume"`\|`"next"`\|`"previous"` (button presses on the client; volume is local, see Commands) |
+| `music.control` | C→H   | `action`: `"pause"`\|`"resume"`\|`"next"`\|`"previous"`\|`"repeat"` (button presses on the client; volume is local, see Commands), `mode` (required for `"repeat"`, 2026-10-01): `"off"`\|`"track"`\|`"queue"`, the repeat mode to set. See "Repeat by touch" |
 | `command.text`  | C→H   | `text`: the recognised command, the first phrase of a talk the client opened (see Commands), `lang`: BCP-47 tag |
 | `music.search`  | C→H   | `id`: int (request id), `kind`: `"songs"`\|`"albums"`\|`"playlists"`, `query`: string. See Browsing |
 | `music.browse`  | C→H   | `id`: int, `ref`: string — the `ref` of an album or playlist result |
@@ -113,6 +113,16 @@ mid-talk) opens it the same way. A receiver ignores `mic` on `state{talk:false}`
 tracks after the current one; an item is `{id, title, artist}` plus optional `durationMs` and `art` (2026-09-30; the host leaves `art` out of every item when `state` would pass 48 KiB). `positionMs`/`atHostTimeMs` form the same anchor as in
 `music.play`; while paused (including during talk) `playing` is false and `positionMs` is the
 pause position.
+
+**Repeat by touch** (2026-10-01). The client's repeat button sends
+`music.control{action:"repeat", mode}` with the mode it wants, not a toggle: the button cycles
+off → queue → track → off from the mode in the last `state` (absent = off), so a press that
+crosses a change from the other phone sets what the rider saw next, not a second step. The
+host sets the mode exactly like its own repeat button (a mode it already has changes nothing)
+and sends `state`. `mode` is required with `"repeat"`: a `"repeat"` without it, or a `mode`
+outside the set with any action, is malformed and dropped. `mode` is `"off"` here although
+`state` never carries `"off"`. Other actions ignore a valid `mode`. A touch repeat is not a
+voice list, so it neither saves nor clears the voice undo (Commands, *Voice actions*).
 
 ### Liveness
 
@@ -661,7 +671,7 @@ repeat mode as they were. `undo` within **`UNDO_MS` = 600000 ms** (10 minutes) p
 current track stays; it is left out of the restored list if it is in it) and says "Put back <n>
 songs" when tracks came back, else "Undone"; otherwise "Nothing to undo". One level: an undo
 cannot be undone, and a `play` or `jump` (a new queue or a new current track) forgets it. Touch
-keeps its own remove-undo.
+keeps its own remove-undo; a touch repeat or move (either phone) neither saves nor forgets it.
 
 Vectors: `fixtures/interpret.json` (the model's answer and the window's sizes → actions,
 question or conversation; this is the mapping only, not what a model says).
