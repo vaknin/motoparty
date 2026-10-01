@@ -1228,10 +1228,11 @@ final class AppModel: ObservableObject {
     }
 
     /// Changes the upcoming queue. `index`/`id` name `state.queue[index]` for
-    /// jump and remove; the host ignores the edit if the queue moved since.
-    func editQueue(_ op: QueueEditOp, index: Int? = nil, id: String? = nil) {
+    /// jump, remove and move; the host ignores the edit if the queue moved
+    /// since. `to` (move only) is where the track ends up.
+    func editQueue(_ op: QueueEditOp, index: Int? = nil, id: String? = nil, to: Int? = nil) {
         if op == .jump { releaseRouteHold() }
-        send(.musicEdit(MusicEdit(op: op, index: index, id: id)))
+        send(.musicEdit(MusicEdit(op: op, index: index, id: id, to: to)))
     }
 
     private func nextRequestId() -> Int {

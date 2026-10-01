@@ -81,7 +81,9 @@ _EARCON = ("ok", "error")
 # Browsing (PROTOCOL.md "Browsing")
 _KIND = ("songs", "albums", "playlists")
 _MODE = ("now", "next", "end")
-_OP = ("jump", "remove", "clear")
+_OP = ("jump", "remove", "clear", "move")
+# state.music.repeat (2026-10-01): absent = off, and the host never sends "off".
+_REPEAT = ("track", "queue")
 
 STATE_MUSIC_SCHEMA: dict[str, tuple[Any, bool]] = {
     "id": ("str", True),
@@ -92,6 +94,7 @@ STATE_MUSIC_SCHEMA: dict[str, tuple[Any, bool]] = {
     "atHostTimeMs": ("int", True),
     "durationMs": ("int", True),
     "art": ("str", False),
+    "repeat": (_REPEAT, False),
 }
 
 QUEUE_ITEM_SCHEMA: dict[str, tuple[Any, bool]] = {
@@ -166,8 +169,9 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
         "art": ("str", False),
     },
     # index/id are required for jump/remove, but a stale or missing pair is the host's
-    # "ignore the edit" case, not a malformed frame (see host.py).
-    "music.edit": {"op": (_OP, True), "index": ("int", False), "id": ("str", False)},
+    # "ignore the edit" case, not a malformed frame (see host.py). `to` is required (an int >= 0)
+    # for "move" (see _check_edit).
+    "music.edit": {"op": (_OP, True), "index": ("int", False), "id": ("str", False), "to": ("int", False)},
     # ask (only true): the text is a clarifying question (PROTOCOL.md "Commands").
     "announce": {"text": ("str", True), "earcon": (_EARCON, False), "ask": ("bool", False)},
     "state": {
@@ -242,6 +246,12 @@ def _check_state(msg: dict[str, Any]) -> None:
         msg.pop("mic", None)
 
 
+def _check_edit(msg: dict[str, Any]) -> None:
+    # PROTOCOL.md "Browsing" 4: a move without `to`, or with a negative one, is malformed.
+    if msg["op"] == "move" and msg.get("to", -1) < 0:
+        raise ProtocolError(f"music.edit: op 'move' requires an integer 'to' >= 0, got {msg.get('to')!r}")
+
+
 def validate_message(obj: Any) -> dict[str, Any]:
     """Validate a parsed JSON value; return the normalised message.
 
@@ -262,6 +272,8 @@ def validate_message(obj: Any) -> dict[str, Any]:
         _check_hello(out)
     elif t == "state":
         _check_state(out)
+    elif t == "music.edit":
+        _check_edit(out)
     return out
 
 

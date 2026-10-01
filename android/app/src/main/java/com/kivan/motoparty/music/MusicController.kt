@@ -9,6 +9,7 @@ import com.kivan.motoparty.core.MusicPause
 import com.kivan.motoparty.core.MusicPlay
 import com.kivan.motoparty.core.MusicState
 import com.kivan.motoparty.core.MusicStop
+import com.kivan.motoparty.core.RepeatMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -109,8 +110,23 @@ class MusicController(
     private var gapless: Gapless? = null
     private var gaplessRetry: Job? = null
 
-    /** Is there a track after the current one? False = [next] parks the last track instead. */
+    /** Is there a track after the current one? */
     val hasNext: Boolean get() = index + 1 < queue.size
+
+    /**
+     * `state.music.repeat` (2026-10-01): [RepeatMode.TRACK] starts the current track again when it
+     * ends (an ordinary start, never gapless); [RepeatMode.QUEUE] goes on from the first track the
+     * queue holds after the last one, instead of parking it.
+     */
+    var repeat: RepeatMode = RepeatMode.OFF
+        private set
+
+    /** [next] would park the last track: nothing after it and the queue does not repeat. */
+    val atEnd: Boolean get() = !hasNext && !(repeat == RepeatMode.QUEUE && queue.isNotEmpty())
+
+    /** Where the current track is now, in ms (0 when nothing is anchored). */
+    val positionMs: Long
+        get() = sync.anchor?.takeIf { it.id == current?.id }?.expectedAt(hostNow())?.coerceAtLeast(0) ?: 0
 
     init {
         player.onAdvanced = ::onAdvanced
@@ -146,6 +162,76 @@ class MusicController(
 
     /** Would [jump] accept `upcoming[i]` = [id]? A stale jump must not end a talk (Browsing step 3). */
     fun canJump(i: Int, id: String): Boolean = QueueEdits.at(queue, index, i, id) != null
+
+    /**
+     * A played track again (the `jump` voice action to −n): [track] goes right after the current
+     * one and plays now; the rest of the queue stays. With nothing loaded it is the whole queue.
+     */
+    fun jumpBack(track: Track) {
+        if (current == null) return setQueue(listOf(track), 0)
+        queue = QueueEdits.inserted(queue, index, EnqueueMode.NEXT, listOf(track))
+        index++
+        startCurrent(0)
+    }
+
+    /**
+     * `music.edit move` (drag to reorder): `upcoming[i]` taken out and put back so that it is
+     * `upcoming[to]` afterwards (past the end = the end). False when [id] no longer sits at [i] (stale).
+     */
+    fun move(i: Int, id: String, to: Int): Boolean {
+        queue = QueueEdits.moved(queue, index, i, id, to) ?: return false
+        upcomingChanged(minOf(i, to))
+        return true
+    }
+
+    /**
+     * The upcoming list becomes [tracks] (a voice `remove`, `move` or `undo`, worked out on ids by
+     * [VoiceEdits]); the current track plays on. One change.
+     */
+    fun replaceUpcoming(tracks: List<Track>) {
+        val head = if (index < 0) emptyList() else queue.take(index + 1)
+        val ahead = upcoming.take(PREFETCH_AHEAD)
+        queue = head + tracks.take(QueueEdits.MAX_UPCOMING)
+        upcomingChanged(if (upcoming.take(PREFETCH_AHEAD) != ahead) 0 else PREFETCH_AHEAD)
+    }
+
+    /** The upcoming list changed from position [from] on: tell the client, prefetch, and re-arm gapless. */
+    private fun upcomingChanged(from: Int) {
+        onChanged()
+        if (from < PREFETCH_AHEAD) prefetchNext()
+        armGapless()
+    }
+
+    /** Touch or voice: the repeat mode, sent in `state`. */
+    fun setRepeat(mode: RepeatMode) {
+        if (mode == repeat) return
+        repeat = mode
+        log("repeat ${mode.word}")
+        onChanged()
+        // A repeated track is never announced gapless; anything else may be again.
+        armGapless()
+    }
+
+    /**
+     * Move in the current track to [positionMs], clamped to it. Playing: started there, like any
+     * play. Paused, or parked by a talk: only the anchor moves, and the resume (the talk's close)
+     * starts from there. False with nothing anchored.
+     */
+    fun seek(positionMs: Long): Boolean {
+        val t = current ?: return false
+        val a = sync.anchor?.takeIf { it.id == t.id } ?: return false
+        val length = player.durationMs ?: t.durationMs
+        // Never onto the very end: that would only end the track.
+        val pos = if (length > SEEK_END_MARGIN_MS) positionMs.coerceIn(0, length - SEEK_END_MARGIN_MS) else 0
+        log("seek to $pos ms")
+        if (a.playing) {
+            playFrom(t.id, pos)
+        } else {
+            sync.apply(a.copy(positionMs = pos, atHostTimeMs = hostNow(), playing = false))
+            onChanged()
+        }
+        return true
+    }
 
     /**
      * Spoken `shuffle` (PROTOCOL.md "Commands"): shuffle the upcoming tracks, the current one plays
@@ -189,9 +275,17 @@ class MusicController(
         armGapless()
     }
 
-    /** The next track; on the last one the queue is kept and that track is parked ([parkAtEnd]). */
+    /**
+     * The next track. On the last one the queue is kept and that track is parked ([parkAtEnd]), or,
+     * with [RepeatMode.QUEUE], the queue starts again from its first track.
+     */
     fun next() {
-        if (!hasNext) return parkAtEnd()
+        if (!hasNext) {
+            if (repeat != RepeatMode.QUEUE || queue.isEmpty()) return parkAtEnd()
+            log("repeat queue: back to the first track")
+            index = 0
+            return startCurrent(0)
+        }
         index++
         startCurrent(0)
     }
@@ -326,7 +420,12 @@ class MusicController(
     }
 
     fun onTrackEnded() {
-        if (current != null && isPlaying) next()
+        if (current == null || !isPlaying) return
+        if (repeat == RepeatMode.TRACK) {
+            log("repeat track: ${current?.id} again")
+            return startCurrent(0)
+        }
+        next()
     }
 
     /**
@@ -593,6 +692,7 @@ class MusicController(
             atHostTimeMs = a?.atHostTimeMs ?: hostNow(),
             durationMs = t.durationMs,
             art = t.art,
+            repeat = repeat.wire,
         )
     }
 
@@ -757,7 +857,7 @@ class MusicController(
         val a = sync.anchor
         val next = upcoming.firstOrNull()
         if (t == null || a == null || next == null || !a.playing || a.id != t.id || talkOpen ||
-            player.loadedId != t.id || next.id == t.id
+            player.loadedId != t.id || next.id == t.id || repeat == RepeatMode.TRACK
         ) return disarmGapless(tellClient = true)
         val file = caches.cached(next.id) ?: return disarmGapless(tellClient = true)
         if (hasClient() && next.id !in clientReady) return disarmGapless(tellClient = true)
@@ -870,6 +970,8 @@ class MusicController(
         const val GAPLESS_RETRY_MS = 1_000L
         const val READY_TIMEOUT_MS = 8_000L
         const val RESTART_THRESHOLD_MS = 3_000L
+        /** A seek stops this far before the end of the track. */
+        const val SEEK_END_MARGIN_MS = 1_000L
         const val DUCK_VOLUME = 0.2f
         /** Upcoming tracks kept cached ahead of the current one, for patchy coverage. */
         const val PREFETCH_AHEAD = 3
@@ -922,6 +1024,20 @@ internal object QueueEdits {
         var mixed = upcoming.shuffled(random)
         if (mixed == upcoming && upcoming.distinct().size > 1) mixed = upcoming.drop(1) + upcoming.first()
         return head + mixed
+    }
+
+    /**
+     * `music.edit move`: `upcoming[i]` taken out and put back so that it is `upcoming[to]`
+     * afterwards (past the end = the end); null when that is not [id] any more.
+     */
+    fun moved(queue: List<Track>, current: Int, i: Int, id: String, to: Int): List<Track>? {
+        val at = at(queue, current, i, id) ?: return null
+        if (to < 0) return null
+        val head = queue.take(current + 1)
+        val upcoming = queue.drop(current + 1).toMutableList()
+        val t = upcoming.removeAt(at - current - 1)
+        upcoming.add(to.coerceAtMost(upcoming.size), t)
+        return head + upcoming
     }
 
     /** The queue position of `upcoming[i]`, or null when that is not [id] any more. */

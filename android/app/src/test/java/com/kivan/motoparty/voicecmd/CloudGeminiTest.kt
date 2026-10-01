@@ -1,5 +1,8 @@
 package com.kivan.motoparty.voicecmd
 
+import com.kivan.motoparty.core.RepeatMode
+import com.kivan.motoparty.music.Track
+import com.kivan.motoparty.music.VoiceWindow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.boolean
@@ -15,11 +18,20 @@ import org.junit.Test
 class CloudGeminiTest {
     private val schema = Json.parseToJsonElement("""{"type":"object"}""")
 
+    private fun body(window: kotlinx.serialization.json.JsonObject) =
+        Json.parseToJsonElement(CloudGemini.requestBody("gemini-x", "PROMPT", schema, window)).jsonObject
+
+    private fun input(window: kotlinx.serialization.json.JsonObject) =
+        Json.parseToJsonElement(body(window)["input"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content).jsonObject
+
     @Test
     fun requestBodyIsTheInteractionsShape() {
-        val body = Json.parseToJsonElement(
-            CloudGemini.requestBody("gemini-x", "PROMPT", schema, "put on \"moby\"", "en-US", "Honey – Moby", listOf("Porcelain")),
-        ).jsonObject
+        val porcelain = Track("p1", "Porcelain", "Moby", "Play", 241_000)
+        val window = VoiceWindow.build(
+            "put on \"moby\"", "en-US", porcelain, 74_500, RepeatMode.OFF,
+            listOf(Track("n1", "Natural Blues", "Moby", durationMs = 0)), emptyList(), null,
+        ).input
+        val body = body(window)
         assertEquals("gemini-x", body["model"]!!.jsonPrimitive.content)
         assertEquals("PROMPT", body["system_instruction"]!!.jsonPrimitive.content)
         assertFalse(body["store"]!!.jsonPrimitive.boolean)
@@ -27,24 +39,24 @@ class CloudGeminiTest {
         assertNull(config["temperature"])
         assertEquals("minimal", config["thinking_level"]!!.jsonPrimitive.content)
         val format = body["response_format"]!!.jsonObject
+        assertEquals("text", format["type"]!!.jsonPrimitive.content)
         assertEquals("application/json", format["mime_type"]!!.jsonPrimitive.content)
         assertEquals(schema, format["schema"])
-        // The phrase is one JSON text part: quotes in it cannot break out of the data.
+        assertEquals(setOf("model", "system_instruction", "input", "generation_config", "response_format", "store"), body.keys)
+        // The window is the one JSON text part: quotes in the phrase cannot break out of the data.
         val part = body["input"]!!.jsonArray.single().jsonObject
         assertEquals("text", part["type"]!!.jsonPrimitive.content)
         val input = Json.parseToJsonElement(part["text"]!!.jsonPrimitive.content).jsonObject
+        assertEquals(window, input)
         assertEquals("put on \"moby\"", input["phrase"]!!.jsonPrimitive.content)
-        assertEquals("en-US", input["lang"]!!.jsonPrimitive.content)
-        assertEquals("Honey – Moby", input["playing"]!!.jsonPrimitive.content)
-        assertEquals("Porcelain", input["upNext"]!!.jsonArray.single().jsonPrimitive.content)
+        assertEquals("Porcelain", input["playing"]!!.jsonObject["title"]!!.jsonPrimitive.content)
         assertNull(input["asked"])
     }
 
     @Test
     fun aReplyCarriesTheQuestion() {
-        val asked = Interpreter.Asked("play an album by moby", "Which Moby album?")
-        val body = Json.parseToJsonElement(CloudGemini.requestBody("gemini-x", "P", schema, "any", "en-US", null, emptyList(), asked)).jsonObject
-        val input = Json.parseToJsonElement(body["input"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content).jsonObject
+        val asked = VoiceWindow.Asked("play an album by moby", "Which Moby album?")
+        val input = input(VoiceWindow.build("any", "en-US", null, 0, RepeatMode.OFF, emptyList(), emptyList(), null, asked).input)
         assertEquals("any", input["phrase"]!!.jsonPrimitive.content)
         assertEquals("play an album by moby", input["asked"]!!.jsonObject["phrase"]!!.jsonPrimitive.content)
         assertEquals("Which Moby album?", input["asked"]!!.jsonObject["question"]!!.jsonPrimitive.content)
@@ -52,8 +64,7 @@ class CloudGeminiTest {
 
     @Test
     fun nothingPlayingIsNull() {
-        val body = Json.parseToJsonElement(CloudGemini.requestBody("gemini-x", "P", schema, "next one", "en-US", null, emptyList())).jsonObject
-        val input = Json.parseToJsonElement(body["input"]!!.jsonArray.single().jsonObject["text"]!!.jsonPrimitive.content).jsonObject
+        val input = input(VoiceWindow.build("next one", "en-US", null, 0, RepeatMode.OFF, emptyList(), emptyList(), null).input)
         assertEquals(JsonNull, input["playing"])
         assertTrue(input["upNext"]!!.jsonArray.isEmpty())
     }
@@ -62,9 +73,9 @@ class CloudGeminiTest {
     fun answerTextJoinsTheModelOutputTextParts() {
         val body = """{"status":"completed","steps":[
             {"type":"thought","content":[{"type":"text","text":"hm"}]},
-            {"type":"model_output","content":[{"type":"text","text":"{\"action\":"},{"type":"image"},{"type":"text","text":"\"next\"}"}]}
+            {"type":"model_output","content":[{"type":"text","text":"{\"actions\":"},{"type":"image"},{"type":"text","text":"[]}"}]}
         ]}"""
-        assertEquals("""{"action":"next"}""", CloudGemini.answerText(body))
+        assertEquals("""{"actions":[]}""", CloudGemini.answerText(body))
     }
 
     @Test

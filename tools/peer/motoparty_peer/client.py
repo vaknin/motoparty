@@ -33,7 +33,8 @@ HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase r
           ends the talk, a volume phrase is local and closes it from here) |
           say <text> (command.text as is) | pause | resume | next | previous | vol+ | vol- (local) |
           unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
-          browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit clear |
+          browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit move <i> <to> |
+          edit clear |
           stats | raw <json> (send unvalidated) | quit"""
 
 MUSIC_CONTROL = {"pause": "pause", "resume": "resume", "next": "next", "previous": "previous"}
@@ -89,6 +90,7 @@ class Client:
         self.req_album: str | None = None  # collection title when browsing one
         self.results: list[dict] = []
         self.queue: list[dict] = []
+        self.repeat: str | None = None  # state.music.repeat, None = off
         # Talk flow 1: the timer of a talk.open request the host has not decided yet
         self.talk_request: asyncio.TimerHandle | None = None
         self.got_bye = False
@@ -309,6 +311,10 @@ class Client:
             # A talk learnt only from state (joined mid-talk) opens in the mode state names.
             self._set_talk(msg["talk"], mic=msg.get("mic"))
             self.queue = msg["queue"]
+            repeat = (msg.get("music") or {}).get("repeat")
+            if repeat != self.repeat:
+                self.repeat = repeat
+                log(f"   repeat: {repeat or 'off'}")
             self._state_vs_next(msg.get("music"))
         elif t == "music.results":
             self._results(msg)
@@ -762,8 +768,14 @@ class Client:
             elif len(args) == 2 and args[0] in ("jump", "remove") and args[1].isdigit() and int(args[1]) < len(self.queue):
                 i = int(args[1])
                 self.send({"t": "music.edit", "op": args[0], "index": i, "id": self.queue[i]["id"]})
+            elif (len(args) == 3 and args[0] == "move" and args[1].isdigit() and int(args[1]) < len(self.queue)
+                  and args[2].isdigit()):
+                # `to` is the new 0-based index; past the end = the end (PROTOCOL.md "Browsing" 4)
+                i = int(args[1])
+                self.send({"t": "music.edit", "op": "move", "index": i, "id": self.queue[i]["id"], "to": int(args[2])})
             else:
-                log(f"usage: edit jump|remove <i> (0-based, queue has {len(self.queue)}) | edit clear")
+                log(f"usage: edit jump|remove <i> | edit move <i> <to> (0-based, queue has "
+                    f"{len(self.queue)}) | edit clear")
 
     # ------------------------------------------------------------------ stdin
 

@@ -6,10 +6,8 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -52,9 +50,9 @@ class CloudGemini(
         .build()
     private val schema = Json.parseToJsonElement(schema)
 
-    override suspend fun interpret(phrase: String, lang: String, playing: String?, album: String?, upNext: List<String>, asked: Interpreter.Asked?): Interpreter.Answer {
+    override suspend fun interpret(window: JsonObject): Interpreter.Answer {
         if (!guard.tryAcquire(clock())) return Interpreter.Failed("rate limited")
-        val body = requestBody(model, prompt, schema, phrase, lang, playing, upNext, asked, album)
+        val body = requestBody(model, prompt, schema, window)
         return try {
             runInterruptible(Dispatchers.IO) {
                 val request = Request.Builder()
@@ -126,8 +124,11 @@ class CloudGemini(
         const val BACKUP_MODEL = "gemma-4-26b-a4b-it"
         /** Its answer (about 1.2 s) still lands inside [Interpretation.INTERPRET_TIMEOUT_MS]. */
         const val BACKUP_AFTER_MS = 4_000L
-        /** Its free tier allows 16,000 input tokens a minute, about 9 of our 1,750-token requests. */
-        const val BACKUP_PER_MINUTE = 8
+        /**
+         * Its free tier allows 16,000 input tokens a minute: about 5 of our requests since the
+         * context window grew them to about 3,000 tokens (2026-10-01; 8 at 1,750).
+         */
+        const val BACKUP_PER_MINUTE = 5
         /** Latency is what matters here: about 1 s a phrase with `minimal` (LLM-COMMANDS.md). */
         const val THINKING_LEVEL = "minimal"
         /** Free tier, per Cloud project (measured in capture, 2026-09-20): 15 a minute, 500 a day. */
@@ -138,28 +139,16 @@ class CloudGemini(
 
         private val jsonType = "application/json".toMediaType()
 
-        fun requestBody(
-            model: String, prompt: String, schema: JsonElement, phrase: String, lang: String, playing: String?, upNext: List<String>,
-            asked: Interpreter.Asked? = null, album: String? = null,
-        ): String {
-            // The phrase travels as data inside a JSON object, never as loose prompt text.
-            val input = buildJsonObject {
-                put("phrase", phrase)
-                put("lang", lang)
-                put("playing", playing?.let(::JsonPrimitive) ?: JsonNull)
-                if (album != null) put("album", album)
-                put("upNext", buildJsonArray { upNext.forEach { add(JsonPrimitive(it)) } })
-                // Only on the second turn: the phrase is then the reply to this question.
-                if (asked != null) putJsonObject("asked") {
-                    put("phrase", asked.phrase)
-                    put("question", asked.question)
-                }
-            }
+        /**
+         * The request for the context [window] (PROTOCOL.md "Commands", *Voice actions*): the window's
+         * JSON is the one text part, so the phrase in it travels as data, never as loose prompt text.
+         */
+        fun requestBody(model: String, prompt: String, schema: JsonElement, window: JsonObject): String {
             return buildJsonObject {
                 put("model", model)
                 put("system_instruction", prompt)
                 putJsonArray("input") {
-                    add(buildJsonObject { put("type", "text"); put("text", input.toString()) })
+                    add(buildJsonObject { put("type", "text"); put("text", window.toString()) })
                 }
                 // No `temperature`: deprecated for Gemini 3.5 and later.
                 putJsonObject("generation_config") {

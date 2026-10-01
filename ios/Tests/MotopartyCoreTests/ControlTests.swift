@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 38)
+        XCTAssertEqual(messages.count, 41)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -81,6 +81,16 @@ final class MessageFixtureTests: XCTestCase {
 
         let edit = try ControlCodec.decode(Data(#"{"t":"music.edit","op":"remove","index":0,"id":"a"}"#.utf8))
         XCTAssertEqual(edit, .musicEdit(MusicEdit(op: .remove, index: 0, id: "a")))
+
+        let move = try ControlCodec.decode(Data(#"{"t":"music.edit","op":"move","index":4,"id":"x1","to":0}"#.utf8))
+        XCTAssertEqual(move, .musicEdit(MusicEdit(op: .move, index: 4, id: "x1", to: 0)))
+
+        let repeating = try ControlCodec.decode(Data(#"{"t":"state","talk":false,"music":{"id":"x1","title":"A","artist":"B","playing":true,"positionMs":0,"atHostTimeMs":5,"durationMs":1000,"repeat":"track"},"queue":[]}"#.utf8))
+        guard case .state(let s) = repeating else { return XCTFail("\(repeating)") }
+        XCTAssertEqual(s.music?.repeat, .track)
+        let plain = try ControlCodec.decode(Data(#"{"t":"state","talk":false,"music":{"id":"x1","title":"A","artist":"B","playing":true,"positionMs":0,"atHostTimeMs":5,"durationMs":1000},"queue":[]}"#.utf8))
+        guard case .state(let p) = plain else { return XCTFail("\(plain)") }
+        XCTAssertNil(p.music?.repeat)
 
         // `clear` needs neither field, and they are omitted, not null.
         let clear = try ControlCodec.encode(.musicEdit(MusicEdit(op: .clear)))
@@ -207,7 +217,7 @@ final class FramingFixtureTests: XCTestCase {
     func testMalformedMessagesAreDroppedNotFatal() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let malformed = try XCTUnwrap(fixture["malformed"] as? [[String: Any]])
-        XCTAssertEqual(malformed.count, 15, "every malformed vector must be exercised")
+        XCTAssertEqual(malformed.count, 18, "every malformed vector must be exercised")
         for m in malformed {
             let json = try XCTUnwrap(m["json"] as? String)
             // Framed and received like any other frame…

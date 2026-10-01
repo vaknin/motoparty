@@ -83,7 +83,10 @@ public enum SearchKind: String, Codable, Sendable, CaseIterable { case songs, al
 public enum EnqueueMode: String, Codable, Sendable { case now, next, end }
 
 /// A `music.edit` of the upcoming queue.
-public enum QueueEditOp: String, Codable, Sendable { case jump, remove, clear }
+public enum QueueEditOp: String, Codable, Sendable { case jump, remove, clear, move }
+
+/// `state.music.repeat`; absent means off (the host never sends `"off"`).
+public enum RepeatMode: String, Codable, Sendable { case track, queue }
 
 // MARK: - Payloads
 
@@ -267,10 +270,29 @@ public struct MusicEnqueue: Codable, Equatable, Sendable {
 
 public struct MusicEdit: Codable, Equatable, Sendable {
     public var op: QueueEditOp
-    /// `state.queue` index and the id there, for `jump` and `remove`.
+    /// `state.queue` index and the id there, for `jump`, `remove` and `move`.
     public var index: Int?
     public var id: String?
-    public init(op: QueueEditOp, index: Int? = nil, id: String? = nil) { self.op = op; self.index = index; self.id = id }
+    /// For `move` (required, ≥ 0): the track ends up at `state.queue[to]`.
+    public var to: Int?
+    public init(op: QueueEditOp, index: Int? = nil, id: String? = nil, to: Int? = nil) {
+        self.op = op; self.index = index; self.id = id; self.to = to
+    }
+
+    private enum CodingKeys: String, CodingKey { case op, index, id, to }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        op = try c.decode(QueueEditOp.self, forKey: .op)
+        index = try c.decodeIfPresent(Int.self, forKey: .index)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        to = try c.decodeIfPresent(Int.self, forKey: .to)
+        // `move` without a `to`, or with a negative one, is malformed.
+        if op == .move, (to ?? -1) < 0 {
+            throw DecodingError.dataCorruptedError(forKey: .to, in: c,
+                                                   debugDescription: "move needs an int to ≥ 0")
+        }
+    }
 }
 
 public struct Announce: Codable, Equatable, Sendable {
@@ -293,12 +315,15 @@ public struct HostState: Codable, Equatable, Sendable {
         public var durationMs: Int64
         /// Cover image URL, when the host has one.
         public var art: String?
+        /// `nil` is off. Any value outside the set fails the decode (drops the `state`).
+        public var `repeat`: RepeatMode?
 
         public init(id: String, title: String, artist: String, playing: Bool,
-                    positionMs: Int64, atHostTimeMs: Int64, durationMs: Int64, art: String? = nil) {
+                    positionMs: Int64, atHostTimeMs: Int64, durationMs: Int64, art: String? = nil,
+                    repeat: RepeatMode? = nil) {
             self.id = id; self.title = title; self.artist = artist; self.playing = playing
             self.positionMs = positionMs; self.atHostTimeMs = atHostTimeMs; self.durationMs = durationMs
-            self.art = art
+            self.art = art; self.repeat = `repeat`
         }
 
         public var anchor: MusicAnchor {

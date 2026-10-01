@@ -306,7 +306,7 @@ private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, mo
                 Crossfade(t, label = "title") { track -> Titles(track, centred = true) }
                 StatusLine(s)
                 Timeline(s, t)
-                Transport(s.playing, big = true) { cb.onAction(UiAction.Control(it)) }
+                Transport(s.playing, big = true, s.repeat, { cb.onAction(UiAction.Repeat(s.repeat.toggled())) }) { cb.onAction(UiAction.Control(it)) }
                 UpNext(s.queue, onOpenQueue)
             }
             // Tight (a banner or two, or the handlebar layout): the cover beside the title.
@@ -326,7 +326,9 @@ private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, mo
                     }
                 }
                 Timeline(s, t)
-                Transport(s.playing, big = h >= 300.dp) { cb.onAction(UiAction.Control(it)) }
+                Transport(s.playing, big = h >= 300.dp, s.repeat, { cb.onAction(UiAction.Repeat(s.repeat.toggled())) }) {
+                    cb.onAction(UiAction.Control(it))
+                }
                 if (h >= 330.dp) UpNext(s.queue, onOpenQueue)
             }
         }
@@ -419,9 +421,19 @@ private fun Timeline(s: LinkStatus, t: Track) {
     }
 }
 
-/** Previous, play/pause, next: 72 / 96 / 72 dp, or 64 / 80 / 64 where the height is short. */
+/**
+ * Previous, play/pause, next: 72 / 96 / 72 dp, or 64 / 80 / 64 where the height is short. The
+ * repeat toggle (off → queue → track) sits at the right end, balanced by an empty slot on the
+ * left so play stays in the middle.
+ */
 @Composable
-private fun Transport(playing: Boolean, big: Boolean, control: (String) -> Unit) {
+private fun Transport(
+    playing: Boolean,
+    big: Boolean,
+    repeat: com.kivan.motoparty.core.RepeatMode,
+    onRepeat: () -> Unit,
+    control: (String) -> Unit,
+) {
     val side = if (big) 72.dp else 64.dp
     val main = if (big) 96.dp else 76.dp
     Row(
@@ -429,6 +441,7 @@ private fun Transport(playing: Boolean, big: Boolean, control: (String) -> Unit)
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Spacer(Modifier.size(RepeatSize))
         IconButton(onClick = { control(ControlAction.PREVIOUS) }, Modifier.size(side)) {
             Icon(Icons.Previous, "Previous", Modifier.size(side * 0.6f))
         }
@@ -447,6 +460,37 @@ private fun Transport(playing: Boolean, big: Boolean, control: (String) -> Unit)
         IconButton(onClick = { control(ControlAction.NEXT) }, Modifier.size(side)) {
             Icon(Icons.Next, "Next", Modifier.size(side * 0.6f))
         }
+        RepeatToggle(repeat, onRepeat)
+    }
+}
+
+private val RepeatSize = 52.dp
+
+/** Off: a quiet outline. Queue or track: lit, on a tonal circle; track shows the "1". */
+@Composable
+private fun RepeatToggle(repeat: com.kivan.motoparty.core.RepeatMode, onClick: () -> Unit) {
+    val on = repeat != com.kivan.motoparty.core.RepeatMode.OFF
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(RepeatSize),
+        colors = if (on) {
+            IconButtonDefaults.iconButtonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        } else {
+            IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    ) {
+        Icon(
+            if (repeat == com.kivan.motoparty.core.RepeatMode.TRACK) Icons.RepeatOne else Icons.Repeat,
+            when (repeat) {
+                com.kivan.motoparty.core.RepeatMode.OFF -> "Repeat off"
+                com.kivan.motoparty.core.RepeatMode.QUEUE -> "Repeat the queue"
+                com.kivan.motoparty.core.RepeatMode.TRACK -> "Repeat this song"
+            },
+            Modifier.size(26.dp),
+        )
     }
 }
 

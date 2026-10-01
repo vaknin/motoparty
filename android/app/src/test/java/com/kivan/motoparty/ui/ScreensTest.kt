@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import com.kivan.motoparty.LinkStatus
 import com.kivan.motoparty.SearchState
 import com.kivan.motoparty.Settings
+import com.kivan.motoparty.core.RepeatMode
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.DownloadProgress
@@ -368,6 +369,14 @@ class ScreensTest {
 
     @Test
     fun queue() = shoot("6-queue", playing, Tab.QUEUE)
+
+    /** The repeat toggle lit (track: the "1" icon), in both layouts. */
+    @Test
+    fun rideRepeat() = shoot("1t-ride-repeat-track", playing.copy(repeat = RepeatMode.TRACK), Tab.RIDE)
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideRepeatLandscape() = shoot("1v-ride-repeat-queue-landscape", playing.copy(repeat = RepeatMode.QUEUE), Tab.RIDE)
 
     @Test
     fun queueEmpty() = shoot("7-queue-empty", LinkStatus(running = true), Tab.QUEUE)

@@ -23,25 +23,32 @@ data class CommandEffect(
 
     companion object {
         /** [fromClient]: the passenger spoke it (their `command.text`), else this phone's rider. */
-        fun of(cmd: Command, talkOpen: Boolean, fromClient: Boolean): CommandEffect {
+        fun of(cmd: Command, talkOpen: Boolean, fromClient: Boolean): CommandEffect = of(cmd.toActions(), talkOpen, fromClient)
+
+        /**
+         * The same for a list of voice actions (PROTOCOL.md "Commands", *Voice actions*, *Running a
+         * list*): a list with any action ends the talk, as a command does. An empty list is an
+         * unparsed phrase.
+         */
+        fun of(actions: List<VoiceAction>, talkOpen: Boolean, fromClient: Boolean): CommandEffect {
             val by = if (fromClient) Role.CLIENT else Role.HOST
+            val onlyEnd = actions.isNotEmpty() && actions.all { it == VoiceAction.End }
             if (!talkOpen) {
                 // "end" with no talk has nothing to end; everything else is as it always was.
-                return CommandEffect(null, if (cmd == Command.End) Reply.NONE else Reply.MEDIA)
+                return CommandEffect(null, if (onlyEnd) Reply.NONE else Reply.MEDIA)
             }
-            // Every command ends the talk it is spoken in: it was opened to give that command.
-            // Music cannot play in a talk, so the music and any reply wait for the headset to come
-            // back to media mode.
-            return when (cmd) {
-                is Command.Play, Command.Resume, Command.Pause, Command.Next, Command.Previous,
-                Command.NowPlaying, Command.Shuffle, is Command.Queue -> CommandEffect(by, Reply.AFTER_CLOSE)
-                Command.End -> CommandEffect(by, Reply.NONE)
-                // Volume is local: the rider's own changes this phone's media volume after the
-                // close; one from the client should never have been sent and counts as unparsed.
-                Command.VolumeUp, Command.VolumeDown ->
-                    if (fromClient) CommandEffect(null, Reply.CALL) else CommandEffect(by, Reply.AFTER_CLOSE)
+            // Volume is local: the rider's own changes this phone's media volume after the close;
+            // one from the client should never have been sent and counts as unparsed.
+            val acting = if (fromClient) actions.filterNot { it.isVolume } else actions
+            return when {
                 // Not a command: nothing ends (solo: "Didn't catch that", spoken in the talk).
-                Command.Unknown -> CommandEffect(null, Reply.CALL)
+                acting.isEmpty() -> CommandEffect(null, Reply.CALL)
+                // `end` has nothing to say: the talk's own closing earcon is the acknowledgement.
+                onlyEnd -> CommandEffect(by, Reply.NONE)
+                // Every command ends the talk it is spoken in: it was opened to give that command.
+                // Music cannot play in a talk, so the music and any reply wait for the headset to
+                // come back to media mode.
+                else -> CommandEffect(by, Reply.AFTER_CLOSE)
             }
         }
     }

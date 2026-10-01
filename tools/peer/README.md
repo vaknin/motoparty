@@ -78,10 +78,13 @@ Stdin commands:
 | `search <kind> <query>` | `music.search{id, kind, query}` (`songs`/`albums`/`playlists`, empty query allowed); the newest request's results print numbered |
 | `browse <n>` | `music.browse` for album/playlist result `n` |
 | `enqueue now\|next\|end <n>\|all` | `music.enqueue` with song result `n` (or all of them); `album` is set after a `browse` of an album |
-| `edit jump\|remove <i>` / `edit clear` | `music.edit`; `i` is 0-based into the last `state.queue`, and its `id` is filled in from there |
+| `edit jump\|remove <i>` / `edit move <i> <to>` / `edit clear` | `music.edit`; `i` is 0-based into the last `state.queue`, and its `id` is filled in from there; for `move`, `to` is the track's new 0-based index (past the end = the end) |
 | `stats` | prints jitter-buffer/voice stats and the clock estimate |
 | `raw <json>` | sends any JSON object **unvalidated**, to test how the other side handles bad input — the only way to send a message the codec now rejects, e.g. `raw {"t":"music.control","action":"volumeUp"}` |
 | `quit` | `bye{reason:"user"}`, then exits |
+
+A `state` whose `music.repeat` differs from the last one logs `repeat: track|queue|off` (absent
+= off).
 
 A host `talk.close{by:"host",reason:"unavailable"}` in answer to our `talk.open` is logged as
 `TALK REFUSED by host: microphone unavailable`; talk never opened, so `state.talk` stays false.
@@ -150,7 +153,8 @@ and `state`, then the host logs the close; nothing else changes.
   = all) over those tracks. `albums` are the distinct album tags among the matching songs, with
   `ref` = `al` + 14 chars of the album name's SHA-1; `playlists` is always empty.
   `music.browse` answers an album's tracks or `error` ("Invalid ref" / "Not found").
-  `music.enqueue`/`music.edit` change the queue as the spec says and broadcast `state`;
+  `music.enqueue`/`music.edit` (including `move`) change the queue as the spec says and
+  broadcast `state`;
   `next`/`previous` walk it. There is no auto-advance at the end of a track.
 - HTTP: `GET`/`HEAD /track/<id>.m4a` for each `--track` file, `Content-Type: audio/mp4`, single
   `Range` → 206, unsatisfiable → 416, anything else → 404. `<id>` is 11 URL-safe characters
@@ -191,6 +195,20 @@ and `state`, then the host logs the close; nothing else changes.
   resume", "Nothing playing" (`pause` with nothing that would have resumed, or `nowplaying`
   with no current track), "End of queue" (`next`), "Nothing before this" (`previous`),
   "Nothing to shuffle" (fewer than 2 upcoming), "Didn't catch that".
+- Voice actions (PROTOCOL.md "Commands", Voice actions). Every command runs as a voice action
+  list: the grammar's through `to_actions`, the stub interpreter's (`--interpret-table`, answers
+  `{"actions":[…]}`) through `interpretation_actions`, against a snapshot of the window (25
+  upcoming, 5 played) taken when the phrase arrived; a position whose track is no longer
+  upcoming is skipped. The list closes the talk once, then sends **one** `announce` joining the
+  parts with ". " (earcon `error` only when every part failed). Beyond the grammar: `remove`
+  (positions or every upcoming track whose normalised artist matches; "Removed …", "Nothing to
+  remove"), `move` ("Moved … to next|the end|<n>"), `clear` ("Cleared the queue", "Nothing to
+  clear"), `jump` (upcoming as `music.edit jump`; −n plays that played track now, the queue
+  stays), `restart`/`seek` (clamped; a paused or talk-frozen track just moves its position),
+  `repeat` (`state.music.repeat`; `track` replays the track at its end with no `music.next`,
+  `queue` refills an empty queue from the history plus the last track), `tell` and one-level
+  `undo` (10 min; "Put back <n> songs", "Undone", "Nothing to undo"). An interpreted volume
+  from the client is dropped from the list; from the host it is local.
 - A `music.control` with a volume action is not a valid message any more; it is dropped as
   malformed (logged as `dropped invalid frame`) and the connection stays up.
 
@@ -198,7 +216,8 @@ Stdin commands: `load` (sends `music.load`, then `music.play` 300 ms ahead once
 `music.ready` arrives, or after 8 s / on `music.error`), `play`, `pause`, `stop`, `talk`,
 `mic on|off` (bare `mic` toggles; `off` refuses the client's `talk.open` as `unavailable`),
 `hostmic on|off` (bare `hostmic` toggles; `on` makes the next talks host-mic talks),
-`hear <phrase>` (the host's own ASR, see Commands above), `announce <text>`, `state`, `stats`, `raw <json>`, `quit`.
+`hear <phrase>` (the host's own ASR, see Commands above), `repeat off|track|queue`
+(`state.music.repeat`, as by touch), `announce <text>`, `state`, `stats`, `raw <json>`, `quit`.
 
 ## Bench recipes
 
@@ -343,7 +362,9 @@ Android/iOS implementations should match them, or PROTOCOL.md should say otherwi
 Unknown fields are dropped on decode. A client hello's `voicePort`/`httpPort` are dropped,
 and a host hello without them is invalid. A `state.mic` on `talk:false` is dropped too (the
 message is kept): the spec only says the host sends it while talk is true. `title` and `artist` are required in `music.load`,
-`queue` is required in `state`, and all seven `state.music` fields are required. Only an
+`queue` is required in `state`, and all seven non-optional `state.music` fields are required (`art`
+and `repeat` are optional; a `repeat` other than `track`/`queue` drops the `state`). A
+`music.edit` `move` without an integer `to` ≥ 0 is dropped; `to` on other ops is kept but unused. Only an
 oversize length (> 65536; exactly 65536 is allowed) closes the connection.
 
 **Clock.** `hostToLocal`/`localToHost` return floats; nothing rounds. Discarded (rtt < 0)

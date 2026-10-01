@@ -55,6 +55,8 @@ object EditOp {
     const val JUMP = "jump"
     const val REMOVE = "remove"
     const val CLEAR = "clear"
+    /** Drag to reorder (2026-10-01): needs `to`, the track's upcoming index afterwards. */
+    const val MOVE = "move"
 }
 
 /** PROTOCOL.md "Host-mic talk": the value of `mic` on the host's `talk.open` and in `state`. */
@@ -79,7 +81,9 @@ internal val ENUM_FIELDS: Map<Pair<String, String>, Set<String>> = mapOf(
     ("announce" to "earcon") to setOf(Earcon.OK, Earcon.ERROR),
     ("music.search" to "kind") to setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS),
     ("music.enqueue" to "mode") to setOf(EnqueueMode.NOW, EnqueueMode.NEXT, EnqueueMode.END),
-    ("music.edit" to "op") to setOf(EditOp.JUMP, EditOp.REMOVE, EditOp.CLEAR),
+    ("music.edit" to "op") to setOf(EditOp.JUMP, EditOp.REMOVE, EditOp.CLEAR, EditOp.MOVE),
+    // Nested: `off` is never sent (absent means off).
+    ("state" to "music.repeat") to setOf(RepeatMode.TRACK.word, RepeatMode.QUEUE.word),
 )
 
 @Serializable
@@ -203,7 +207,13 @@ data class EnqueueTrack(
 
 @Serializable
 @SerialName("music.edit")
-data class MusicEdit(val op: String, val index: Int? = null, val id: String? = null) : Message
+data class MusicEdit(
+    val op: String,
+    val index: Int? = null,
+    val id: String? = null,
+    /** [EditOp.MOVE] only, and required there: the new upcoming index, ≥ 0. */
+    val to: Int? = null,
+) : Message
 
 @Serializable
 @SerialName("announce")
@@ -235,6 +245,8 @@ data class MusicState(
     val atHostTimeMs: Long,
     val durationMs: Long,
     val art: String? = null,
+    /** [RepeatMode.wire]: `"track"` or `"queue"`; absent = off (2026-10-01). */
+    val repeat: String? = null,
 )
 
 @Serializable

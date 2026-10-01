@@ -1,5 +1,7 @@
 package com.kivan.motoparty.voicecmd
 
+import com.kivan.motoparty.core.RepeatMode
+import com.kivan.motoparty.music.VoiceWindow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -9,8 +11,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FirstAnswerTest {
-    private fun after(ms: Long, answer: Interpreter.Answer) = Interpreter { _, _, _, _, _, _ -> delay(ms); answer }
-    private suspend fun Interpreter.ask() = interpret("play something by movie", "en-US", null, null, emptyList(), null)
+    /** A reply to our question: its window carries `asked`. */
+    private val reply = VoiceWindow.build(
+        "any", "en-US", null, 0, RepeatMode.OFF, emptyList(), emptyList(), null,
+        VoiceWindow.Asked("play an album by moby", "Which Moby album?"),
+    ).input
+    private fun after(ms: Long, answer: Interpreter.Answer) = Interpreter { _ -> delay(ms); answer }
+    private val window = VoiceWindow.build("play something by movie", "en-US", null, 0, RepeatMode.OFF, emptyList(), emptyList(), null).input
+    private suspend fun Interpreter.ask() = interpret(window)
 
     @Test
     fun theFirstTextWins() = runTest {
@@ -43,7 +51,7 @@ class FirstAnswerTest {
     @Test
     fun theLoserIsCancelled() = runTest {
         val cancelled = CompletableDeferred<Unit>()
-        val never = Interpreter { _, _, _, _, _, _ ->
+        val never = Interpreter { _ ->
             try { awaitCancellation() } finally { cancelled.complete(Unit) }
         }
         FirstAnswer(listOf("never" to never, "fast" to after(10, Interpreter.Text("x")))).ask()
@@ -55,7 +63,7 @@ class FirstAnswerTest {
         val answer = FirstAnswer(
             listOf("3.5" to after(3_000, Interpreter.Text("3.5")), "3.1" to after(10, Interpreter.Text("3.1"))),
             noReplies = setOf("3.1"),
-        ).interpret("any", "en-US", null, null, emptyList(), Interpreter.Asked("play an album by moby", "Which Moby album?"))
+        ).interpret(reply)
         assertEquals(Interpreter.Text("3.5"), answer)
         assertEquals(Interpreter.Text("3.1"), FirstAnswer(
             listOf("3.5" to after(3_000, Interpreter.Text("3.5")), "3.1" to after(10, Interpreter.Text("3.1"))),
@@ -63,14 +71,13 @@ class FirstAnswerTest {
         ).ask())
     }
 
-    private val reply = Interpreter.Asked("play an album by moby", "Which Moby album?")
     private fun withBackup(vararg all: Pair<String, Interpreter>, backup: Interpreter, noReplies: Set<String> = emptySet()) =
         FirstAnswer(all.toList(), noReplies, backup = "gemma" to backup, backupAfterMs = 4_000, limitMs = 6_000)
 
     @Test
     fun theBackupIsNotAskedWhenAFlashLiteAnswersInTime() = runTest {
         var asked = false
-        val gemma = Interpreter { _, _, _, _, _, _ -> asked = true; Interpreter.Text("gemma") }
+        val gemma = Interpreter { _ -> asked = true; Interpreter.Text("gemma") }
         assertEquals(Interpreter.Text("3.5"), withBackup("3.5" to after(3_000, Interpreter.Text("3.5")), backup = gemma).ask())
         assertEquals(false, asked)
         assertEquals(3_000L, testScheduler.currentTime)
@@ -115,7 +122,7 @@ class FirstAnswerTest {
             "3.5" to after(100, Interpreter.Failed("HTTP 503")),
             backup = after(10, Interpreter.Text("gemma")),
             noReplies = setOf("gemma"),
-        ).interpret("any", "en-US", null, null, emptyList(), reply)
+        ).interpret(reply)
         assertEquals(Interpreter.Failed("3.5: HTTP 503"), answer)
     }
 }

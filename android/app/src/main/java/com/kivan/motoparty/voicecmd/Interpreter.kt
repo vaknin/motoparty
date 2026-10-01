@@ -6,6 +6,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.selects.select
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Understands a phrase the grammar does not parse (PROTOCOL.md "Commands", *Interpretation*).
@@ -13,14 +14,12 @@ import kotlinx.coroutines.selects.select
  */
 fun interface Interpreter {
     /**
-     * The model's answer text for [phrase] (for [com.kivan.motoparty.core.Interpretation.commandText]),
-     * or a [Failed] saying why there is none. Never throws, except for cancellation. With [asked],
-     * [album] is the current track's, when known. [phrase] is the reply to a question of ours (PROTOCOL.md *The clarifying question*).
+     * The model's answer text (for [com.kivan.motoparty.core.Interpretation.outcome]) for the
+     * context [window] ([com.kivan.motoparty.music.VoiceWindow]: the phrase and what is playing),
+     * or a [Failed] saying why there is none. Never throws, except for cancellation. A window with
+     * `asked` is the reply to a question of ours (PROTOCOL.md *The clarifying question*).
      */
-    suspend fun interpret(phrase: String, lang: String, playing: String?, album: String?, upNext: List<String>, asked: Asked?): Answer
-
-    /** The first request and the question it got. */
-    data class Asked(val phrase: String, val question: String)
+    suspend fun interpret(window: JsonObject): Answer
 
     sealed interface Answer
     /** [by] names the back end that answered, for the log. */
@@ -44,8 +43,9 @@ class FirstAnswer(
     private val backupAfterMs: Long = 0,
     private val limitMs: Long = Long.MAX_VALUE,
 ) : Interpreter {
-    override suspend fun interpret(phrase: String, lang: String, playing: String?, album: String?, upNext: List<String>, asked: Interpreter.Asked?): Interpreter.Answer {
-        fun usable(it: Pair<String, Interpreter>) = asked == null || it.first !in noReplies
+    override suspend fun interpret(window: JsonObject): Interpreter.Answer {
+        val reply = window["asked"] != null
+        fun usable(it: Pair<String, Interpreter>) = !reply || it.first !in noReplies
         val asking = mutableListOf<String>()
         val failures = mutableMapOf<String, String>()
         val answer = withTimeoutOrNull(limitMs) {
@@ -53,7 +53,7 @@ class FirstAnswer(
                 var pending = listOf<Pair<String, Deferred<Interpreter.Answer>>>()
                 fun ask(backend: Pair<String, Interpreter>) {
                     asking += backend.first
-                    pending = pending + (backend.first to async { backend.second.interpret(phrase, lang, playing, album, upNext, asked) })
+                    pending = pending + (backend.first to async { backend.second.interpret(window) })
                 }
                 all.filter(::usable).forEach(::ask)
                 var spare = backup?.takeIf(::usable)

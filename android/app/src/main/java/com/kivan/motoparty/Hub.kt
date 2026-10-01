@@ -1,5 +1,6 @@
 package com.kivan.motoparty
 
+import com.kivan.motoparty.core.RepeatMode
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.DownloadProgress
@@ -47,6 +48,8 @@ data class LinkStatus(
     /** Why [nowPlaying] is not playing yet (loading, waiting for the client, parked by talk), or null. */
     val musicPhase: MusicPhase? = null,
     val queue: List<Track> = emptyList(),
+    /** `state.music.repeat`: the Ride tab's toggle. */
+    val repeat: RepeatMode = RepeatMode.OFF,
     val busy: String? = null,
     /** The last spoken reply, for a few seconds ([LinkHost] clears it). */
     val lastAnnounce: String? = null,
@@ -146,6 +149,10 @@ sealed interface UiAction {
     /** Jump to `upcoming[index]`, if it is still [id]. */
     data class Jump(val index: Int, val id: String) : UiAction
     data class Remove(val index: Int, val id: String) : UiAction
+    /** Drag to reorder: `upcoming[index]`, if it is still [id], becomes `upcoming[to]`. */
+    data class Move(val index: Int, val id: String, val to: Int) : UiAction
+    /** The repeat toggle. */
+    data class Repeat(val mode: RepeatMode) : UiAction
     data object ClearQueue : UiAction
     /** Undo of a [Remove]: [track] back at `upcoming[index]`. */
     data class Restore(val index: Int, val track: Track) : UiAction

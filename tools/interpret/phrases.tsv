@@ -4,17 +4,17 @@ can we get something a bit more mellow	Enter Sandman – Metallica	play playlist
 play the dark side of the moon album		play album *dark side of the moon*
 i want to hear bohemian rhapsody		play song bohemian rhapsody*
 play blinding lights by the wicked		play song blinding lights*
-more from this band	Yellow – Coldplay	queue artist coldplay
+more from this band	Yellow – Coldplay	add artist coldplay
 play the whole album	Porcelain – Moby	play album *
 i don't like this one skip it	Yellow – Coldplay	next
 go back one	Yellow – Coldplay	previous
 stop the music for a second	Yellow – Coldplay	pause
 ok put the music back on		resume
-who sings this	Yellow – Coldplay	what is playing
+who sings this	Yellow – Coldplay	tell track
 turn it up a bit	Yellow – Coldplay	volume up
 it's too loud	Yellow – Coldplay	volume down
 mix them up	Yellow – Coldplay	shuffle
-ok that's all bye	Yellow – Coldplay	over
+ok that's all bye	Yellow – Coldplay	end
 some eighties rock please		play playlist *
 play that song again	Porcelain – Moby	play song porcelain*
 are you cold back there	Yellow – Coldplay	-
@@ -41,13 +41,53 @@ don't stop me now	Yellow – Coldplay	play song don't stop me now*	play that son
 never mind		-	play an album by moby	Which Moby album?
 watch out for that truck		-	play an album by moby	Which Moby album?
 the mobile one		play *moby*	play an album by moby	Which Moby album?
-add the rest of this album to the queue	Porcelain – Moby	queue album play*moby
-as the next song play natural blues	Porcelain – Moby	queue next song natural blues*
-choose similar music for the rest of the queue	Porcelain – Moby	queue instead similar
-for the next three songs play more of this artist	Porcelain – Moby	queue next 3 artist moby
-add some cold play to the queue	Porcelain – Moby	queue artist coldplay
-play yellow by cold play after this one	Porcelain – Moby	queue next song yellow*coldplay
-more like this please	Porcelain – Moby	queue similar
-queue up the dark side of the moon	Porcelain – Moby	queue album the dark side of the moon*
-add five more songs like this	Porcelain – Moby	queue 5 similar
+add the rest of this album to the queue	Porcelain – Moby	add album play*moby
+as the next song play natural blues	Porcelain – Moby	add next song natural blues*
+choose similar music for the rest of the queue	Porcelain – Moby	add instead similar
+for the next three songs play more of this artist	Porcelain – Moby	add next 3 artist moby
+add some cold play to the queue	Porcelain – Moby	add artist coldplay
+play yellow by cold play after this one	Porcelain – Moby	add next song yellow*coldplay
+more like this please	Porcelain – Moby	add similar
+queue up the dark side of the moon	Porcelain – Moby	add album the dark side of the moon*
+add five more songs like this	Porcelain – Moby	add 5 similar
 are we next in the queue for the ferry		-
+drop the next song	@queue	remove 1
+take yellow out of the queue	@queue	remove 3
+no more cold play please	@queue	remove artist coldplay
+remove the next two songs	@queue	remove 1,2
+play fix you next	@queue	move 4 to 1
+move bohemian rhapsody to the end of the queue	@queue	move 5 to *
+clear the queue	@queue	clear
+empty the whole playlist	@queue	clear
+skip to bohemian rhapsody	@queue	jump 5
+play number four now	@queue	jump 4
+play the song before last again	@queue	jump -2
+go back to under pressure	@queue	jump -2
+put it back	@queue	undo
+undo that	@queue	undo
+no wait bring them back	@queue	undo
+skip ahead thirty seconds	@queue	seek +30
+go back ten seconds	@queue	seek -10
+go to the two minute mark	@queue	seek to 120
+start this song over	@queue	restart
+repeat this song	@queue	repeat track
+put the whole queue on repeat	@queue	repeat queue
+stop repeating	@queue	repeat off
+what album is this from	@queue	tell album
+what's coming up next	@queue	tell next
+how many songs are left	@queue	tell remaining
+what was the last song	@queue	tell previous
+who sings this	@queue	tell track
+play something like this instead	@queue	play similar
+drop the next two and play hey jude after this	@queue	remove 1,2; add next song hey jude*
+skip this and turn it up	@queue	next; volume up
+shuffle the queue and repeat it all	@queue	shuffle; repeat queue
+remove all the queen songs and add some u2	@queue	remove artist queen; add artist u2
+louder and skip to yellow	@queue	volume up; jump 3
+clear road ahead	@queue	-
+remove your glove first	@queue	-
+stop at the next gas station	@queue	-
+skip the highway lets take the coast road	@queue	-
+put it back in the tank bag	@queue	-
+go back to the junction we missed the turn	@queue	-
+let's move to the left lane	@queue	-

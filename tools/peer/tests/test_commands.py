@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from conftest import load_fixture
@@ -7,12 +9,17 @@ from motoparty_peer.commands import (
     ASK_MAX_CHARS,
     FIRST_PHRASE_MS,
     INTERPRET_TIMEOUT_MS,
+    INTERPRET_PLAYED,
     INTERPRET_UP_NEXT,
+    MAX_ACTIONS,
+    QUEUE_MAX_COUNT,
+    UNDO_MS,
     FirstPhraseGate,
     command_text,
-    interpretation_outcome,
+    interpretation_actions,
     normalise,
     parse_command,
+    to_actions,
 )
 
 CASES = load_fixture("commands.json")["cases"]
@@ -88,11 +95,33 @@ INTERPRET = load_fixture("interpret.json")
 
 @pytest.mark.parametrize("case", INTERPRET["cases"], ids=lambda c: c["answer"] or "empty")
 def test_interpretation_fixture(case):
-    got = interpretation_outcome(case["answer"])
-    assert got == case["expect"]
-    # whatever comes out is executed through the parser, so it must parse
-    text = got["fallback"] if isinstance(got, dict) else got
-    assert text is None or parse_command(text)["action"] != "unknown"
+    window = case.get("window", {"upNext": INTERPRET_UP_NEXT, "played": INTERPRET_PLAYED})
+    assert interpretation_actions(case["answer"], window["upNext"], window["played"]) == case["expect"]
+
+
+@pytest.mark.parametrize(
+    "text, expect",
+    [
+        ("play album Play", [{"type": "play", "kind": "album", "query": "play"}]),
+        ("queue next 3 artist moby", [{"type": "add", "kind": "artist", "query": "moby", "where": "next", "count": 3}]),
+        ("queue instead similar", [{"type": "add", "kind": "similar", "where": "instead"}]),
+        ("what's playing", [{"type": "tell", "about": "track"}]),
+        ("over", [{"type": "end"}]),
+        ("louder", [{"type": "volumeUp"}]),
+        ("skip", [{"type": "next"}]),
+        ("dance", []),
+    ],
+)
+def test_grammar_commands_as_actions(text, expect):
+    assert to_actions(parse_command(text)) == expect
+
+
+def test_grammar_actions_are_canonical():
+    # what the grammar makes is what the interpreter's validation would keep unchanged
+    for case in CASES:
+        actions = to_actions(case["expect"])
+        if actions:
+            assert interpretation_actions(json.dumps({"actions": actions})) == actions, case["text"]
 
 
 def test_answer_constants_match_the_fixtures():
@@ -102,4 +131,5 @@ def test_answer_constants_match_the_fixtures():
 
 def test_interpret_constants_match_fixture():
     assert INTERPRET["interpretTimeoutMs"] == INTERPRET_TIMEOUT_MS
-    assert INTERPRET["interpretUpNext"] == INTERPRET_UP_NEXT
+    assert (INTERPRET["interpretUpNext"], INTERPRET["interpretPlayed"]) == (INTERPRET_UP_NEXT, INTERPRET_PLAYED)
+    assert (INTERPRET["maxActions"], INTERPRET["undoMs"], INTERPRET["queueMaxCount"]) == (MAX_ACTIONS, UNDO_MS, QUEUE_MAX_COUNT)

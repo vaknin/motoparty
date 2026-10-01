@@ -7,6 +7,7 @@ import com.kivan.motoparty.core.MusicNext
 import com.kivan.motoparty.core.MusicPause
 import com.kivan.motoparty.core.MusicPlay
 import com.kivan.motoparty.core.MusicState
+import com.kivan.motoparty.core.RepeatMode
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -981,5 +982,115 @@ class MusicControllerTest {
         assertEquals(listOf(a.id, a.id), rig.player.loads)
         assertEquals(b.id, rig.player.queued)
         assertEquals(2, rig.nexts.size)
+    }
+
+    // ---- voice actions (2026-10-01): repeat, move, seek, jump back ----
+
+    @Test
+    fun `repeat track starts the track again at its end and is never announced gapless`() = runTest {
+        val rig = Rig(this)
+        rig.music.setQueue(listOf(a, b))
+        playing(rig, a)
+        rig.store.finish(b.id)
+        runCurrent()
+        rig.music.onClientReady(b.id)
+        assertEquals(b.id, rig.player.queued)
+        rig.music.setRepeat(RepeatMode.TRACK)
+        assertNull("taken back", rig.player.queued)
+        assertEquals("track", rig.music.musicState()?.repeat)
+        advanceTimeBy(200_000)
+        rig.music.onTrackEnded()
+        runCurrent()
+        assertEquals(a, rig.music.current)
+        assertEquals(MusicPlay(a.id, 0, rig.plays.last().atHostTimeMs), rig.plays.last())
+        assertTrue(rig.plays.last().atHostTimeMs > 200_000)
+        assertNull(rig.player.queued)
+        // A `next` still goes on.
+        rig.music.next()
+        assertEquals(b, rig.music.current)
+    }
+
+    @Test
+    fun `repeat queue goes back to the first track instead of parking the last`() = runTest {
+        val rig = Rig(this)
+        rig.store.files[a.id] = File("a.m4a")
+        rig.music.setQueue(listOf(a, b), start = 1)
+        playing(rig, b)
+        rig.music.setRepeat(RepeatMode.QUEUE)
+        assertFalse(rig.music.atEnd)
+        assertEquals("queue", rig.states.last()?.repeat)
+        advanceTimeBy(200_000)
+        rig.music.onTrackEnded()
+        runCurrent()
+        assertEquals(a, rig.music.current)
+        assertEquals(listOf(a, b), rig.music.queue)
+        assertTrue(rig.pauses.isEmpty())
+        // `next` on the last track wraps too.
+        rig.music.next()
+        rig.music.next()
+        assertEquals(a, rig.music.current)
+        rig.music.setRepeat(RepeatMode.OFF)
+        assertNull(rig.music.musicState()?.repeat)
+    }
+
+    @Test
+    fun `move puts a track at its new upcoming index, and a stale one is refused`() = runTest {
+        val rig = Rig(this)
+        rig.music.setQueue(listOf(a, b, c, d, e))
+        playing(rig, a)
+        assertTrue(rig.music.move(3, e.id, 0))
+        assertEquals(listOf(e, b, c, d), rig.music.upcoming)
+        assertFalse(rig.music.move(3, e.id, 0))
+        assertTrue(rig.music.move(0, e.id, 99))
+        assertEquals(listOf(b, c, d, e), rig.music.upcoming)
+    }
+
+    @Test
+    fun `replacing the upcoming list keeps the current track playing`() = runTest {
+        val rig = Rig(this)
+        rig.music.setQueue(listOf(a, b, c))
+        playing(rig, a)
+        val plays = rig.plays.size
+        rig.music.replaceUpcoming(listOf(d, b))
+        assertEquals(listOf(a, d, b), rig.music.queue)
+        assertEquals(a, rig.music.current)
+        assertEquals(plays, rig.plays.size)
+    }
+
+    @Test
+    fun `seek while playing starts there, clamped to the track`() = runTest {
+        val rig = Rig(this)
+        rig.music.setQueue(listOf(a))
+        playing(rig, a)
+        assertTrue(rig.music.seek(90_000))
+        assertEquals(90_000L, rig.plays.last().positionMs)
+        rig.music.seek(-5_000)
+        assertEquals(0L, rig.plays.last().positionMs)
+        rig.music.seek(10_000_000)
+        assertEquals(a.durationMs - MusicController.SEEK_END_MARGIN_MS, rig.plays.last().positionMs)
+    }
+
+    @Test
+    fun `seek in a talk moves the anchor and the close resumes from there`() = runTest {
+        val rig = Rig(this)
+        rig.music.setQueue(listOf(a))
+        playing(rig, a)
+        rig.music.onTalkOpen(duck = false)
+        val plays = rig.plays.size
+        assertTrue(rig.music.seek(60_000))
+        assertEquals("nothing plays in the talk", plays, rig.plays.size)
+        assertEquals(60_000L, rig.music.positionMs)
+        rig.music.onTalkClose(resumeLeadMs = 1_500)
+        assertEquals(60_000L, rig.plays.last().positionMs)
+    }
+
+    @Test
+    fun `jump back puts a played track right after the current one and plays it`() = runTest {
+        val rig = Rig(this)
+        rig.music.setQueue(listOf(a, b))
+        playing(rig, a)
+        rig.music.jumpBack(c)
+        assertEquals(listOf(a, c, b), rig.music.queue)
+        assertEquals(c, rig.music.current)
     }
 }

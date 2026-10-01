@@ -330,7 +330,7 @@ private struct NowPlayingCard: View {
                 }
             }
             if let track = model.nowPlaying {
-                TrackProgress(durationMs: track.durationMs)
+                TrackProgress(durationMs: track.durationMs, repeatMode: model.hostState?.music?.repeat)
                 MusicStatusLine(status: model.musicStatus)
             }
             TransportControls()
@@ -369,10 +369,12 @@ private struct NowPlayingCard: View {
 }
 
 /// The bar and the two clocks, from the host's anchor once a second. Only
-/// this view redraws for it.
+/// this view redraws for it. Between the clocks, the host's repeat mode when
+/// it is on (display only: the passenger changes it by voice).
 private struct TrackProgress: View {
     @EnvironmentObject private var model: AppModel
     let durationMs: Int64
+    let repeatMode: RepeatMode?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
@@ -383,6 +385,11 @@ private struct TrackProgress: View {
                     Text(TrackTime.clock(position))
                         .contentTransition(.numericText())
                     Spacer()
+                    if let repeatMode {
+                        Image(systemName: repeatMode == .track ? "repeat.1" : "repeat")
+                            .foregroundStyle(.tint)
+                    }
+                    Spacer()
                     Text(TrackTime.clock(Double(durationMs)))
                 }
                 .font(.caption.monospacedDigit())
@@ -391,7 +398,16 @@ private struct TrackProgress: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Position")
-            .accessibilityValue("\(TrackTime.clock(position)) of \(TrackTime.clock(Double(durationMs)))")
+            .accessibilityValue(accessibilityValue(position))
+        }
+    }
+
+    private func accessibilityValue(_ position: Double) -> String {
+        let clocks = "\(TrackTime.clock(position)) of \(TrackTime.clock(Double(durationMs)))"
+        switch repeatMode {
+        case .track: return clocks + ", repeating this song"
+        case .queue: return clocks + ", repeating the queue"
+        case nil: return clocks
         }
     }
 }

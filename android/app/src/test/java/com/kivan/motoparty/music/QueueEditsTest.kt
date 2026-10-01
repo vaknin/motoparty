@@ -68,4 +68,16 @@ class QueueEditsTest {
         // Nothing loaded yet (index -1): every track is upcoming.
         assertEquals(4, QueueEdits.shuffled(q, -1, kotlin.random.Random(1)).size)
     }
+
+    @Test
+    fun moveTakesATrackOutAndPutsItAtItsNewUpcomingIndex() {
+        val long = q + listOf(t("n3"), t("n4"))
+        assertEquals("p,c,n4,n1,n2,n3", ids(QueueEdits.moved(long, 1, 3, "n4", 0)!!))
+        assertEquals("p,c,n2,n3,n1,n4", ids(QueueEdits.moved(long, 1, 0, "n1", 2)!!))
+        // Past the end = the end.
+        assertEquals("p,c,n2,n3,n4,n1", ids(QueueEdits.moved(long, 1, 0, "n1", 99)!!))
+        // Stale, or no index: refused.
+        assertNull(QueueEdits.moved(long, 1, 0, "n4", 2))
+        assertNull(QueueEdits.moved(long, 1, 0, "n1", -1))
+    }
 }

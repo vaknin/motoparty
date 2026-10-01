@@ -32,8 +32,14 @@ from .commands import (
     FirstPhraseGate,
     ANSWER_GRACE_MS,
     ANSWER_MS,
-    interpretation_outcome,
+    INTERPRET_PLAYED,
+    INTERPRET_UP_NEXT,
+    UNDO_MS,
+    UNDOABLE,
+    command_text,
+    interpretation_actions,
     parse_command,
+    to_actions,
 )
 from .music import VALID_ID, TrackInfo, browse, load_library, search
 from .opus import is_voice_activity
@@ -65,6 +71,7 @@ HELP = """commands: load | play | pause | stop | talk | mic on|off (refuse talk 
           hear <phrase> (recognised in the talk: first phrase rule, or every phrase solo;
           a command ends the talk) |
           next | previous | queue (every other --track after the current one) |
+          repeat off|track|queue (state.music.repeat) |
           announce <text> | state | stats | raw <json> (send unvalidated) | quit"""
 
 C2H_ONLY = {"ping", "music.ready", "music.error", "music.control", "command.text",
@@ -141,6 +148,11 @@ class Host:
         self.track: TrackInfo | None = self.library[0] if self.library else None
         self.queue: list[TrackInfo] = []
         self.history: list[TrackInfo] = []
+        # state.music.repeat: None (off), "track" or "queue" (PROTOCOL.md `state`).
+        self.repeat: str | None = None
+        # Voice undo (PROTOCOL.md "Commands", Voice actions): (when, the upcoming queue, the
+        # repeat mode) as they were before the last voice list that changed them.
+        self.undo: tuple[int, list[TrackInfo], str | None] | None = None
         self.music: dict | None = None
         self.pending_ready: dict[str, asyncio.Future] = {}
         self.load_task: asyncio.Task | None = None
@@ -238,9 +250,11 @@ class Host:
         answer a model would give; a phrase not in it is conversation, and the value null is a
         failure (a timeout)."""
         assert self.interpret_table is not None
-        answer = self.interpret_table.get(text, '{"action":"none"}')
+        answer = self.interpret_table.get(text, '{"actions":[]}')
         failed = not isinstance(answer, str)
-        outcome = None if failed else interpretation_outcome(answer)
+        # The snapshot of the context window: answer positions resolve against these tracks.
+        snap = {"up": self.queue[:INTERPRET_UP_NEXT], "played": self.history[::-1][:INTERPRET_PLAYED]}
+        outcome = None if failed else interpretation_actions(answer, len(snap["up"]), len(snap["played"]))
         talk_was, session = self.talk, self.talk_opened
         if reply is not None:
             reply["answered"] = True
@@ -257,19 +271,24 @@ class Host:
                 return
             # A reply that settles nothing falls back on the first answer; "never mind" does not.
             fallback = reply["fallback"] if reply is not None and (failed or asks) else None
-            cmd = (outcome["fallback"] or fallback) if asks else outcome if outcome is not None else fallback
+            actions = (outcome["fallback"] or fallback) if asks else outcome if outcome is not None else fallback
             # A `play …` of the grammar that the interpreter did not settle is played as spoken.
-            if cmd is None and reply is None and parse_command(text)["action"] in ("play", "queue"):
-                cmd = text
-            if cmd is None:
+            if not actions and reply is None and parse_command(text)["action"] in ("play", "queue"):
+                log(f"interpret: {text!r} not settled; executed as spoken")
+                self._command(text, by)
+                return
+            if not actions:
                 log(f"interpret: {text!r} -> {'failed' if failed else 'conversation'}")
                 if solo:
                     self.send(dict(UNKNOWN_ANNOUNCE))
-            elif by == "client" and parse_command(cmd)["action"] in VOLUME_ACTIONS:
-                log(f"interpret: {text!r} -> {cmd} (ignored: volume is the passenger's own)")
-            else:
-                log(f"interpret: {text!r} -> {cmd}")
-                self._command(cmd, by)
+                return
+            if by == "client" and any(a["type"] in VOLUME_ACTIONS for a in actions):
+                log(f"interpret: {text!r}: volume ignored (it is the passenger's own)")
+                actions = [a for a in actions if a["type"] not in VOLUME_ACTIONS]
+                if not actions:
+                    return
+            log(f"interpret: {text!r} -> {js(actions)}")
+            self._run(actions, by, snap)
 
         if self.interpret_delay_ms:
             asyncio.get_running_loop().call_later(self.interpret_delay_ms / 1000, done)
@@ -291,7 +310,7 @@ class Host:
             q["answered"] = True
             log(f"ask: no reply to {q['text']!r}; fallback {q['fallback']}")
             if q["fallback"]:
-                self._command(q["fallback"], q["by"])
+                self._run(q["fallback"], q["by"])
 
         asyncio.get_running_loop().call_later(self.answer_wait_ms / 1000, no_reply)
 
@@ -310,6 +329,8 @@ class Host:
             s["mic"] = self.talk_mic  # PROTOCOL.md `state`: a mid-talk joiner opens it the same way
         if self.music:
             s["music"] = dict(self.music)
+            if self.repeat:
+                s["music"]["repeat"] = self.repeat
         s["queue"] = [{"id": t.id, "title": t.title, "artist": t.artist} for t in self.queue]
         return s
 
@@ -599,7 +620,8 @@ class Host:
         playing = bool(m and m["playing"] and not self.talk and not self._loading() and m["durationMs"] > 0)
         end = m["atHostTimeMs"] + m["durationMs"] - m["positionMs"] if playing else 0
         want = None
-        if playing and self.current is not None and self.queue and self.queue[0].id in self.client_ready:
+        if (playing and self.current is not None and self.repeat != "track" and self.queue
+                and self.queue[0].id in self.client_ready):
             want = (self.queue[0].id, end)
             if want != self.next_sent and end - now_ms() < GAPLESS_MIN_NOTICE_MS:
                 want = None  # too late to announce: it starts on its music.play, with a gap
@@ -626,6 +648,15 @@ class Host:
         if not m or not m["playing"] or t is None or self._loading():
             return
         end = m["atHostTimeMs"] + m["durationMs"] - m["positionMs"]
+        if self.repeat == "track":
+            log(f"music: {t.id} ended; repeat track: again from 0 at {end}")
+            self._play_from(0, end)
+            self.send_state()
+            return
+        if not self.queue and self.repeat == "queue":
+            # the queue starts again from the first track it still holds (PROTOCOL.md `state`)
+            log("music: end of the queue; repeat queue: from the first track again")
+            self.queue, self.history = [*self.history, t][:MAX_QUEUE], []
         if not self.queue:
             # PROTOCOL.md "Music flow" 3 (2026-09-30): the last track is parked, not stopped.
             log(f"music: end of the queue; {t.id} parked at 0")
@@ -818,6 +849,9 @@ class Host:
             return
         if op == "remove":
             del self.queue[i]
+        elif op == "move":  # it is state.queue[to] afterwards; past the end = the end
+            track = self.queue.pop(i)
+            self.queue.insert(min(msg["to"], len(self.queue)), track)
         else:  # jump: the skipped tracks go behind the current one, so `previous` reaches them
             self._touch_play_ends_talk("client")
             if self._has_current():
@@ -889,13 +923,9 @@ class Host:
             self._submit(text, "host", solo=self.gate.role == "solo")
 
     def _command(self, text: str, by: str) -> None:
-        """A command spoken by `by` (the client's command.text, or the host's own phrase).
-        PROTOCOL.md "Commands", Effect on the talk: every command that parses ends the talk it
-        was spoken in (closed by the side that spoke), even if it then fails, and its announce,
-        if it has one, goes after that close. It acts on the music the talk paused before the
-        close (pause cancels the resume, next/previous choose what resumes, play replaces it),
-        so the close itself starts the right thing. An unparsed phrase ends nothing. The
-        announce goes to the client and the host speaks it too."""
+        """A command spoken by `by` (the client's command.text, or the host's own phrase), parsed
+        by the grammar and run as voice actions (PROTOCOL.md "Commands", Voice actions). An
+        unparsed phrase ends nothing and gets "Didn't catch that"."""
         cmd = parse_command(text)
         log(f"   parsed: {cmd}")
         a = cmd["action"]
@@ -907,31 +937,65 @@ class Host:
         if a == "unknown" or a in VOLUME_ACTIONS:
             self.send(dict(UNKNOWN_ANNOUNCE))
             return
-        reply = self._act(cmd)
+        self._run(to_actions(cmd), by)
+
+    def _run(self, actions: list[dict], by: str, snap: dict | None = None) -> None:
+        """Run a voice action list from `by` in order (PROTOCOL.md "Commands", Voice actions,
+        Running a list). Positions resolve against `snap`, the context window's tracks. PROTOCOL.md
+        "Commands", Effect on the talk: a list ends the talk it was spoken in (closed by the side
+        that spoke), even if an action fails. Each action works on the music the talk paused
+        before the close (pause cancels the resume, next/previous choose what resumes, play and
+        jump replace it), so the close itself starts the right thing. Then one announce for the
+        whole list, made of the parts that need one, to the client (the host speaks it too)."""
+        prior = self.undo
+        if any(a["type"] in UNDOABLE for a in actions):
+            self.undo = (now_ms(), list(self.queue), self.repeat)
+        parts = [p for a in actions if (p := self._act(a, snap or {"up": [], "played": []}, prior))]
         if self.talk:
-            log(f"   {a!r} ends the talk")
+            log(f"   {[a['type'] for a in actions]} ends the talk")
             self._close_talk(by, "trigger")
             # whatever starts next waits for the headset to be back in media mode
             self.media_at = now_ms() + RESUME_LEAD_MS
-        elif a == "end":
+        elif [a["type"] for a in actions] == ["end"]:
             log("   (no talk to end)")
-        if reply:
-            text, earcon = reply
+        if parts:
+            text = ". ".join(t for t, _ in parts)
+            earcon = "error" if all(e == "error" for _, e in parts) else "ok"
             self.send({"t": "announce", "text": text, "earcon": earcon})
 
-    def _act(self, cmd: dict) -> tuple[str, str] | None:
-        """Carry out a parsed command; in a talk, on the music the talk paused. Returns its
-        announce as (text, earcon), or None: a command that succeeds and whose result is the
-        music itself has none (PROTOCOL.md "Commands", Spoken replies)."""
-        a = cmd["action"]
-        if a == "play":
+    @staticmethod
+    def _name(t: TrackInfo) -> str:
+        return f"{t.title} by {t.artist}" if t.artist else t.title
+
+    def _upcoming(self, positions: list[int], snap: dict) -> list[TrackInfo]:
+        """Snapshot positions -> those tracks, if they are still upcoming (by identity: the
+        queue may have changed while the model was thinking)."""
+        out = []
+        for p in positions:
+            t = snap["up"][p - 1] if p - 1 < len(snap["up"]) else None
+            if t is not None and any(q is t for q in self.queue):
+                out.append(t)
+            else:
+                log(f"   (position {p} is no longer upcoming; skipped)")
+        return out
+
+    def _act(self, a: dict, snap: dict, prior: tuple | None) -> tuple[str, str] | None:
+        """Carry out one voice action; in a talk, on the music the talk paused. Returns its part
+        of the announce as (text, earcon), or None: an action whose result is the music itself
+        has none (PROTOCOL.md "Commands", Running a list). The fake host has no catalog: a
+        search "finds" its library."""
+        t = a["type"]
+        if t == "play":
             if self.track is None:
-                return f"Couldn't find {cmd['query']}", "error"
+                return f"Couldn't find {a.get('query', 'anything similar')}", "error"
+            if a["kind"] == SIMILAR and not self._has_current():
+                return "Nothing playing", "error"
             # the new track starts instead of the one the talk paused, whatever was said before
             self.resume_after_talk = False
             self.no_resume = False
+            self.undo = None  # a new queue forgets the undo
             self._start(self.track)
-        elif a == "pause":
+        elif t == "pause":
             if self.talk:
                 # music is already paused for the talk: cancel the resume after it
                 ok = self.resume_after_talk and not self.no_resume
@@ -941,28 +1005,27 @@ class Host:
                 ok = self._pause()
             if not ok:
                 return "Nothing playing", "error"
-        elif a == "resume":
+        elif t == "resume":
             if not self._resume():
                 return "Nothing to resume", "error"
-        elif a in ("next", "previous"):
+        elif t in ("next", "previous"):
             # Inside a talk the track loads paused (see _load_and_play); the close resumes it if
             # music was playing before the talk.
-            if not (self.queue if a == "next" else self.history):
-                return ("End of queue" if a == "next" else "Nothing before this"), "error"
+            if not (self.queue if t == "next" else self.history):
+                return ("End of queue" if t == "next" else "Nothing before this"), "error"
             if self.talk and not (self.resume_after_talk or self._loading()):
                 self.no_resume = True  # paused before the talk: stays paused on the new track
-            self._music_control(a)
-        elif a == "queue":
-            # Queueing by voice. The fake host has no catalog: whatever is asked for, it "finds"
-            # its library, in order (a query is not looked at).
+            self._music_control(t)
+        elif t == "add":
+            # Queueing by voice: whatever is asked for, the library, in order (no query is read).
             current = self.track if self._has_current() else None
-            if cmd["kind"] == SIMILAR and current is None:
+            if a["kind"] == SIMILAR and current is None:
                 return "Nothing playing", "error"
             have = {current.id} if current else set()
-            if cmd["where"] != "instead":
-                have |= {t.id for t in self.queue}
-            limit = int(cmd["count"]) if "count" in cmd else QUEUE_SIMILAR if cmd["kind"] == SIMILAR else MAX_QUEUE
-            added = [t for t in self.library if t.id not in have][:limit]
+            if a["where"] != "instead":
+                have |= {q.id for q in self.queue}
+            limit = a.get("count") or (QUEUE_SIMILAR if a["kind"] == SIMILAR else MAX_QUEUE)
+            added = [q for q in self.library if q.id not in have][:limit]
             if not added:
                 return "Nothing to add", "error"
             if current is None:
@@ -971,21 +1034,88 @@ class Host:
                 self._start(added[0])
                 self.send_state()
                 return None
-            if cmd["where"] == "next":
+            if a["where"] == "next":
                 self.queue[0:0] = added
             else:
-                self.queue = (self.queue if cmd["where"] == "end" else []) + added
+                self.queue = (self.queue if a["where"] == "end" else []) + added
             del self.queue[MAX_QUEUE:]
             self.send_state()
-            one = added[0]
-            what = (f"{one.title} by {one.artist}" if one.artist else one.title) if len(added) == 1 else f"{len(added)} songs"
-            return (f"Next: {what}" if cmd["where"] == "next" else f"Added {what}"), "ok"
-        elif a == "nowplaying":
-            t = self.track if self._has_current() else None
-            if t is None:
+            what = self._name(added[0]) if len(added) == 1 else f"{len(added)} songs"
+            return (f"Next: {what}" if a["where"] == "next" else f"Added {what}"), "ok"
+        elif t == "remove":
+            if "at" in a:
+                gone = self._upcoming(a["at"], snap)
+            else:
+                gone = [q for q in self.queue if command_text(q.artist) == a["artist"]]
+            if not gone:
+                return "Nothing to remove", "error"
+            self.queue = [q for q in self.queue if not any(q is g for g in gone)]
+            self.send_state()
+            return f"Removed {self._name(gone[0]) if len(gone) == 1 else f'{len(gone)} songs'}", "ok"
+        elif t == "move":
+            moved = self._upcoming(a["at"], snap)
+            if not moved:
+                return "Nothing to move", "error"
+            rest = [q for q in self.queue if not any(q is m for m in moved)]
+            at = min(a["to"] - 1, len(rest))
+            self.queue = rest[:at] + moved + rest[at:]
+            self.send_state()
+            where = "next" if at == 0 else "the end" if at == len(rest) else str(a["to"])
+            return f"Moved {self._name(moved[0]) if len(moved) == 1 else f'{len(moved)} songs'} to {where}", "ok"
+        elif t == "clear":
+            if not self.queue:
+                return "Nothing to clear", "error"
+            self.queue.clear()
+            self.send_state()
+            return "Cleared the queue", "ok"
+        elif t == "jump":
+            if a["at"] > 0:
+                found = self._upcoming([a["at"]], snap)
+                if not found:
+                    return "That song is gone", "error"
+                i = next(i for i, q in enumerate(self.queue) if q is found[0])
+                skipped, self.queue = self.queue[:i], self.queue[i + 1 :]
+            else:
+                # a played track is put back right after the current one and played; the queue stays
+                found, skipped = [snap["played"][-a["at"] - 1]], []
+            self.resume_after_talk = False
+            self.no_resume = False
+            self.undo = None  # a new current track forgets the undo
+            if self._has_current():
+                self.history.append(self.track)
+            self.history += skipped
+            self._start(found[0])
+            self.send_state()
+        elif t in ("restart", "seek"):
+            m = self.music
+            if not m:
                 return "Nothing playing", "error"
-            return (f"{t.title} by {t.artist}" if t.artist else t.title), "ok"
-        elif a == "shuffle":
+            now = now_ms()
+            pos = 0 if t == "restart" else self._position(now) + a["by"] * 1000 if "by" in a else a["to"] * 1000
+            pos = max(0, min(pos, m["durationMs"]) if m["durationMs"] > 0 else pos)
+            if m["playing"]:
+                self._play_from(pos, now + PLAY_LEAD_MS)
+            else:  # paused, or by the talk: it resumes from here
+                m.update(positionMs=pos, atHostTimeMs=now)
+            self.send_state()
+        elif t == "repeat":
+            self.repeat = None if a["mode"] == "off" else a["mode"]
+            self.send_state()
+        elif t in VOLUME_ACTIONS:
+            log(f"   local: {t} handled here (the peer has no real volume)")
+        elif t == "tell":
+            return self._tell(a["about"])
+        elif t == "undo":
+            if prior is None or now_ms() - prior[0] > UNDO_MS:
+                return "Nothing to undo", "error"
+            self.undo = None  # one level: an undo cannot be undone
+            current = self.track.id if self._has_current() else None
+            back = [q for q in prior[1] if q.id != current]
+            n = sum(1 for q in back if not any(q is u for u in self.queue))
+            self.queue, self.repeat = back, prior[2]
+            self.send_state()
+            return (f"Put back {n} song{'s' if n != 1 else ''}" if n else "Undone"), "ok"
+        elif t == "shuffle":
             # the upcoming queue only; the current track stays (PROTOCOL.md "Commands")
             if len(self.queue) < 2:
                 return "Nothing to shuffle", "error"
@@ -993,6 +1123,22 @@ class Host:
             self.send_state()
             return "Shuffled", "ok"
         return None  # `end` does nothing but end the talk
+
+    def _tell(self, about: str) -> tuple[str, str]:
+        """`tell`: the host says the fact in its own words from its own data."""
+        t = self.track if self._has_current() else None
+        if about in ("track", "album") and t is None:
+            return "Nothing playing", "error"
+        if about == "track":
+            return self._name(t), "ok"
+        if about == "album":
+            return (f"From {t.album}" if t.album else "Album unknown"), "ok"
+        if about == "next":
+            return (f"Next: {self._name(self.queue[0])}" if self.queue else "Nothing after this"), "ok"
+        if about == "previous":
+            return (f"Before this: {self._name(self.history[-1])}" if self.history else "Nothing before this"), "ok"
+        minutes = round(sum(q.duration_ms for q in self.queue) / 60_000)
+        return (f"{len(self.queue)} songs left, about {minutes} minutes" if self.queue else "Nothing after this"), "ok"
 
     # ------------------------------------------------------------------ stdin
 
@@ -1024,6 +1170,13 @@ class Host:
             elif cmd == "queue":
                 self.queue = [t for t in self.library if t is not self.track][:MAX_QUEUE]
                 log(f"queue: {[t.title for t in self.queue]}")
+                self.send_state()
+            elif cmd == "repeat":
+                arg = rest.strip().lower()
+                if arg not in ("off", "track", "queue"):
+                    log("usage: repeat off|track|queue")
+                    continue
+                self.repeat = None if arg == "off" else arg
                 self.send_state()
             elif cmd == "talk":
                 if self.talk:

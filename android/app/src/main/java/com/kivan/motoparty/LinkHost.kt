@@ -58,6 +58,8 @@ import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.core.State
 import com.kivan.motoparty.core.TalkClose
 import com.kivan.motoparty.core.TalkOpen
+import com.kivan.motoparty.core.VoiceAction
+import com.kivan.motoparty.core.toActions
 import com.kivan.motoparty.core.wireType
 import com.kivan.motoparty.link.ControlServer
 import com.kivan.motoparty.link.Discovery
@@ -80,7 +82,11 @@ import com.kivan.motoparty.music.remuxWebmToMp4
 import com.kivan.motoparty.music.TrackCache
 import com.kivan.motoparty.music.OutputRoute
 import com.kivan.motoparty.music.TrackCaches
+import com.kivan.motoparty.music.VoiceEdits
 import com.kivan.motoparty.music.VoiceQueue
+import com.kivan.motoparty.music.VoiceSnapshot
+import com.kivan.motoparty.music.VoiceUndo
+import com.kivan.motoparty.music.VoiceWindow
 import com.kivan.motoparty.music.TrackServer
 import com.kivan.motoparty.trigger.TriggerKind
 import com.kivan.motoparty.trigger.TriggerSource
@@ -94,6 +100,7 @@ import com.kivan.motoparty.voicecmd.TalkRecognizer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -279,10 +286,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private class Question(
         val session: Int,
         val fromClient: Boolean,
-        /** The first request, the question it got and the command text to fall back on. */
+        /** The first request, the question it got and the actions to fall back on (at most one `play`). */
         val phrase: String,
         val text: String,
-        val fallback: String?,
+        val fallback: List<VoiceAction>,
     ) {
         /** The reply came (or the wait for it ended): nothing later is one. */
         var answered = false
@@ -1107,12 +1114,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     }
 
     /**
-     * A command candidate from any source. One the grammar parses (except a `play …`), and every
-     * one while smart commands are off, goes straight to [executeCommand]. Otherwise the interpreter is asked what
-     * was meant (PROTOCOL.md "Commands", *Interpretation*) and its answer, as a command text, is
-     * executed as if the same side had said it in those words. Conversation and every failure do
-     * nothing: the talk stays open, nothing is said (solo and typed: "Didn't catch that"). An
-     * `ask` answer becomes our one question of the talk ([ask]), and the phrase after it its reply.
+     * A command candidate from any source. One the grammar parses (except a `play …` or `queue …`),
+     * and every one while smart commands are off, goes straight to [execute] as the grammar's
+     * actions. Otherwise the interpreter is asked what was meant (PROTOCOL.md "Commands",
+     * *Interpretation*), given the context window ([VoiceWindow]), and the actions it answers run
+     * as if the same side had said them. Conversation and every failure do nothing: the talk stays
+     * open, nothing is said (solo and typed: "Didn't catch that"). An `ask` answer becomes our one
+     * question of the talk ([ask]), and the phrase after it its reply.
      */
     private fun submitCommand(text: String, fromClient: Boolean = false) {
         val interpreter = interpreter
@@ -1121,9 +1129,9 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         // The grammar's own `play …` and `queue …` are interpreted too (names get repaired, a vague
         // one may be asked about); if the interpreter does not settle it, it is executed as spoken.
         val parsed = CommandParser.parse(text)
-        val spoken = text.takeIf { reply == null && (parsed is Command.Play || parsed is Command.Queue) }
+        val spoken = parsed.takeIf { reply == null && (it is Command.Play || it is Command.Queue) }?.toActions()
         if (interpreter == null || !interprets || (reply == null && spoken == null && parsed != Command.Unknown)) {
-            return executeCommand(text, fromClient)
+            return execute(parsed.toActions(), fromClient, VoiceSnapshot.EMPTY, text)
         }
         reply?.answered = true
         // The answer counts only for the talk (or the absence of one) the phrase was said in.
@@ -1131,37 +1139,41 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         val session = talkSession
         // Where an unparsed phrase gets "Didn't catch that": typed, or spoken in a solo talk.
         val solo = !talkWas || phrases.role == FirstPhraseGate.Role.SOLO
-        val current = music.current
-        val playing = current?.let { "${it.title} – ${it.artist}" }
-        val upNext = music.upcoming.take(Interpretation.INTERPRET_UP_NEXT).map { it.title }
+        val now = clock()
+        val window = VoiceWindow.build(
+            text, settings.value.asrLanguage, music.current, music.positionMs, music.repeat, music.upcoming,
+            history.value.played, lastVoice?.let { (summary, at) -> VoiceEdits.lastVoice(summary, at, now) },
+            reply?.let { VoiceWindow.Asked(it.phrase, it.text) },
+        )
         scope.launch {
             val t0 = clock()
-            val answer = interpreter.interpret(
-                text, settings.value.asrLanguage, playing, current?.album, upNext, reply?.let { Interpreter.Asked(it.phrase, it.text) },
-            )
-            val outcome = (answer as? Interpreter.Text)?.let { Interpretation.outcome(it.text) }
+            val answer = interpreter.interpret(window.input)
+            val outcome = (answer as? Interpreter.Text)?.let {
+                Interpretation.outcome(it.text, window.snapshot.upNext.size, window.snapshot.played.size)
+            }
             val stale = talk.isOpen != talkWas || talkSession != session
             // One question a talk, and only in a talk: otherwise an `ask` is its fallback.
             val ask = (outcome as? Interpretation.Ask)?.takeIf { talkWas && question == null }
             // What a reply falls back on when it settles nothing: never on "never mind".
-            val fallback = reply?.fallback?.takeIf { answer is Interpreter.Failed || outcome is Interpretation.Ask }
-            val command = when (outcome) {
-                is Interpretation.Do -> outcome.text
-                is Interpretation.Ask -> if (ask != null) null else outcome.fallback ?: fallback ?: spoken
+            val fallback = reply?.fallback?.ifEmpty { null }?.takeIf { answer is Interpreter.Failed || outcome is Interpretation.Ask }
+            val actions = when (outcome) {
+                is Interpretation.Do -> outcome.actions
+                is Interpretation.Ask -> if (ask != null) null else outcome.fallback.ifEmpty { null } ?: fallback ?: spoken
                 null -> fallback ?: spoken
             }
+            // An interpreted volume from the passenger is theirs (their phone's keys): the rest runs.
+            val runs = if (fromClient) actions?.filterNot { it.isVolume } else actions
             val what = when {
-                outcome is Interpretation.Ask -> "ask \"${outcome.question}\" (fallback ${outcome.fallback ?: "none"})"
+                outcome is Interpretation.Ask -> "ask \"${outcome.question}\" (fallback ${VoiceAction.describe(outcome.fallback).ifEmpty { "none" }})"
                 answer is Interpreter.Failed -> "failed: ${answer.why}"
                 outcome == null -> "conversation"
-                else -> command
+                else -> VoiceAction.describe((outcome as Interpretation.Do).actions)
             }
-            val volume = command == "volume up" || command == "volume down"
             val note = when {
                 stale -> " (dropped: the talk changed)"
-                command != null && volume && fromClient -> " (ignored: volume is the passenger's own)"
-                command != null && command == spoken -> " (played as spoken)"
-                command != null && command != (outcome as? Interpretation.Do)?.text -> " (the fallback)"
+                runs != null && runs.size < actions!!.size -> " (ignored: volume is the passenger's own)"
+                actions != null && actions === spoken -> " (played as spoken)"
+                actions != null && actions !== (outcome as? Interpretation.Do)?.actions -> " (the fallback)"
                 else -> ""
             }
             val of = if (reply != null) " (reply to \"${reply.text}\")" else ""
@@ -1170,10 +1182,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             when {
                 stale -> Unit
                 ask != null -> ask(Question(session, fromClient, text, ask.question, ask.fallback))
-                // The unparsed text itself: [executeCommand] answers it "Didn't catch that".
-                command == null -> if (solo) executeCommand(text, fromClient)
-                volume && fromClient -> Unit
-                else -> executeCommand(command, fromClient)
+                // Nothing to do: [execute] answers the empty list "Didn't catch that".
+                runs == null -> if (solo) execute(emptyList(), fromClient, window.snapshot, text)
+                runs.isEmpty() -> Unit
+                else -> execute(runs, fromClient, window.snapshot, text)
             }
         }
     }
@@ -1200,133 +1212,246 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             stopRecognizerIfSpent(q.session)
             if (question !== q || q.answered || !talk.isOpen || talkSession != q.session) return@launch
             q.answered = true
-            Hub.log("ask: no reply to \"${q.text}\"${q.fallback?.let { ", the fallback: $it" } ?: ", nothing to fall back on"}")
-            q.fallback?.let { executeCommand(it, q.fromClient) }
+            Hub.log("ask: no reply to \"${q.text}\"${if (q.fallback.isEmpty()) ", nothing to fall back on" else ", the fallback: ${VoiceAction.describe(q.fallback)}"}")
+            if (q.fallback.isNotEmpty()) execute(q.fallback, q.fromClient, VoiceSnapshot.EMPTY, q.phrase)
         }
     }
 
+    /** What the last voice list changed, for the window's `lastVoice`, and when (host clock). Main only. */
+    private var lastVoice: Pair<String, Long>? = null
+    /** PROTOCOL.md "Commands", *Voice undo*: one level. Main only. */
+    private val voiceUndo = VoiceUndo()
+
+    /** One list in [execute]: what it found out on the way. Main only. */
+    private class ListRun(val fromClient: Boolean, val snapshot: VoiceSnapshot, val inTalk: Boolean) {
+        /** A `play` or `jump` started new music: the music the talk paused does not come back. */
+        var started = false
+        /** What it changed, for [lastVoice]. */
+        val changes = mutableListOf<String>()
+    }
+
     /**
-     * A command: typed on the Ride screen, the passenger's `command.text` ([fromClient], already
-     * let through by [onClientCommand]), or our rider's first phrase in a talk (any phrase, solo). What it does to the talk and where its reply is heard is
-     * [CommandEffect]'s decision (PROTOCOL.md "Commands", *Effect on the talk*); this carries it out.
+     * The one executor of voice actions (PROTOCOL.md "Commands", *Running a list*): the grammar's
+     * command ([said] the phrase, for the log), the interpreter's answer, a question's fallback.
+     * [CommandEffect] decides what it does to the talk and where the reply is heard; this carries
+     * it out. Searches start at once and in parallel; the actions apply in order, positions
+     * resolved against [snapshot]. The actions before the first search apply now, before the talk
+     * closes, as the grammar's commands always have: `resume` parks the track and `next`/`previous`
+     * choose it, so the close resumes it the usual way (held over the route switch); `pause` cancels
+     * that resume; `play` and `jump` drop it, so the old music does not come back for the second
+     * before the new track does. The rest wait for their search and for the headset to be back in
+     * media mode. One spoken line for the whole list, after that switch.
      */
-    private fun executeCommand(text: String, fromClient: Boolean = false) {
-        Hub.log("command: \"$text\"${if (fromClient) " (client)" else ""}")
-        val cmd = CommandParser.parse(text)
-        val effect = CommandEffect.of(cmd, talk.isOpen, fromClient)
-        val inTalk = effect.reply == CommandEffect.Reply.CALL
-        // What must happen before the talk closes, on the music the talk paused: `resume` parks
-        // the track and `next`/`previous` choose it, so the close resumes it the usual way (held
-        // over the route switch); `pause` cancels that resume; `play` drops it, so the old music
-        // does not come back for the second before the new track does.
+    private fun execute(actions: List<VoiceAction>, fromClient: Boolean, snapshot: VoiceSnapshot, said: String) {
+        Hub.log("command: \"$said\"${if (fromClient) " (client)" else ""}${if (actions.isEmpty()) "" else " → ${VoiceAction.describe(actions)}"}")
+        val effect = CommandEffect.of(actions, talk.isOpen, fromClient)
+        val run = ListRun(fromClient, snapshot, inTalk = effect.reply == CommandEffect.Reply.CALL)
+        // A new queue or current track forgets the undo; a change of the queue keeps what it was.
+        if (actions.any { it.replacesMusic }) voiceUndo.forget()
+        else if (actions.any { it.undoable } && VoiceAction.Undo !in actions) voiceUndo.keep(music.upcoming, music.repeat, clock())
+        // The spoken reply, part by part in the list's order: failures and the actions with nothing
+        // else to show for themselves. One whose result is the music has none ("Spoken replies").
+        val parts = arrayOfNulls<VoiceEdits.Part>(actions.size)
+        // Not a command: "Didn't catch that" (only ever asked for where it is due: solo, typed, grammar).
+        val unparsed = actions.isEmpty()
         var hadResume = false
-        // The spoken reply, for a failure or a command with nothing else to show for itself. A
-        // command whose result is the music has none ("Spoken replies" in PROTOCOL.md).
-        var said: Pair<String, String>? = null
-        when (cmd) {
-            Command.Resume -> {
-                if (!music.canResume) said = "Nothing to resume" to Earcon.ERROR
-                music.resume()
-            }
-            is Command.Play -> if (effect.closeBy != null) hadResume = music.beforePlayEndsTalk(clock() + settings.value.resumeLeadMs)
-            Command.Pause -> music.pause()
-            Command.Next -> {
-                // On the last track `next` parks it and `current` stays: that is the end of the queue.
-                if (!music.hasNext) said = "End of queue" to Earcon.OK
-                music.next()
-            }
-            Command.Previous -> {
-                music.previous()
-                if (music.current == null) said = "Nothing to play" to Earcon.OK
-            }
-            Command.NowPlaying -> said = music.current.let { MusicController.nowPlayingLine(it) to if (it != null) Earcon.OK else Earcon.ERROR }
-            Command.Shuffle -> said = if (music.shuffleUpcoming()) "Shuffled" to Earcon.OK else "Nothing to shuffle" to Earcon.ERROR
-            Command.Unknown -> said = "Didn't catch that" to Earcon.ERROR
-            // `end` has no reply: the talk's closing earcon is the acknowledgement.
-            Command.End -> if (effect.closeBy == null) Hub.log("end: no talk to end")
-            Command.VolumeUp, Command.VolumeDown, is Command.Queue -> Unit
+        if (effect.closeBy != null && actions.any { it.replacesMusic }) {
+            hadResume = music.beforePlayEndsTalk(clock() + settings.value.resumeLeadMs)
         }
+        val firstSearch = actions.indexOfFirst { it.searches }.takeIf { it >= 0 } ?: actions.size
+        // Volume waits for the close: it is this phone's media volume.
+        for (i in 0 until firstSearch) if (!actions[i].isVolume) parts[i] = apply(actions[i], run)
         val closed: Job? = effect.closeBy?.let { by ->
             talk.onCommandClose(by)?.let(::applyTalk)
             talkClosed
         }
-        /** Now, or once the talk this command closed is down and the headset is back in media mode. */
-        fun afterClose(block: () -> Unit) {
-            if (closed == null) block() else scope.launch { closed.join(); block() }
+        val searches = (firstSearch until actions.size).filter { actions[it].searches }
+        val found = searches.associateWith { i -> scope.async { search(actions[i]) } }
+        if (searches.isNotEmpty()) {
+            Hub.status.update { it.copy(busy = "Searching ${searches.joinToString(", ") { what(actions[it]) }}") }
         }
-        when (cmd) {
-            is Command.Play -> scope.launch {
-                Hub.status.update { it.copy(busy = "Searching ${cmd.kind.word} \"${cmd.query}\"") }
-                val found = try {
-                    catalog.search(cmd.kind, cmd.query)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    e
-                } finally {
-                    Hub.status.update { it.copy(busy = null) }
-                }
-                // The music and a failure's reply come after the headset is back in media mode.
-                closed?.join()
-                when (found) {
-                    is Catalog.Result -> {
-                        music.setQueue(found.tracks)
-                        Hub.log("playing ${found.label}")
-                        Hub.status.update { it.copy(error = null) }
-                    }
-                    else -> {
-                        // The talk is closed anyway; the music it paused comes back.
-                        if (hadResume) music.resume()
-                        announce(searchFailure(found as Exception, cmd.query), Earcon.ERROR)
-                    }
-                }
+        scope.launch {
+            try {
+                found.values.forEach { it.join() }
+            } finally {
+                if (searches.isNotEmpty()) Hub.status.update { it.copy(busy = null) }
             }
-            is Command.Queue -> scope.launch {
-                val source = music.current
-                val what = cmd.kind?.let { "${it.word} \"${cmd.query}\"" } ?: "similar music"
-                Hub.status.update { it.copy(busy = "Searching $what") }
-                val found = try {
-                    when {
-                        cmd.kind != null -> catalog.search(cmd.kind, cmd.query).tracks.let { tracks ->
-                            if (!VoiceQueue.wantsCurrentAlbum(cmd, tracks, source)) tracks
-                            else catalog.albumContaining(source!!)?.also { Hub.log("queue: using ${it.label}, which holds the playing track") }?.tracks ?: tracks
-                        }
-                        source != null -> catalog.similar(source.id)
-                        else -> null
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    e
-                } finally {
-                    Hub.status.update { it.copy(busy = null) }
-                }
-                // The talk paused the music; it is back before anything is added or said.
-                closed?.join()
-                val current = music.current
-                val added = (found as? List<*>)?.filterIsInstance<Track>()?.let { VoiceQueue.pick(cmd, it, current, music.upcoming) }
+            // The music and the reply come after the headset is back in media mode.
+            closed?.join()
+            for (i in actions.indices) {
+                val a = actions[i]
                 when {
-                    found is Exception -> announce(searchFailure(found, cmd.query), Earcon.ERROR)
-                    found == null -> announce("Nothing playing", Earcon.ERROR)
-                    added.isNullOrEmpty() -> announce("Nothing to add", Earcon.ERROR)
-                    else -> {
-                        if (cmd.where == Command.Where.INSTEAD) music.clearUpcoming()
-                        music.enqueue(if (cmd.where == Command.Where.NEXT) EnqueueMode.NEXT else EnqueueMode.END, added)
-                        Hub.log("queued ${cmd.where.name.lowercase()}: ${added.size} track(s) of $what")
-                        Hub.status.update { it.copy(error = null) }
-                        // With nothing loaded they just started playing: the music says so.
-                        if (current != null) announce(VoiceQueue.reply(cmd.where, added), Earcon.OK)
-                    }
+                    a.searches -> parts[i] = applyFound(a, found.getValue(i).await(), run)
+                    i >= firstSearch || a.isVolume -> parts[i] = apply(a, run)
                 }
             }
-            Command.VolumeUp -> afterClose { onVolumeCommand(fromClient, AudioManager.ADJUST_RAISE, inTalk) }
-            Command.VolumeDown -> afterClose { onVolumeCommand(fromClient, AudioManager.ADJUST_LOWER, inTalk) }
-            else -> when (val reply = said) {
+            // A `play` that found nothing: the talk is closed anyway, and the music it paused comes back.
+            if (hadResume && !run.started) music.resume()
+            if (run.changes.isNotEmpty()) lastVoice = run.changes.joinToString("; ") to clock()
+            val line = VoiceEdits.line(listOfNotNull(*parts) + listOfNotNull(VoiceEdits.Part("Didn't catch that", failed = true).takeIf { unparsed }))
+            when {
+                line != null -> announce(line.first, if (line.second) Earcon.ERROR else Earcon.OK, run.inTalk)
                 // Done, and the music says so: a failure's banner has nothing left to say.
-                null -> if (cmd != Command.End) Hub.status.update { it.copy(error = null) }
-                else -> afterClose { announce(reply.first, reply.second, inTalk) }
+                actions.any { it != VoiceAction.End } -> Hub.status.update { it.copy(error = null) }
+                // `end` has no reply: the talk's closing earcon is the acknowledgement.
+                effect.closeBy == null -> Hub.log("end: no talk to end")
             }
         }
+    }
+
+    /** One action that does not search, now. Returns its part of the spoken line, or null. */
+    private fun apply(a: VoiceAction, run: ListRun): VoiceEdits.Part? {
+        fun failed(text: String) = VoiceEdits.Part(text, failed = true)
+        return when (a) {
+            VoiceAction.Resume -> (if (!music.canResume) failed("Nothing to resume") else null).also { music.resume() }
+            VoiceAction.Pause -> null.also { music.pause() }
+            // On the last track `next` parks it and `current` stays: that is the end of the queue.
+            VoiceAction.Next -> (if (music.atEnd) VoiceEdits.Part("End of queue") else null).also { music.next() }
+            VoiceAction.Previous -> {
+                music.previous()
+                if (music.current == null) VoiceEdits.Part("Nothing to play") else null
+            }
+            VoiceAction.Shuffle -> if (music.shuffleUpcoming()) {
+                run.changes += "shuffled the queue"
+                VoiceEdits.Part("Shuffled")
+            } else failed("Nothing to shuffle")
+            VoiceAction.End, is VoiceAction.Play, is VoiceAction.Add -> null
+            VoiceAction.Restart -> if (music.seek(0)) null else failed("Nothing playing")
+            is VoiceAction.Seek -> {
+                val to = if (a.by != null) music.positionMs + a.by * 1000L else (a.to ?: 0) * 1000L
+                if (music.seek(to)) null else failed("Nothing playing")
+            }
+            is VoiceAction.Repeat -> {
+                music.setRepeat(a.mode)
+                run.changes += "repeat ${a.mode.word}"
+                null
+            }
+            VoiceAction.VolumeUp -> null.also { onVolumeCommand(run.fromClient, AudioManager.ADJUST_RAISE, run.inTalk) }
+            VoiceAction.VolumeDown -> null.also { onVolumeCommand(run.fromClient, AudioManager.ADJUST_LOWER, run.inTalk) }
+            VoiceAction.Clear -> {
+                val n = music.upcoming.size
+                music.clearUpcoming()
+                if (n > 0) run.changes += "cleared $n songs"
+                VoiceEdits.clearedLine(n)
+            }
+            is VoiceAction.Remove -> {
+                val e = if (a.at.isNotEmpty()) VoiceEdits.removed(music.upcoming, run.snapshot, a.at)
+                else VoiceEdits.removedArtist(music.upcoming, a.artist.orEmpty())
+                if (e.missing > 0) Hub.log("remove: ${e.missing} of ${a.at} no longer upcoming, skipped")
+                if (e.tracks.isNotEmpty()) {
+                    music.replaceUpcoming(e.upcoming)
+                    run.changes += VoiceEdits.named("removed", e.tracks)
+                }
+                VoiceEdits.removedLine(e.tracks)
+            }
+            is VoiceAction.Move -> {
+                val e = VoiceEdits.moved(music.upcoming, run.snapshot, a.at, a.to)
+                if (e.missing > 0) Hub.log("move: ${e.missing} of ${a.at} no longer upcoming, skipped")
+                if (e.tracks.isNotEmpty()) {
+                    music.replaceUpcoming(e.upcoming)
+                    run.changes += VoiceEdits.named("moved", e.tracks) + " to ${a.to}"
+                }
+                VoiceEdits.movedLine(e.tracks, a.to, e.upcoming.size)
+            }
+            is VoiceAction.Jump -> if (a.at > 0) {
+                val j = VoiceEdits.locate(music.upcoming, run.snapshot, a.at)
+                val t = j?.let { music.upcoming[it] }
+                if (j == null || t == null || !music.jump(j, t.id)) {
+                    Hub.log("jump: ${a.at} no longer upcoming, skipped")
+                    failed("That song is gone from the queue")
+                } else {
+                    run.started = true
+                    run.changes += "jumped to ${VoiceEdits.short(t)}"
+                    null
+                }
+            } else {
+                val t = run.snapshot.played.getOrNull(-a.at - 1)
+                if (t == null) failed("Nothing before this") else {
+                    music.jumpBack(t)
+                    run.started = true
+                    run.changes += "went back to ${VoiceEdits.short(t)}"
+                    null
+                }
+            }
+            is VoiceAction.Tell -> when (a.about) {
+                VoiceAction.About.TRACK -> VoiceEdits.tellTrack(music.current)
+                VoiceAction.About.ALBUM -> VoiceEdits.tellAlbum(music.current)
+                VoiceAction.About.NEXT -> VoiceEdits.tellNext(music.upcoming)
+                VoiceAction.About.REMAINING -> VoiceEdits.tellRemaining(music.current, music.positionMs, music.upcoming)
+                VoiceAction.About.PREVIOUS ->
+                    VoiceEdits.tellPrevious(history.value.played.dropWhile { it.id == music.current?.id }.firstOrNull())
+            }
+            VoiceAction.Undo -> {
+                val saved = voiceUndo.take(clock())
+                if (saved == null) VoiceEdits.undoLine(null) else {
+                    val restored = VoiceUndo.restored(saved, music.current)
+                    val cameBack = VoiceUndo.cameBack(restored, music.upcoming)
+                    music.replaceUpcoming(restored)
+                    music.setRepeat(saved.repeat)
+                    run.changes += "undid the last change"
+                    VoiceEdits.undoLine(cameBack)
+                }
+            }
+        }
+    }
+
+    /** How a search is shown while it runs. */
+    private fun what(a: VoiceAction): String = when (a) {
+        is VoiceAction.Play -> a.kind?.let { "${it.word} \"${a.query}\"" } ?: "similar music"
+        is VoiceAction.Add -> a.kind?.let { "${it.word} \"${a.query}\"" } ?: "similar music"
+        else -> a.type
+    }
+
+    /**
+     * The search of a `play` or `add` ("Queueing by voice"): a [Catalog.Result], the tracks of a
+     * `similar`, null when `similar` has no current track, or the exception it failed with.
+     */
+    private suspend fun search(a: VoiceAction): Any? = try {
+        val source = music.current
+        when {
+            a is VoiceAction.Play && a.kind != null -> catalog.search(a.kind, a.query)
+            a is VoiceAction.Add && a.kind != null -> {
+                val cmd = Command.Queue(a.where, a.count, a.kind, a.query)
+                catalog.search(a.kind, a.query).tracks.let { tracks ->
+                    if (!VoiceQueue.wantsCurrentAlbum(cmd, tracks, source)) tracks
+                    else catalog.albumContaining(source!!)?.also { Hub.log("queue: using ${it.label}, which holds the playing track") }?.tracks ?: tracks
+                }
+            }
+            source != null -> catalog.similar(source.id)
+            else -> null
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        e
+    }
+
+    /** A `play` or `add` with what its [search] found. Returns its part of the spoken line, or null. */
+    private fun applyFound(a: VoiceAction, found: Any?, run: ListRun): VoiceEdits.Part? {
+        val query = (a as? VoiceAction.Play)?.query ?: (a as? VoiceAction.Add)?.query.orEmpty()
+        if (found is Exception) return VoiceEdits.Part(searchFailure(found, query), failed = true)
+        if (found == null) return VoiceEdits.Part("Nothing playing", failed = true)
+        val tracks = (found as? Catalog.Result)?.tracks ?: (found as List<*>).filterIsInstance<Track>()
+        if (a is VoiceAction.Play) {
+            if (tracks.isEmpty()) return VoiceEdits.Part("Couldn't find similar music", failed = true)
+            music.setQueue(tracks)
+            run.started = true
+            val label = (found as? Catalog.Result)?.label ?: "music like the last track"
+            Hub.log("playing $label")
+            run.changes += "played $label"
+            return null
+        }
+        a as VoiceAction.Add
+        val cmd = Command.Queue(a.where, a.count, a.kind, a.query)
+        val current = music.current
+        val added = VoiceQueue.pick(cmd, tracks, current, music.upcoming)
+        if (added.isEmpty()) return VoiceEdits.Part("Nothing to add", failed = true)
+        if (a.where == Command.Where.INSTEAD) music.clearUpcoming()
+        music.enqueue(if (a.where == Command.Where.NEXT) EnqueueMode.NEXT else EnqueueMode.END, added)
+        Hub.log("queued ${a.where.name.lowercase()}: ${added.size} track(s) of ${what(a)}")
+        run.changes += VoiceEdits.named(if (a.where == Command.Where.NEXT) "added next" else "added", added)
+        // With nothing loaded they just started playing: the music says so.
+        return if (current != null) VoiceEdits.Part(VoiceQueue.reply(a.where, added)) else null
     }
 
     /** The spoken reply to a `play` whose search threw [e]. */
@@ -1448,6 +1573,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is UiAction.Enqueue -> enqueue(a.mode, a.tracks, Role.HOST)
             is UiAction.Jump -> jump(a.index, a.id, Role.HOST)
             is UiAction.Remove -> music.remove(a.index, a.id)
+            is UiAction.Move -> if (!music.move(a.index, a.id, a.to)) Hub.log("move ${a.index} ignored: the queue changed")
+            is UiAction.Repeat -> music.setRepeat(a.mode)
             is UiAction.ClearQueue -> music.clearUpcoming()
             is UiAction.Restore -> restore(a.index, a.track)
             is UiAction.DismissError -> Hub.status.update { it.copy(error = null) }
@@ -1551,6 +1678,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             EditOp.CLEAR -> { music.clearUpcoming(); true }
             EditOp.JUMP -> m.index != null && m.id != null && jump(m.index, m.id, Role.CLIENT)
             EditOp.REMOVE -> m.index != null && m.id != null && music.remove(m.index, m.id)
+            EditOp.MOVE -> m.index != null && m.id != null && m.to != null && music.move(m.index, m.id, m.to)
             else -> false
         }
         if (!applied) Hub.log("client edit ${m.op} ${m.index} ignored: the queue changed")
@@ -1573,7 +1701,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     /**
      * [play] (a `now` enqueue or a jump, by [by]'s touch). With a talk open it ends that talk exactly
-     * like a spoken `play` ([executeCommand]): the resume the talk held is dropped, the new track
+     * like a spoken `play` ([execute]): the resume the talk held is dropped, the new track
      * starts no earlier than the usual resume lead, the talk closes as `talk.close{by, "trigger"}`,
      * and our own player is held over the switch back to media mode — the resume path's hold, since
      * here the queue changes at once rather than after a search.
@@ -1622,6 +1750,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 // second changes nothing here and the screens stay as they are (UA4).
                 anchor = sync.anchor?.let { a -> PlaybackAnchor(a.positionMs, a.atHostTimeMs, a.playing) },
                 queue = music.upcoming,
+                repeat = music.repeat,
                 outputRoute = outputRoute,
             )
         }

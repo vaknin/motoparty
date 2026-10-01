@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 # Sends spoken phrases to Gemini exactly as the app's cloud interpreter does (PROTOCOL.md
-# "Commands", Interpretation) and prints, per phrase, the command text it maps to, whether that is
-# what phrases.tsv expects, and the round-trip time. The prompt and schema are the app's own
-# (android/app/src/main/res/raw/interpret_prompt.txt, interpret_schema.json).
+# "Interpretation", "Voice actions") and prints, per phrase, the action list it answered in a
+# compact form, whether that is what phrases.tsv expects, and the round-trip time. The prompt and
+# schema are the app's own (android/app/src/main/res/raw/interpret_prompt.txt, interpret_schema.json).
 #
-#   tools/interpret/smoke.sh                      every line of tools/interpret/phrases.tsv
-#   tools/interpret/smoke.sh "play some moby"     one phrase, nothing playing
+#   tools/interpret/smoke.sh                        every line of tools/interpret/phrases.tsv
+#   tools/interpret/smoke.sh "play some moby"       one phrase, nothing playing
+#   tools/interpret/smoke.sh "drop the next two" @queue           one phrase, the sample queue
 #   tools/interpret/smoke.sh "any" "" "play a moby album" "Which Moby album?"   a reply to a question
-#   GEMINI_MODEL=… tools/interpret/smoke.sh       another model
+#   GEMINI_MODEL=… tools/interpret/smoke.sh         another model
 #
-# phrases.tsv: phrase <tab> playing ("title – artist" or empty) <tab> expected command text, a
-# glob (`*` allowed), `-` = conversation, `ask <question> | <fallback or ->` = a clarifying question.
-# Two more columns make the line the second turn: the first request and the question that was
-# asked, with the phrase being the reply to it. Each phrase is one free-tier request (15 a minute, 500 a
-# day for the Lite model on 2026-09-20), so the full file is spaced 4.2 s apart.
+# phrases.tsv: phrase <tab> context <tab> expected answer <tab> [first request <tab> question].
+# - context: empty = nothing playing; "title – artist" = that track playing, nothing queued or
+#   played; "@queue" = the sample below (Porcelain – Moby at 1:14, 12 upcoming, 3 played, a
+#   lastVoice).
+# - expected: a glob (`*` allowed) over the compact answer: the actions joined by "; ", each as
+#   play <kind> <query> | play similar | add [next|instead] [<count>] <kind> <query> |
+#   add [next|instead] [<count>] similar | remove 1,2 | remove artist <name> | move 3 to 1 |
+#   clear | jump 4 | jump -2 | seek +30 | seek -10 | seek to 120 | repeat <mode> | tell <about> |
+#   volume up | volume down | ask <question> | <fallback or -> | the type name for the rest;
+#   `-` = conversation (no action besides none). Lowercase.
+# - The two last columns make the line the second turn: the phrase is the reply to that question.
+# Each phrase is one free-tier request (15 a minute, 500 a day per Flash-Lite model), so the
+# full file is spaced 4.2 s apart.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
@@ -23,11 +32,56 @@ key=$(sed -n 's/^gemini\.apiKey=//p' "$root/android/local.properties" | tr -d '[
 [[ -n $key ]] || { echo "gemini.apiKey is not set in android/local.properties" >&2; exit 1; }
 out=$(mktemp); trap '[[ -n ${KEEP_RAW:-} ]] && cp "$out" "$KEEP_RAW"; rm -f "$out"' EXIT
 
-# one <phrase> <playing> [<first request> <question>]: prints "<ms>\t<command text or - or !error>"
+# The context window (PROTOCOL.md "Voice actions"), from a context column.
+context() {
+    case $1 in
+    '') jq -cn '{playing: null, repeat: "off", upNext: [], queueLength: 0, played: [], lastVoice: null}' ;;
+    @queue) jq -cn '{
+        playing: {title: "Porcelain", artist: "Moby", album: "Play", atS: 74, lengthS: 241},
+        repeat: "off",
+        upNext: ["Natural Blues – Moby", "Why Does My Heart Feel So Bad? – Moby", "Yellow – Coldplay",
+                 "Fix You – Coldplay", "Bohemian Rhapsody – Queen", "Don'\''t Stop Me Now – Queen",
+                 "Paradise – Coldplay", "Angel – Massive Attack", "Bodyrock – Moby",
+                 "Viva la Vida – Coldplay", "Somebody to Love – Queen", "South Side – Moby"]
+                | to_entries | map("\(.key + 1). \(.value)"),
+        queueLength: 12,
+        played: ["Teardrop – Massive Attack", "Under Pressure – Queen", "Unfinished Sympathy – Massive Attack"]
+                | to_entries | map("-\(.key + 1). \(.value)"),
+        lastVoice: "removed 2: Clocks – Coldplay, The Scientist – Coldplay (3 min ago)"}' ;;
+    *) jq -cn --arg now "$1" '($now | split(" – ")) as $p | {
+        playing: {title: $p[0], artist: ($p[1:] | join(" – ")), atS: 60, lengthS: 240},
+        repeat: "off", upNext: [], queueLength: 0, played: [], lastVoice: null}' ;;
+    esac
+}
+
+# The answer as one compact line (see the header); `-` for conversation.
+compact='
+  def src: if .kind == "similar" then "similar" else "\(.kind // "song") \(.query // "")" end;
+  def cnt: if (.count | type) == "number" and .count >= 1 and .count <= 50 and .count == (.count | floor)
+           then (.count | tostring) else null end;
+  def nums: (.at // []) | map(tostring) | join(",");
+  [.actions[]? | select(.type != "none") |
+    if .type == "play" then "play \(src)"
+    elif .type == "add" then
+      ["add", (if .where == "next" or .where == "instead" then .where else null end), cnt, src]
+      | map(select(. != null)) | join(" ")
+    elif .type == "remove" then (if (.at // []) != [] then "remove \(nums)" else "remove artist \(.artist // "")" end)
+    elif .type == "move" then "move \(nums) to \(.to)"
+    elif .type == "jump" then "jump \(.at)"
+    elif .type == "seek" then
+      (if (.by // 0) != 0 then "seek \(if .by > 0 then "+" else "" end)\(.by)" else "seek to \(.to)" end)
+    elif .type == "repeat" then "repeat \(.mode)"
+    elif .type == "tell" then "tell \(.about)"
+    elif .type == "ask" then "ask \(.question // "") | \(if (.query // "") == "" then "-" else "play \(src)" end)"
+    elif .type == "volumeUp" then "volume up" elif .type == "volumeDown" then "volume down"
+    else .type end]
+  | if length == 0 then "-" else join("; ") end'
+
+# one <phrase> <context> [<first request> <question>]: prints "<ms>\t<compact answer or !error>"
 one() {
     local input code t0 t1
-    input=$(jq -cn --arg p "$1" --arg now "$2" --arg first "${3:-}" --arg q "${4:-}" \
-        '{phrase: $p, lang: "en-US", playing: (if $now == "" then null else $now end), upNext: []}
+    input=$(jq -cn --arg p "$1" --argjson ctx "$(context "$2")" --arg first "${3:-}" --arg q "${4:-}" \
+        '{phrase: $p, lang: "en-US"} + $ctx
          + (if $q == "" then {} else {asked: {phrase: $first, question: $q}} end)')
     t0=$(date +%s%N)
     code=$(jq -n --arg model "$model" --rawfile prompt "$raw/interpret_prompt.txt" --arg input "$input" \
@@ -37,7 +91,7 @@ one() {
           response_format: {type: "text", mime_type: "application/json", schema: $schema[0]},
           store: false}' |
         curl -sS --max-time 20 -X POST https://generativelanguage.googleapis.com/v1beta/interactions \
-            -H "x-goog-api-key: $key" -H 'Content-Type: application/json' \
+            -H @<(printf 'x-goog-api-key: %s\n' "$key") -H 'Content-Type: application/json' \
             --data-binary @- -o "$out" -w '%{http_code}') || code=000
     t1=$(date +%s%N)
     local ms=$(( (t1 - t0) / 1000000 ))
@@ -45,22 +99,9 @@ one() {
         printf '%s\t!HTTP %s %s\n' "$ms" "$code" "$(jq -r '.error.message // empty' "$out" 2>/dev/null | head -c 120 | head -n1)"
         return
     fi
-    # The same mapping as the app's Interpretation.commandText (fixtures/interpret.json).
     local text
     text=$(jq -r '[.steps[]? | select(.type == "model_output") | .content[]? | select(.type == "text") | .text]
-        | join("") | fromjson
-        | (if (.query // "") == "" then "-" else "play \(.kind // "song") \(.query)" end) as $play
-        | if .action == "play" then $play
-          elif .action == "queue" then
-            (if .kind == "similar" then "similar" elif $play == "-" then null else ($play | ltrimstr("play ")) end) as $src
-            | if $src == null then "-" else
-                ["queue", (if .where == "next" or .where == "instead" then .where else null end),
-                 (if (.count | type) == "number" and .count >= 1 and .count <= 50 and .count == (.count | floor) then (.count | tostring) else null end),
-                 $src] | map(select(. != null)) | join(" ") end
-          elif .action == "ask" then "ask \(.question // "") | \($play)"
-          elif .action == "volumeUp" then "volume up" elif .action == "volumeDown" then "volume down"
-          elif .action == "nowplaying" then "what is playing" elif .action == "end" then "over"
-          elif .action == "none" then "-" else .action end' "$out" 2>/dev/null) || text='!unreadable answer'
+        | join("") | fromjson | '"$compact" "$out" 2>/dev/null) || text='!unreadable answer'
     printf '%s\t%s\n' "$ms" "${text,,}"
 }
 
@@ -68,10 +109,10 @@ if [[ $# -gt 0 ]]; then one "$1" "${2:-}" "${3:-}" "${4:-}"; exit; fi
 
 ok=0; n=0; times=()
 # Tabs are whitespace to `read` (empty fields would collapse), so split on U+001F instead.
-while IFS=$'\x1f' read -r phrase playing expect first question; do
+while IFS=$'\x1f' read -r phrase ctx expect first question; do
     [[ -z $phrase ]] && continue
     (( n > 0 )) && sleep 4.2
-    IFS=$'\t' read -r ms got < <(one "$phrase" "$playing" "$first" "$question")
+    IFS=$'\t' read -r ms got < <(one "$phrase" "$ctx" "$first" "$question")
     mark=FAIL
     # shellcheck disable=SC2053
     if [[ $got == $expect ]]; then mark=ok; ok=$((ok + 1)); fi

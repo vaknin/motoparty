@@ -71,12 +71,21 @@ object Codec {
         val serializer = serializers[t] ?: return UnknownMessage(t)
         checkTypes(obj, serializer.descriptor, t)
         checkEnums(obj, t)
-        return try {
+        val message = try {
             json.decodeFromJsonElement(Message.serializer(), obj)
         } catch (e: SerializationException) {
             throw MalformedMessageException("bad $t: ${e.message}")
         } catch (e: IllegalArgumentException) {
             throw MalformedMessageException("bad $t: ${e.message}")
+        }
+        checkRules(message)
+        return message
+    }
+
+    /** The field rules a type alone cannot say: `music.edit move` requires a `to` ≥ 0. */
+    private fun checkRules(m: Message) {
+        if (m is MusicEdit && m.op == EditOp.MOVE && (m.to == null || m.to < 0)) {
+            throw MalformedMessageException("music.edit move needs a to >= 0, got ${m.to}")
         }
     }
 
@@ -89,7 +98,10 @@ object Codec {
         for ((key, allowed) in ENUM_FIELDS) {
             if (key.first != t) continue
             val field = key.second
-            val value = (obj[field] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: continue
+            // A dotted field is nested ("music.repeat"): absent anywhere on the way = nothing to check.
+            val path = field.split('.')
+            val holder = path.dropLast(1).fold(obj as JsonObject?) { o, k -> o?.get(k) as? JsonObject } ?: continue
+            val value = (holder[path.last()] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: continue
             if (value !in allowed) {
                 throw MalformedMessageException("$t.$field outside its set: $value")
             }

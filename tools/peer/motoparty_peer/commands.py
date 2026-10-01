@@ -177,53 +177,142 @@ class FirstPhraseGate:
 
 
 INTERPRET_TIMEOUT_MS = 6000
-INTERPRET_UP_NEXT = 5
-_INTERPRETED = {
-    "pause": "pause", "resume": "resume", "next": "next", "previous": "previous",
-    "shuffle": "shuffle", "volumeUp": "volume up", "volumeDown": "volume down",
-    "nowplaying": "what is playing", "end": "over",
-}
-
+# The context window (PROTOCOL.md "Commands", Voice actions): this many upcoming tracks, numbered
+# from 1, and played tracks, numbered from -1.
+INTERPRET_UP_NEXT = 25
+INTERPRET_PLAYED = 5
+MAX_ACTIONS = 4
+UNDO_MS = 600_000
 
 ASK_MAX_CHARS = 80
 ANSWER_MS = 10_000
 ANSWER_GRACE_MS = 2000
 
+PLAY_KINDS = (*KINDS, SIMILAR)
+# Actions without fields: the canonical form is just {type}.
+_BARE = ("pause", "resume", "next", "previous", "shuffle", "end", "restart", "clear", "undo",
+         "volumeUp", "volumeDown")
+REPEAT_MODES = ("off", "track", "queue")
+TELL_ABOUT = ("track", "album", "next", "remaining", "previous")
+# The actions after which the voice undo keeps the upcoming queue and the repeat mode as they were.
+UNDOABLE = ("add", "remove", "move", "clear", "shuffle", "repeat")
 
-def _interpreted_play(obj: dict) -> str | None:
-    query = obj.get("query")
-    if not isinstance(query, str) or not command_text(query):
-        return None
+
+def _int(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _source(obj: dict) -> dict | None:
+    """`kind`/`query` of a play, add or the ask fallback -> {kind[, query]}, or None (unusable):
+    the query normalised as in "Commands", an unknown or missing kind is `song`, and `similar`
+    takes no query."""
     kind = obj.get("kind")
-    return f"play {kind if isinstance(kind, str) and kind in KINDS else 'song'} {command_text(query)}"
+    kind = kind if isinstance(kind, str) and kind in PLAY_KINDS else "song"
+    if kind == SIMILAR:
+        return {"kind": kind}
+    query = obj.get("query")
+    query = command_text(query) if isinstance(query, str) else ""
+    return {"kind": kind, "query": query} if query else None
 
 
-def interpretation_outcome(answer: str) -> str | dict | None:
-    """The interpreter's answer (the model's text) -> the command text to execute, a question
-    `{"ask": <question>, "fallback": <command text or None>}`, or None = conversation
-    (PROTOCOL.md "Commands", Interpretation and The clarifying question; vectors:
-    fixtures/interpret.json)."""
+def _positions(at, up_next: int) -> list[int] | None:
+    """A non-empty list of upcoming positions 1..up_next (duplicates count once, order kept)."""
+    if not isinstance(at, list) or not at or not all(_int(p) and 1 <= p <= up_next for p in at):
+        return None
+    return list(dict.fromkeys(at))
+
+
+def _action(obj, up_next: int, played: int) -> dict | None:
+    """One answer action -> its canonical form, or None (dropped). `ask` and `none` are handled
+    by the caller."""
+    if not isinstance(obj, dict) or not isinstance(obj.get("type"), str):
+        return None
+    t = obj["type"]
+    if t in _BARE:
+        return {"type": t}
+    if t == "play":
+        src = _source(obj)
+        return {"type": t, **src} if src else None
+    if t == "add":
+        src = _source(obj)
+        if src is None:
+            return None
+        where = obj.get("where") if obj.get("where") in ("next", "instead") else "end"
+        count = obj.get("count")
+        ok = _int(count) and 1 <= count <= QUEUE_MAX_COUNT
+        return {"type": t, **src, "where": where, **({"count": count} if ok else {})}
+    if t == "remove":
+        if isinstance(obj.get("at"), list) and obj["at"]:
+            at = _positions(obj["at"], up_next)
+            return {"type": t, "at": at} if at else None
+        artist = obj.get("artist")
+        artist = command_text(artist) if isinstance(artist, str) else ""
+        return {"type": t, "artist": artist} if artist else None
+    if t == "move":
+        at, to = _positions(obj.get("at"), up_next), obj.get("to")
+        return {"type": t, "at": at, "to": to} if at and _int(to) and to >= 1 else None
+    if t == "jump":
+        at = obj.get("at")
+        ok = _int(at) and (1 <= at <= up_next or -played <= at <= -1)
+        return {"type": t, "at": at} if ok else None
+    if t == "seek":
+        by, to = obj.get("by"), obj.get("to")
+        if _int(by) and by != 0:
+            return {"type": t, "by": by}
+        return {"type": t, "to": to} if _int(to) and to >= 0 else None
+    if t == "repeat":
+        mode = obj.get("mode")
+        return {"type": t, "mode": mode} if isinstance(mode, str) and mode in REPEAT_MODES else None
+    if t == "tell":
+        about = obj.get("about")
+        return {"type": t, "about": about} if isinstance(about, str) and about in TELL_ABOUT else None
+    return None
+
+
+def _ask(obj: dict) -> dict | list[dict] | None:
+    """An `ask` alone -> {"ask": <question>, "fallback": [<play>] or []}; with no usable question,
+    its fallback as an action list, or None."""
+    src = _source(obj)
+    fallback = [{"type": "play", **src}] if src and src["kind"] != SIMILAR else []
+    question = obj.get("question")
+    question = " ".join(question.split()) if isinstance(question, str) else ""
+    if not question or len(question) > ASK_MAX_CHARS:
+        return fallback or None
+    return {"ask": question, "fallback": fallback}
+
+
+def interpretation_actions(answer: str, up_next: int = INTERPRET_UP_NEXT,
+                           played: int = INTERPRET_PLAYED) -> list[dict] | dict | None:
+    """The interpreter's answer (the model's text) and the sizes of the context window it was
+    given -> the voice actions to run, in canonical form; a question `{"ask": <question>,
+    "fallback": <a list of at most one play action>}`; or None = conversation (PROTOCOL.md
+    "Commands", Voice actions and The clarifying question; vectors: fixtures/interpret.json)."""
     try:
         obj = json.loads(answer)
     except ValueError:
         return None
-    if not isinstance(obj, dict) or not isinstance(obj.get("action"), str):
+    if not isinstance(obj, dict) or not isinstance(obj.get("actions"), list):
         return None
-    action = obj["action"]
-    if action == "play":
-        return _interpreted_play(obj)
-    if action == "queue":
-        source = SIMILAR if obj.get("kind") == SIMILAR else (_interpreted_play(obj) or "")[5:]
-        if not source:
-            return None
-        where, count = obj.get("where"), obj.get("count")
-        ok = isinstance(count, int) and not isinstance(count, bool) and 1 <= count <= QUEUE_MAX_COUNT
-        return " ".join(["queue", *([where] if where in WHERES else []), *([str(count)] if ok else []), source])
-    if action == "ask":
-        fallback = _interpreted_play(obj)
-        question = obj.get("question")
-        question = " ".join(question.split()) if isinstance(question, str) else ""
-        if not question or len(question) > ASK_MAX_CHARS:
-            return fallback
-        return {"ask": question, "fallback": fallback}
-    return _INTERPRETED.get(action)
+    actions, ask = [], None
+    for item in obj["actions"]:
+        if isinstance(item, dict) and item.get("type") == "ask":
+            ask = item if ask is None else ask
+        elif (a := _action(item, up_next, played)) is not None:
+            actions.append(a)
+    if actions:
+        return actions[:MAX_ACTIONS]  # `ask` next to other actions is dropped; they run
+    return _ask(ask) if ask is not None else None
+
+
+def to_actions(cmd: dict[str, str]) -> list[dict]:
+    """A parsed grammar command (`parse_command`) -> the same thing as voice actions
+    (PROTOCOL.md "Commands", Voice actions). An unparsed phrase is the empty list."""
+    a = cmd["action"]
+    if a == "play":
+        return [{"type": "play", "kind": cmd["kind"], "query": cmd["query"]}]
+    if a == "queue":
+        src = {"kind": SIMILAR} if cmd["kind"] == SIMILAR else {"kind": cmd["kind"], "query": cmd["query"]}
+        return [{"type": "add", **src, "where": cmd["where"], **({"count": int(cmd["count"])} if "count" in cmd else {})}]
+    if a == "nowplaying":
+        return [{"type": "tell", "about": "track"}]
+    return [{"type": a}] if a in _BARE else []

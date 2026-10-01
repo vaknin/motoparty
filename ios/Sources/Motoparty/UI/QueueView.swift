@@ -4,7 +4,8 @@ import SwiftUI
 
 /// Now playing and the host's upcoming queue (`state.queue`). Every edit is a
 /// `music.edit`. A removed row goes at once and stays gone while the host's
-/// next `state` is on its way (`QueueRemovals`, audit UI3).
+/// next `state` is on its way (`QueueRemovals`, audit UI3). A dragged row is
+/// not reordered here: the host's next `state` brings the new order.
 struct QueueView: View {
     @EnvironmentObject private var model: AppModel
     /// The empty queue's "Search" button.
@@ -93,6 +94,10 @@ struct QueueView: View {
                     remove(offsets.filter(rows.indices.contains).map { rows[$0] }, queue: queue)
                 }
                 .deleteDisabled(!connected)
+                .onMove { source, destination in
+                    move(source, to: destination, rows: rows, queue: queue)
+                }
+                .moveDisabled(!connected)
             }
             if !connected {
                 NotConnectedHint().listRowBackground(Color.clear)
@@ -103,6 +108,19 @@ struct QueueView: View {
 
     private func jump(_ row: QueueRow, queue: [HostState.QueueItem]) {
         model.editQueue(.jump, index: removals.wireIndex(of: row, in: queue), id: row.item.id)
+        edits += 1
+    }
+
+    /// A drag of one row (`source` holds one offset). `destination` is the
+    /// insertion offset in `rows` before the move; the row's place afterwards
+    /// is one less when it moves down. The host applies the removals in
+    /// flight first, so its queue then is `rows`, and that place is `to`.
+    private func move(_ source: IndexSet, to destination: Int, rows: [QueueRow], queue: [HostState.QueueItem]) {
+        guard source.count == 1, let from = source.first, rows.indices.contains(from) else { return }
+        let to = destination > from ? destination - 1 : destination
+        guard to != from else { return }
+        let row = rows[from]
+        model.editQueue(.move, index: removals.wireIndex(of: row, in: queue), id: row.item.id, to: to)
         edits += 1
     }
 
