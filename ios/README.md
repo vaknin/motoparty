@@ -278,7 +278,10 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   queue. An album or playlist opens a detail screen (`music.browse`) with Play / Add to queue;
   a track tap enqueues `now` the tracks from that one to the end. Tracks carry the collection
   title as `album` and its cover as the top-level `art`. **Queue** shows `state.queue`: tap =
-  `music.edit jump`, swipe = `remove`, Clear (confirmed) = `clear`. Browsing is disabled while
+  `music.edit jump`, swipe or ✕ = `remove`, drag = `move`, Clear (confirmed) = `clear`. Every
+  edit shows at once (`QueueEdits`). A removal or a clear brings a banner with Undo for 10 s,
+  as on Android: Undo of a removal is `music.enqueue{end}` plus a `move` back to its index (the
+  protocol has no insert), Undo of a clear re-enqueues the songs at the end. Browsing is disabled while
   disconnected. With the search box empty, Search shows this phone's history
   (`BrowseHistory`, JSON in UserDefaults `browseHistory`): **Recent searches** (last 10 sent,
   newest first, one per query ignoring case, with its latest kind; tap re-runs it, Clear
@@ -822,8 +825,8 @@ can answer".
 
 - **Decisions live in `MotopartyCore/UIModel.swift`** (tested in `UIModelTests`): `TalkPhase`
   (TALK / Connecting… / END TALK and the caption), `LinkWording` ("Looking for <Pixel>…"),
-  `Notice` (which success clears which problem), `QueueRow` + `QueueRemovals` (row keys
-  `<id>#<occurrence>`, removals in flight, the index to send), `QueueText`, `SearchWording`,
+  `Notice` (which success clears which problem), `QueueRow` + `QueueEdits` (row keys
+  `<id>#<occurrence>`, removals, moves and Undos in flight, the index to send) + `QueueUndo`, `QueueText`, `SearchWording`,
   `VoiceCommandChip`, `ArtURL` (googleusercontent size rewrite), `PlaybackPosition`,
   `LockScreenInfo`, `TrackTime`.
 - **Brand:** tint `#FF7A2F`, always dark, `Icon.png` via `iconPath:` (`scripts/make-icon.sh`

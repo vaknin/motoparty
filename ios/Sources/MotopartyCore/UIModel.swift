@@ -168,7 +168,8 @@ public enum QueueText {
 /// occurrence of that id it is (a track can be queued twice).
 public struct QueueRow: Equatable, Identifiable, Sendable {
     public let key: String
-    /// Index in the host's `state.queue`.
+    /// Index in the queue the rows were made from: `state.queue` for `rows`,
+    /// the queue the host will have for `QueueEdits.visible`.
     public let index: Int
     public let item: HostState.QueueItem
     public var id: String { key }
@@ -183,15 +184,44 @@ public struct QueueRow: Equatable, Identifiable, Sendable {
     }
 }
 
-/// Rows the passenger removed that the host's `state` has not confirmed yet
-/// (audit UI3): hidden at once, so a row never slides out and snaps back.
-/// A removal the host never confirms comes back after `timeoutMs`.
-public struct QueueRemovals: Equatable, Sendable {
+/// What the Queue tab sends for an edit: a `music.edit`, or a
+/// `music.enqueue{mode: "end"}` (an Undo).
+public enum QueueCommand: Equatable, Sendable {
+    case edit(QueueEditOp, index: Int, id: String, to: Int? = nil)
+    case enqueueEnd([EnqueueTrack])
+}
+
+/// The passenger's queue edits that the host's `state` has not confirmed yet
+/// (audit UI3), so the screen shows what they do at once: a removed row is
+/// gone, a dragged row stays where it was dropped, an undone removal is back
+/// in its place. No row slides away and snaps back.
+///
+/// The edits are kept in the order they were sent, which is the order the
+/// host applies them in. So `visible` is the queue the host will have once
+/// it has read them all, and a row's `index` there is what the next
+/// `music.edit` names (removals, moves and restores in flight all count).
+///
+/// An edit is over when a `state` shows it done (`queueChanged`). One that is
+/// not confirmed within `timeoutMs` (the host ignored it: the queue had
+/// moved on, the link dropped) is dropped together with every edit sent
+/// after it, since each of those was worked out on a queue that had it; the
+/// rows then show the host's queue again.
+public struct QueueEdits: Equatable, Sendable {
     public static let timeoutMs: Double = 5_000
 
+    private enum Op: Equatable, Sendable {
+        /// `music.edit remove` of the row with this key.
+        case remove(key: String, trackId: String)
+        /// `music.edit move`: the row with this key ends up at index `to`.
+        case move(key: String, to: Int)
+        /// An Undo of a removal: `music.enqueue end`, then a `move` to `at`.
+        /// Shown at `at` from the start; once a `state` has the enqueued
+        /// copy, it is a `.move` of that copy.
+        case restore(item: HostState.QueueItem, at: Int)
+    }
+
     private struct Pending: Equatable, Sendable {
-        var key: String
-        var trackId: String
+        var op: Op
         var atMs: Double
     }
 
@@ -201,47 +231,208 @@ public struct QueueRemovals: Equatable, Sendable {
 
     public var isEmpty: Bool { pending.isEmpty }
 
-    /// The rows to show: the host's queue without the removals in flight.
+    /// The rows to show: the host's queue with the edits in flight applied.
+    /// Their keys and indexes are those of the queue the host will have.
     public func visible(_ queue: [HostState.QueueItem]) -> [QueueRow] {
-        let hidden = Set(pending.map(\.key))
-        return QueueRow.rows(queue).filter { !hidden.contains($0.key) }
+        QueueRow.rows(pending.reduce(queue) { Self.apply($1.op, to: $0) })
     }
 
-    /// The index to name in a `music.edit` for `row`. The host applies edits
-    /// in order, so by the time it reads this one the removals in flight
-    /// above the row are gone from its queue.
+    /// The index to name in a `music.edit` for `row` (a row of `visible`).
+    /// The host applies edits in order, so by the time it reads this one the
+    /// edits in flight are done, and the row is where `visible` shows it.
     public func wireIndex(of row: QueueRow, in queue: [HostState.QueueItem]) -> Int {
-        let hidden = Set(pending.map(\.key))
-        let above = QueueRow.rows(queue).filter { $0.index < row.index && hidden.contains($0.key) }.count
-        return row.index - above
+        visible(queue).first { $0.key == row.key }?.index ?? row.index
     }
 
-    public mutating func remove(_ row: QueueRow, nowMs: Double) {
-        guard !pending.contains(where: { $0.key == row.key }) else { return }
-        pending.append(Pending(key: row.key, trackId: row.item.id, atMs: nowMs))
+    /// Hides `rows` (rows of `visible`) and returns their removals, in the
+    /// order to send them: from the bottom up, so no remove shifts the index
+    /// of one sent after it. Each one's `at` is also where Undo puts it back.
+    @discardableResult
+    public mutating func remove(_ rows: [QueueRow], in queue: [HostState.QueueItem], nowMs: Double) -> [QueueUndo.Removed] {
+        var removed: [QueueUndo.Removed] = []
+        for row in rows.sorted(by: { $0.index > $1.index }) {
+            guard let now = visible(queue).first(where: { $0.key == row.key }) else { continue }
+            pending.append(Pending(op: .remove(key: now.key, trackId: now.item.id), atMs: nowMs))
+            removed.append(QueueUndo.Removed(item: now.item, at: now.index))
+        }
+        return removed
     }
 
-    /// A `state` brought another queue. A removal is over once the queue has
-    /// fewer entries of its track than before (removed, or played); until
-    /// then it stays hidden, e.g. while only the head of the queue moved on.
+    /// A drag of row `from` of `visible`, dropped before row `destination`
+    /// (SwiftUI's `onMove` offset, counted before the move). The row stays
+    /// where it was dropped; returns the `music.edit move` to send, or nil
+    /// when the queue would be the same.
+    @discardableResult
+    public mutating func move(from: Int, insertBefore destination: Int, in queue: [HostState.QueueItem],
+                              nowMs: Double) -> QueueCommand? {
+        let rows = visible(queue)
+        guard rows.indices.contains(from) else { return nil }
+        // A row dropped below where it was ends up one above the gap.
+        let to = min(max(destination > from ? destination - 1 : destination, 0), rows.count - 1)
+        let op = Op.move(key: rows[from].key, to: to)
+        let items = rows.map(\.item)
+        // Not moved, or moved past a copy of itself.
+        guard to != from, Self.apply(op, to: items) != items else { return nil }
+        pending.append(Pending(op: op, atMs: nowMs))
+        return .edit(.move, index: from, id: rows[from].item.id, to: to)
+    }
+
+    /// The Undo of a removal (`QueueUndo`): each song back at its `at`, the
+    /// lowest first, so each lands where it was. Shown at once. The protocol
+    /// has no insert (Android's Undo is the host's own `insert`), so it is a
+    /// `music.enqueue end` followed by a `music.edit move` from the end to
+    /// `at`. Nothing when no song is loaded: an enqueue would start playing
+    /// it, and Android's Undo does nothing then either.
+    public mutating func restore(_ removed: [QueueUndo.Removed], in queue: [HostState.QueueItem],
+                                 nothingLoaded: Bool, nowMs: Double) -> [QueueCommand] {
+        guard !nothingLoaded else { return [] }
+        var commands: [QueueCommand] = []
+        for r in removed.sorted(by: { $0.at < $1.at }) {
+            let end = visible(queue).count
+            pending.append(Pending(op: .restore(item: r.item, at: r.at), atMs: nowMs))
+            commands.append(.enqueueEnd([EnqueueTrack(r.item)]))
+            if r.at < end {
+                commands.append(.edit(.move, index: end, id: r.item.id, to: r.at))
+            }
+        }
+        return commands
+    }
+
+    /// A `state` brought another queue: the edits it shows done are over.
+    /// A removal is done once the queue has fewer copies of its track than
+    /// before (removed, or played); until then it stays hidden, e.g. while
+    /// only the head of the queue moved on. A move is done once its row is
+    /// where it was dropped. A restore is half done once the queue has one
+    /// more copy of its track (enqueued at the end), and then waits for its
+    /// move. An edit whose row is gone is over too.
     public mutating func queueChanged(from old: [HostState.QueueItem], to new: [HostState.QueueItem]) {
         guard !pending.isEmpty else { return }
-        func count(_ queue: [HostState.QueueItem], _ id: String) -> Int { queue.filter { $0.id == id }.count }
-        let keys = Set(QueueRow.rows(new).map(\.key))
-        pending.removeAll { count(new, $0.trackId) < count(old, $0.trackId) || !keys.contains($0.key) }
+        let before = Self.counts(old), after = Self.counts(new)
+        var fewer: [String: Int] = [:], more: [String: Int] = [:]
+        for (id, n) in before { fewer[id] = max(0, n - after[id, default: 0]) }
+        for (id, n) in after { more[id] = max(0, n - before[id, default: 0]) }
+        var list = new
+        var kept: [Pending] = []
+        for var p in pending {
+            let rows = QueueRow.rows(list)
+            switch p.op {
+            case let .remove(key, trackId):
+                if fewer[trackId, default: 0] > 0 {
+                    fewer[trackId, default: 0] -= 1
+                    continue
+                }
+                if !rows.contains(where: { $0.key == key }) { continue }
+            case let .move(key, to):
+                guard let row = rows.first(where: { $0.key == key }) else { continue }
+                if row.index == min(to, rows.count - 1) { continue }
+            case let .restore(item, at):
+                if more[item.id, default: 0] > 0 {
+                    more[item.id, default: 0] -= 1
+                    // The copy just enqueued: the last one.
+                    guard let copy = rows.last(where: { $0.item.id == item.id }) else { continue }
+                    if copy.index == min(at, rows.count - 1) { continue }
+                    p.op = .move(key: copy.key, to: at)
+                }
+            }
+            kept.append(p)
+            list = Self.apply(p.op, to: list)
+        }
+        pending = kept
     }
 
-    /// Drops removals older than `timeoutMs`. Returns whether any was dropped.
+    /// Drops the edits that have waited `timeoutMs` and every edit sent
+    /// after them. Returns whether any was dropped.
     @discardableResult
     public mutating func expire(nowMs: Double) -> Bool {
-        let before = pending.count
-        pending.removeAll { nowMs - $0.atMs >= Self.timeoutMs }
-        return pending.count != before
+        guard let first = pending.firstIndex(where: { nowMs - $0.atMs >= Self.timeoutMs }) else { return false }
+        pending.removeSubrange(first...)
+        return true
     }
 
-    /// When the oldest removal in flight gives up.
+    /// When the oldest edit in flight gives up.
     public var nextExpiryMs: Double? {
         pending.map(\.atMs).min().map { $0 + Self.timeoutMs }
+    }
+
+    private static func apply(_ op: Op, to queue: [HostState.QueueItem]) -> [HostState.QueueItem] {
+        var queue = queue
+        func index(_ key: String) -> Int? { QueueRow.rows(queue).firstIndex { $0.key == key } }
+        switch op {
+        case let .remove(key, _):
+            if let i = index(key) { queue.remove(at: i) }
+        case let .move(key, to):
+            if let i = index(key) {
+                let item = queue.remove(at: i)
+                queue.insert(item, at: min(max(to, 0), queue.count))
+            }
+        case let .restore(item, at):
+            queue.insert(item, at: min(max(at, 0), queue.count))
+        }
+        return queue
+    }
+
+    private static func counts(_ queue: [HostState.QueueItem]) -> [String: Int] {
+        queue.reduce(into: [:]) { $0[$1.id, default: 0] += 1 }
+    }
+}
+
+/// The banner after a removal or a clear, with Undo: Android's snackbar
+/// (`MainScreen.kt`, `confirmation` in `Logic.kt`). As there, the edit is
+/// sent at once, and Undo puts the songs back afterwards.
+public struct QueueUndo: Equatable, Sendable {
+    /// How long Undo is offered: Material's `SnackbarDuration.Long`, as on Android.
+    public static let durationMs: Double = 10_000
+
+    /// A removed song and the index its `music.edit remove` named.
+    public struct Removed: Equatable, Sendable {
+        public let item: HostState.QueueItem
+        public let at: Int
+        public init(item: HostState.QueueItem, at: Int) { self.item = item; self.at = at }
+
+        public var command: QueueCommand { .edit(.remove, index: at, id: item.id) }
+    }
+
+    public enum Action: Equatable, Sendable {
+        /// Put removed songs back where they were (`QueueEdits.restore`).
+        case restore([Removed])
+        /// Queue these at the end again: the Undo of a clear, as on Android.
+        case enqueue([HostState.QueueItem])
+    }
+
+    public let text: String
+    public let action: Action
+    /// When the banner goes by itself.
+    public let untilMs: Double
+
+    /// "Removed: <title>", as on Android; nil when nothing was removed.
+    public static func removed(_ removed: [Removed], nowMs: Double) -> QueueUndo? {
+        guard let first = removed.first else { return nil }
+        let text = removed.count == 1 ? "Removed: \(first.item.title)" : "Removed \(QueueText.songs(removed.count))"
+        return QueueUndo(text: text, action: .restore(removed), untilMs: nowMs + durationMs)
+    }
+
+    /// "Queue cleared"; nil when there was nothing to clear.
+    public static func cleared(_ queue: [HostState.QueueItem], nowMs: Double) -> QueueUndo? {
+        guard !queue.isEmpty else { return nil }
+        return QueueUndo(text: "Queue cleared", action: .enqueue(queue), untilMs: nowMs + durationMs)
+    }
+
+    /// What Undo sends; `edits` shows a restore at once.
+    public func undo(_ edits: inout QueueEdits, queue: [HostState.QueueItem], nothingLoaded: Bool,
+                     nowMs: Double) -> [QueueCommand] {
+        switch action {
+        case let .restore(removed):
+            return edits.restore(removed, in: queue, nothingLoaded: nothingLoaded, nowMs: nowMs)
+        case let .enqueue(items):
+            return items.isEmpty ? [] : [.enqueueEnd(items.map(EnqueueTrack.init))]
+        }
+    }
+}
+
+extension EnqueueTrack {
+    /// A queued song sent back to the host (an Undo).
+    public init(_ item: HostState.QueueItem) {
+        self.init(id: item.id, title: item.title, artist: item.artist, durationMs: item.durationMs ?? 0, art: item.art)
     }
 }
 
