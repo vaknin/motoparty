@@ -231,6 +231,14 @@ final class AppModel: ObservableObject {
     private var mediaRestore: DispatchWorkItem?
     /// A `music.play` arrived during that hold: start once the session is back.
     private var musicWaitsForMediaRoute = false
+    /// When an announcement may start on the media route: not into the
+    /// switch back from the talk session (Android's `MediaCue`).
+    private var announceGate = AnnounceGate()
+    /// The announcements `announceGate` holds, by the id it knows them under.
+    private var heldAnnounces: [Int: Announce] = [:]
+    private var announceSeq = 0
+    /// `announceGate`'s next deadline (the settle delay or the fallback).
+    private var announceTimer: Timer?
     /// A `music.next` that came while the start of its `music.play` was still
     /// waiting (download, the end-earcon hold): queued right after that start.
     private var heldNext: MusicNext?
@@ -563,8 +571,7 @@ final class AppModel: ObservableObject {
             updateNowPlaying()
         case .announce(let announce):
             lastAnnouncement = announce.text
-            if let earcon = announce.earcon { earcons.play(earcon) }
-            announcer.speak(announce.text, language: settings.speechLanguage)
+            announceWhenRouted(announce)
             if announce.ask == true { awaitReply() }
         case .musicResults(let results):
             receive(results)
@@ -874,6 +881,10 @@ final class AppModel: ObservableObject {
         player.suspend()
         keepAlive.stop()
         volumeKey.settle()
+        // From here an announcement outside the talk waits for the switch
+        // back to media (the talk's own question is spoken in it, at once).
+        announceGate.talkSessionHeld(atMs: MonotonicClock.nowMs())
+        scheduleAnnounceTick()
         do {
             try session.activate(.talk)
             // This talk's socket, fixed here: the capture queue must not read
@@ -1053,9 +1064,13 @@ final class AppModel: ObservableObject {
             if musicWaits { startMusicIfPossible() }
         }
         volumeKey.settle()
+        // Before the switch: only an HFP talk has a profile switch for an
+        // announcement to wait out.
+        let wasHFP = session.outputIsBluetoothHFP
         do { try session.activate(.media) } catch {
             Log.audio.error("media route failed: \(error.localizedDescription, privacy: .public)")
         }
+        speak(announceGate.mediaRestored(wasBluetoothHFP: wasHFP, atMs: MonotonicClock.nowMs()))
         if let up = mediaVolumeStep {
             // A volume command spoken while disarmed: the media volume now.
             mediaVolumeStep = nil
@@ -1063,6 +1078,49 @@ final class AppModel: ObservableObject {
         }
         keepAlive.start()
         noteAudioRoute()
+    }
+
+    // MARK: - Announcements
+
+    /// The host's `announce`. In a talk (its clarifying question) the talk
+    /// route is up: spoken now, as before. Outside one it goes through
+    /// `announceGate`, so the reply to a command that ended the talk is not
+    /// started into the switch back to A2DP, which used to cut it.
+    private func announceWhenRouted(_ announce: Announce) {
+        guard !talkOpen else { return say(announce) }
+        announceSeq += 1
+        let id = announceSeq
+        if announceGate.request(id: id, atMs: MonotonicClock.nowMs()) != nil { return say(announce) }
+        heldAnnounces[id] = announce
+        Log.audio.info("announce gate: held until the media route is back")
+        scheduleAnnounceTick()
+    }
+
+    private func say(_ announce: Announce) {
+        if let earcon = announce.earcon { earcons.play(earcon) }
+        announcer.speak(announce.text, language: settings.speechLanguage)
+    }
+
+    /// Starts what `announceGate` released, one log line each, and re-arms
+    /// its timer.
+    private func speak(_ releases: [AnnounceGate.Release]) {
+        for release in releases {
+            guard let announce = heldAnnounces.removeValue(forKey: release.id) else { continue }
+            Log.audio.info("\(release.line, privacy: .public)")
+            say(announce)
+        }
+        scheduleAnnounceTick()
+    }
+
+    private func scheduleAnnounceTick() {
+        announceTimer?.invalidate()
+        announceTimer = nil
+        guard let deadline = announceGate.nextDeadlineMs else { return }
+        let delay = max(0, deadline - MonotonicClock.nowMs()) / 1000 + 0.005
+        announceTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.speak(self.announceGate.tick(atMs: MonotonicClock.nowMs()))
+        }
     }
 
     // MARK: - Commands inside talk
@@ -1379,6 +1437,8 @@ final class AppModel: ObservableObject {
     private func routeChanged(_ reason: AVAudioSession.RouteChangeReason) {
         noteAudioRoute()
         volumeKey.settle()
+        speak(announceGate.routeReported(outputIsBluetoothHFP: session.outputIsBluetoothHFP,
+                                         output: session.outputType, atMs: MonotonicClock.nowMs()))
         switch reason {
         case .oldDeviceUnavailable:
             // Headset gone: don't blast music out of the speaker, now or at
@@ -1416,6 +1476,10 @@ final class AppModel: ObservableObject {
         stopRecognition()
         voiceEngine.stop()
         announcer.rebuild()
+        let dropped = announceGate.reset()
+        for id in dropped { heldAnnounces.removeValue(forKey: id) }
+        if !dropped.isEmpty { Log.audio.info("announce gate: \(dropped.count) dropped by the media reset") }
+        scheduleAnnounceTick()
         earcons.reset()
         player.rebuild()
         keepAlive.rebuild()

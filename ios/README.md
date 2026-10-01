@@ -26,6 +26,8 @@ Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            AppVolume + VolumeKeyGate (the app owns the volume keys while linked:
                            park, app level steps, hold volume up = talk),
                            TalkMode (own mic vs. host-mic talk, from talk.open's `mic`),
+                           TalkRoute (the talk's mic: Bluetooth, wired, USB, phone),
+                           AnnounceGate (an announcement waits out the switch back to A2DP),
                            MusicStatus ("Loading…" / "Paused for talk" under now playing),
                            BrowseHistory (Search tab: recent searches, recently played)
 Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK):
@@ -113,8 +115,9 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 268 tests: fixtures, command parser + first-phrase gate, app volume +
-                      # volume-key gate, talk mode (host-mic), music status line,
+swift test            # 292 tests: fixtures, command parser + first-phrase gate, app volume +
+                      # volume-key gate, talk mode (host-mic), talk route (wired
+                      # headsets), announce gate, music status line,
                       # search history, jitter buffer, Opus, drift controller, the
                       # screens' wording, ambient tint and per-route sync offset
 ```
@@ -375,6 +378,19 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   (`talk output was the receiver; overridden to the speaker`). A Bluetooth HFP or wired
   headset still wins; voice processing cancels the speaker's echo. The first device run played
   talk on the earpiece (`out: מקלט`), far too quiet.
+- **Wired and USB headsets in a talk** (`MotopartyCore.TalkRoute`, 2026-10-01; built, not run
+  on a phone). The talk's preferred input is chosen in Android's `AudioRouter.choose` order:
+  Bluetooth HFP (as before), else a wired headset's mic (`.headsetMic`), else a USB audio
+  input (`.usbAudio`), else none, which clears the preference and leaves the phone's mic and
+  the speaker. The output follows the chosen input (a headset's mic and earpieces are one
+  route); if the output is the speaker when a headset is chosen, the speaker override is
+  dropped (`overrideOutputAudioPort(.none)`, since that override takes the built-in mic
+  with it). Plugging or unplugging during a talk (route-change reasons `newDeviceAvailable` /
+  `oldDeviceUnavailable`) chooses again, then the receiver check runs; the voice engine's
+  configuration-change restart handles the new format as for a Bluetooth change. Wired
+  headphones without a mic are not a talk input: the talk takes the phone's mic, and iOS
+  plays it in the headphones. `hasHeadphones` (the music's "headset gone" hold) now counts a
+  USB output too. Log: `talk input: wired (<port name>), 2 available` at every choice.
 - **Configuration changes restart the same engine** (first device run, iPhone 15 / iOS 26:
   83 restarts a minute and no capture at all). Enabling voice processing reconfigures the I/O
   and posts `AVAudioEngineConfigurationChange`; the old handler rebuilt the engine, which
@@ -475,7 +491,24 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   timer), plays its earcon and speaks; "Heard: …" expires by its own timer too; the music
   status line and the lock screen follow `music.*` and `state`. Failures, `nowplaying` and
   `shuffle` still arrive as `announce`, after the host's `talk.close`, and are spoken on the
-  media session (they may start in the A2DP switch gap: device check below).
+  media session once it is really back (next item).
+- **Announcements wait out the switch back to A2DP** (`MotopartyCore.AnnounceGate`, the
+  sibling of Android's `MediaCue`, 2026-10-01). The reply to a command arrives right behind
+  its `talk.close`, inside the 0.22 s `endCueHold`, and the AirPods then take about a second
+  to bring A2DP back: started in the hold, the category change cut it; started right after,
+  its first words went into the profile switch. Now, outside a talk, an `announce` (its
+  earcon and its speech) starts at once only when no talk session is held or being given up.
+  Otherwise it waits for (a) `activate(.media)` and, only if the talk's output was Bluetooth
+  HFP just before it, (b) a route change whose output is no longer HFP, plus
+  `AnnounceGate.settleMs` = 250 ms. A speaker, wired or USB talk has no profile switch, so
+  (a) is all. `AnnounceGate.timeoutMs` = 2 s (Android's) after the request, or after the
+  release if later, it is spoken anyway (`fallback`) and the wait ends. An `announce` during
+  an open talk (the host's clarifying question) is spoken at once on the talk route, as
+  before. A talk re-opened while one waits keeps it for the next release, with no fallback
+  into the talk; a media-services reset drops what waits. Log: `announce gate: held until
+  the media route is back`, then one line per announcement, e.g. `announce gate: released
+  +190 ms, route BluetoothA2DPOutput +1070 ms, spoke +1320 ms (route)` (`(released)` off
+  HFP, `(fallback)` when the route never reported).
 - **Volume is local** (PROTOCOL.md "Commands"): `MotopartyCore.CommandParser` runs on this
   phone's own command before anything is sent, and `volume up`/`louder`/`volume down`/
   `quieter` change *this* phone's **media** volume with the `ok` earcon and no `command.text`,
@@ -847,6 +880,40 @@ the open questions, in the order a ride needs them:
   - Music that starts before the app was ever linked in front (app launched, never linked,
     phone locked) has no activity until the app is next opened: ActivityKit only starts one
     in the foreground.
+- **2026-10-01 wired talk and the announce gate (built on Linux only).**
+  - *Wired headset.* With no earbuds connected, plug a wired headset with a mic (USB-C
+    adapter + 3.5 mm headset, or a USB-C headset) and open a talk: `talk input: wired (…)`
+    (or `usb`), `session → talk, out: … (… out Headphones/… or USBAudio/…, in
+    MicrophoneWired/… or USBAudio/…)`; the Pixel rider hears the headset mic, not the phone's
+    (cover the phone's bottom mic to tell), and the passenger hears the rider in the headset.
+    The live beep still comes (first capture buffer) and `voice engine started: duplex` shows
+    the headset's rate.
+  - *Plug mid-talk.* Talk on the speaker (no headset), plug the wired headset: `route change
+    1`, `talk input: wired`, the output moves to the headset and the phone's speaker goes
+    silent; `voice engine configuration changed … restart` at most once or twice, voice keeps
+    flowing both ways. Unplug it: `route change 2`, `talk input: phone`, the talk is on the
+    loudspeaker again (never the earpiece: no `out: Receiver`), still both ways. Same with the
+    AirPods connected: plugging the wired set must *not* take the talk off the AirPods
+    (Bluetooth wins, as on Android); unplugging changes nothing audible.
+  - *Wired headphones without a mic:* talk input `phone`, output in the headphones, the phone's
+    mic carries the voice.
+  - *Music hold:* with a USB-C headset as the media output, unplugging it holds the music
+    (`music: held, the headset is gone`), plugging it back ends the hold.
+  - *Announce gate, AirPods.* Speak a command whose reply is spoken (`what's playing`, or one
+    that fails) in a talk the iPhone opened. Read the `announce gate:` line and listen:
+    `released +x ms` should be ~190-220 ms (the end-earcon hold), `route BluetoothA2DPOutput
+    +y ms` the moment iOS reported A2DP, `spoke +z ms (route)` = y + 250. Measure on 5+ tries:
+    (1) is the reply's first syllable complete? (2) y, i.e. how long after the switch iOS
+    reports A2DP; (3) whether the first route change after `session → media` already says
+    `out=` the AirPods' A2DP name, or first HFP then A2DP. If the first syllable is still cut
+    with `(route)`, raise `AnnounceGate.settleMs` by the cut length; if it is clean with a long
+    audible pause, lower it (0 is allowed). If every line says `(fallback)` (2 s late), iOS
+    posts no route change after the HFP→A2DP switch and the gate needs another signal (e.g.
+    `outputVolume` changing to the A2DP volume, or a poll of `currentRoute`).
+  - *Announce gate, no headset / wired:* the same command on the speaker or a wired headset:
+    `route n/a, spoke +~200 ms (released)`, nothing cut.
+  - *Clarifying question in a talk* ("play Moby" → "Which Moby album?"): still spoken at once
+    in the talk, no `announce gate:` line, and the reply is heard.
 - The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
   the AirPods A2DP ↔ HFP switch time.
 
