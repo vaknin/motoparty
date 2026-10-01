@@ -93,10 +93,12 @@ struct QueueView: View {
                 .onDelete { offsets in
                     remove(offsets.filter(rows.indices.contains).map { rows[$0] }, queue: queue)
                 }
-                .deleteDisabled(!connected)
+                // onMove belongs to the ForEach, so it goes before the
+                // modifiers that return a plain View.
                 .onMove { source, destination in
                     move(source, to: destination, rows: rows, queue: queue)
                 }
+                .deleteDisabled(!connected)
                 .moveDisabled(!connected)
             }
             if !connected {
