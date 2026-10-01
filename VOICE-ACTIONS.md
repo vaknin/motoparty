@@ -213,6 +213,7 @@ said no phone tests for now).
 | `gemma-4-26b-a4b-it`, every 3rd phrase, 13 s apart (07:50) | 24/31 | 4 | 3/27 | 1.3 s / 1.7 s |
 | `gemini-3.5-flash-lite` (10:10, just after the daily reset) | 91/93 | 0 | 2/93 | 1.3 s / 3.3 s |
 | `gemini-3.5-flash-lite`, **old** prompt at `3c9a756`, 53 phrases (10:02) | 53/53 | 0 | 0/53 | 1.1 s / 1.5 s |
+| `gemini-3.5-flash-lite`, prompt with the two fixes below (10:35) | 92/93 | 0 | 1/93 | 1.2 s / 1.5 s |
 
 - 3.1's p50 was 3.6 s with the old, smaller prompt (2026-09-30 night): the bigger prompt costs no
   visible latency next to Google's queue.
@@ -233,3 +234,7 @@ said no phone tests for now).
   would have fallen back. The rest were under 4 s.
 - Speed depends on the time of day more than on the prompt: right after the daily reset 3.5 ran at
   p50 1.1–1.3 s on both prompts, against 3+ s for 3.1 at 07:50 and for 3.5 the night before.
+- Prompt fixes for those two (10:30): kind song needs a title, so "that song by Queen" is ask;
+  "instead" on its own means play, not add. Both now pass. The full run's one miss, "ok put the
+  music back on" → nothing, passed 5 of 5 when repeated: noise. One of those 5 took 10.9 s, so the
+  slow tail is still there even when the run's p95 is 1.5 s.
