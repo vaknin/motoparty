@@ -94,6 +94,8 @@ catches up.
 | `music.results` | H→C   | `id` (echoed), `items`: array of result items, `error` (optional): string to show instead of an empty list |
 | `music.enqueue` | C→H   | `mode`: `"now"`\|`"next"`\|`"end"`, `tracks`: array of tracks, `art` (optional): URL for tracks without their own |
 | `music.edit`    | C→H   | `op`: `"jump"`\|`"remove"`\|`"clear"`\|`"move"`, `index` (optional): int, `id` (optional): string, `to` (optional): int, the new index for `"move"` (2026-10-01). See Browsing |
+| `music.download` | C→H  | `op`: `"start"`\|`"stop"`, `ref`: string — the `ref` of an album or playlist result, `ids` (required for `"start"`): array of strings, the collection's track ids in order (2026-10-01). See Browsing step 6 |
+| `music.downloads` | H→C | `cached`: array of strings, the track ids the host has downloaded; `downloads`: array of `{ref, done, total, failed, running}`, one per collection download (2026-10-01). See Browsing step 6 |
 | `announce`      | H→C   | `text`: to be spoken by TTS; `earcon` (optional): `"ok"`\|`"error"`; `ask` (optional, only `true`): the text is a clarifying question, see Commands, "The clarifying question" |
 | `state`         | H→C   | see below |
 | `bye`           | both  | `reason` (optional). Sender closes the socket after it |
@@ -112,7 +114,11 @@ talk (see "Host-mic talk"), so a client that learns of the talk only from `state
 mid-talk) opens it the same way. A receiver ignores `mic` on `state{talk:false}` (the message is kept). `music` is omitted when nothing is loaded; its `art` (optional) is a cover image URL, and its `repeat` (optional, 2026-10-01) is `"track"` (the current track starts again when it ends) or `"queue"` (after the last track the queue starts again from the first track it still holds); absent means off, and the host never sends `"off"`. Any other value drops the `state`. `queue` (required, possibly empty) is the upcoming
 tracks after the current one; an item is `{id, title, artist}` plus optional `durationMs` and `art` (2026-09-30; the host leaves `art` out of every item when `state` would pass 48 KiB). `positionMs`/`atHostTimeMs` form the same anchor as in
 `music.play`; while paused (including during talk) `playing` is false and `positionMs` is the
-pause position.
+pause position. `busy` (optional string, 2026-10-01) is present only while the host is searching
+for a voice command's `play` or `add` (Commands, *Queueing by voice*): short text for the
+screen, such as `Searching song "moby"`, without a trailing ellipsis. The client shows it
+under now playing with a spinner (with "…" added), also when nothing is loaded, and stops
+showing it on the first `state` without it. The host's own status line shows the same text.
 
 **Repeat by touch** (2026-10-01). The client's repeat button sends
 `music.control{action:"repeat", mode}` with the mode it wants, not a toggle: the button cycles
@@ -376,6 +382,30 @@ the Music flow: an enqueued track is loaded, readied and played exactly as befor
    change reaches the client as a new `state`.
 5. Size: a `music.results` or `music.enqueue` frame must stay under 64 KiB. The sender drops
    per-item `art` first, then trailing items. Hosts cap a collection at 200 tracks.
+6. **Downloads** (2026-10-01): a whole album or playlist into the host's track cache, for
+   riding through patchy coverage, and the "downloaded" marks on song rows. The client sends
+   `music.download{op:"start", ref, ids}` with the collection's `ref` and the `ref`s of its
+   `music.browse` results, in order (the host does not browse it again). The host downloads
+   them exactly as for its own Download button: one track at a time across every collection,
+   after any track the queue needs, and already-cached tracks count as done at once. It skips
+   invalid ids and keeps at most 200; a `ref` that is not a valid id, or a start left with no
+   ids, is ignored, and so is a start for a collection already downloading. `"stop"` (`ids` not
+   needed, ignored) stops that collection's download, the track in flight included, and forgets
+   its progress; what was downloaded stays cached. A `"start"` without `ids` is malformed and
+   dropped. The host sends `music.downloads{cached, downloads}` right after a client's `hello`
+   and again whenever either list changes. `cached` (required, possibly empty, any order) is
+   every track id in the host's active track cache: those play without coverage, and both
+   phones mark them "downloaded" wherever a song row shows that id. `downloads` (required,
+   possibly empty) has one item per collection downloaded since the host started, started by
+   either phone and keyed by its `ref`: `done` (tracks handled so far, failures included),
+   `total`, `failed` (tracks that could not be downloaded) and `running` (false once
+   `done` = `total`); a stopped one is left out. A frame that would not fit 64 KiB drops
+   trailing `cached` ids. These are not in `state`: `state` is re-sent on every play, pause and
+   queue change, its 64 KiB is sized for 200 queue items, and `cached` alone can be several KiB.
+   The client's button, as on the host: "Downloaded" when every song is in `cached` (or the
+   download finished with no failures), "Downloading done/total · Stop" while running (a tap
+   sends `"stop"`), "Retry · saved/total" after failures (a tap starts it again), otherwise
+   "Download".
 
 ## Commands
 

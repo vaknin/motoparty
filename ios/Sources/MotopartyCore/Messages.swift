@@ -22,6 +22,8 @@ public enum ControlMessage: Equatable, Sendable {
     case musicResults(MusicResults)
     case musicEnqueue(MusicEnqueue)
     case musicEdit(MusicEdit)
+    case musicDownload(MusicDownload)
+    case musicDownloads(MusicDownloads)
     case announce(Announce)
     case state(HostState)
     case bye(Bye)
@@ -49,6 +51,8 @@ public enum ControlMessage: Equatable, Sendable {
         case .musicResults: "music.results"
         case .musicEnqueue: "music.enqueue"
         case .musicEdit: "music.edit"
+        case .musicDownload: "music.download"
+        case .musicDownloads: "music.downloads"
         case .announce: "announce"
         case .state: "state"
         case .bye: "bye"
@@ -349,6 +353,57 @@ public struct MusicEdit: Codable, Equatable, Sendable {
     }
 }
 
+/// `music.download` (PROTOCOL.md "Browsing" step 6, 2026-10-01).
+public enum DownloadOp: String, Codable, Sendable, CaseIterable { case start, stop }
+
+/// Start or stop downloading an album or playlist into the host's cache.
+public struct MusicDownload: Codable, Equatable, Sendable {
+    public var op: DownloadOp
+    /// The `ref` of the album or playlist result.
+    public var ref: String
+    /// For `start` (required): its songs' refs, in order.
+    public var ids: [String]?
+    public init(op: DownloadOp, ref: String, ids: [String]? = nil) { self.op = op; self.ref = ref; self.ids = ids }
+
+    public static func start(_ ref: String, ids: [String]) -> MusicDownload { MusicDownload(op: .start, ref: ref, ids: ids) }
+    public static func stop(_ ref: String) -> MusicDownload { MusicDownload(op: .stop, ref: ref) }
+
+    private enum CodingKeys: String, CodingKey { case op, ref, ids }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        op = try c.decode(DownloadOp.self, forKey: .op)
+        ref = try c.decode(String.self, forKey: .ref)
+        ids = try c.decodeIfPresent([String].self, forKey: .ids)
+        // `start` without ids is malformed.
+        if op == .start, ids == nil {
+            throw DecodingError.dataCorruptedError(forKey: .ids, in: c, debugDescription: "start needs ids")
+        }
+    }
+}
+
+/// One collection download on the host, by its `ref`.
+public struct DownloadItem: Codable, Equatable, Sendable {
+    public var ref: String
+    /// Tracks handled so far, failures included.
+    public var done: Int
+    public var total: Int
+    public var failed: Int
+    /// False once `done` = `total`.
+    public var running: Bool
+    public init(ref: String, done: Int, total: Int, failed: Int = 0, running: Bool) {
+        self.ref = ref; self.done = done; self.total = total; self.failed = failed; self.running = running
+    }
+}
+
+/// The host's downloaded track ids (the song rows' marks) and its collection
+/// downloads; after the client's `hello` and on every change.
+public struct MusicDownloads: Codable, Equatable, Sendable {
+    public var cached: [String]
+    public var downloads: [DownloadItem]
+    public init(cached: [String] = [], downloads: [DownloadItem] = []) { self.cached = cached; self.downloads = downloads }
+}
+
 public struct Announce: Codable, Equatable, Sendable {
     public var text: String
     public var earcon: Earcon?
@@ -404,9 +459,12 @@ public struct HostState: Codable, Equatable, Sendable {
     /// Only while `talk` is true and the open talk is host-mic (PROTOCOL.md
     /// "state", "Host-mic talk"), so a join mid-talk opens it the same way.
     public var mic: TalkMic?
+    /// While the host searches for a voice command (2026-10-01): the status
+    /// line's text, e.g. `Searching song "moby"`, without the ellipsis.
+    public var busy: String?
 
-    public init(talk: Bool, music: Music? = nil, queue: [QueueItem] = [], mic: TalkMic? = nil) {
-        self.talk = talk; self.music = music; self.queue = queue; self.mic = mic
+    public init(talk: Bool, music: Music? = nil, queue: [QueueItem] = [], mic: TalkMic? = nil, busy: String? = nil) {
+        self.talk = talk; self.music = music; self.queue = queue; self.mic = mic; self.busy = busy
     }
 
     // `queue` is required (possibly empty); `music` is omitted when nothing is loaded.
@@ -492,6 +550,8 @@ public enum ControlCodec {
         case "music.results": return .musicResults(try d(MusicResults.self))
         case "music.enqueue": return .musicEnqueue(try d(MusicEnqueue.self))
         case "music.edit": return .musicEdit(try d(MusicEdit.self))
+        case "music.download": return .musicDownload(try d(MusicDownload.self))
+        case "music.downloads": return .musicDownloads(try d(MusicDownloads.self))
         case "announce": return .announce(try d(Announce.self))
         case "state": return .state(try d(HostState.self))
         case "bye": return .bye(try d(Bye.self))
@@ -524,6 +584,8 @@ public enum ControlCodec {
         case .musicResults(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .musicEnqueue(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .musicEdit(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicDownload(let p): return try encoder.encode(Tagged(t: t, payload: p))
+        case .musicDownloads(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .announce(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .state(let p): return try encoder.encode(Tagged(t: t, payload: p))
         case .bye(let p): return try encoder.encode(Tagged(t: t, payload: p))

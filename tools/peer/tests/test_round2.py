@@ -248,6 +248,34 @@ def _has(logs: list[str], text: str) -> bool:
     return any(text in line for line in logs)
 
 
+def test_client_downloads_the_browsed_collection_and_shows_the_marks(tmp_path, monkeypatch):
+    """PROTOCOL.md "Browsing" 6: `download` after `browse <n>` sends the songs' refs; `music.downloads`
+    and state.busy are shown."""
+    async def go():
+        c, w, logs = _client(tmp_path, monkeypatch)
+        c._download_cmd("")
+        assert w.frames == [] and _has(logs, "usage: download")
+        c.req_kind = "albums"
+        c.results = [{"ref": "PL1", "title": "Album", "artist": "Band", "count": 2}]
+        c._browse_cmd("browse", "1")
+        await c._handle({"t": "music.results", "id": c.req_id, "items": [
+            {"ref": "a1", "title": "One", "artist": "Band"}, {"ref": "a2", "title": "Two", "artist": "Band"}]})
+        c._download_cmd("")
+        c._download_cmd("stop")
+        assert w.frames[1:] == [{"t": "music.download", "op": "start", "ref": "PL1", "ids": ["a1", "a2"]},
+                                {"t": "music.download", "op": "stop", "ref": "PL1"}]
+        await c._handle({"t": "music.downloads", "cached": ["a2", "zz"],
+                         "downloads": [{"ref": "PL1", "done": 1, "total": 2, "failed": 0, "running": True}]})
+        assert c.host_cached == {"a2", "zz"}
+        assert _has(logs, "PL1: downloading 1/2, 0 failed") and _has(logs, "downloaded here: ['Two']")
+        await c._handle({"t": "state", "talk": False, "queue": [], "busy": "Searching song \"x\""})
+        assert _has(logs, 'busy: Searching song "x"…')
+        await c._handle({"t": "state", "talk": False, "queue": []})
+        assert _has(logs, "busy: done")
+
+    asyncio.run(go())
+
+
 def test_second_trigger_before_the_decision_takes_the_request_back(tmp_path, monkeypatch):
     async def go():
         c, w, logs = _client(tmp_path, monkeypatch)

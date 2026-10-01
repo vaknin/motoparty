@@ -72,10 +72,11 @@ HELP = """commands: load | play | pause | stop | talk | mic on|off (refuse talk 
           a command ends the talk) |
           next | previous | queue (every other --track after the current one) |
           repeat off|track|queue (state.music.repeat) |
+          busy <text>|off (state.busy, the "Searching …" line) | downloads (music.downloads) |
           announce <text> | state | stats | raw <json> (send unvalidated) | quit"""
 
 C2H_ONLY = {"ping", "music.ready", "music.error", "music.control", "command.text",
-            "music.search", "music.browse", "music.enqueue", "music.edit"}
+            "music.search", "music.browse", "music.enqueue", "music.edit", "music.download"}
 MAX_QUEUE = 200  # PROTOCOL.md "Browsing" 3 and 5
 ERROR_RELOAD_MS = 2000  # PROTOCOL.md "Music flow" 3: music.load once more after a first music.error
 # Less than this before the current track ends, the next one is not announced any more (as on
@@ -169,6 +170,18 @@ class Host:
         self.voice_seq = random.randrange(1 << 16)
         self.vstats = VoiceStats()
         self.last_voice_rx = 0
+        # state.busy (2026-10-01): the "Searching …" text while a voice search runs; the fake
+        # host's searches are instant, so it is set by hand (stdin `busy`).
+        self.busy: str | None = None
+        # PROTOCOL.md "Browsing" 6: track ids "downloaded" (music.downloads cached), each
+        # collection's progress by ref, and the tasks running them. The fake host serves only its
+        # own files, so a download "fetches" a library track after download_step_ms, and any
+        # other valid id fails; one track at a time across collections, as on the Pixel.
+        self.cached: set[str] = set()
+        self.downloads: dict[str, dict] = {}
+        self.download_tasks: dict[str, asyncio.Task] = {}
+        self.download_lock = asyncio.Lock()
+        self.download_step_ms = 300  # tests shorten it
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -332,7 +345,24 @@ class Host:
             if self.repeat:
                 s["music"]["repeat"] = self.repeat
         s["queue"] = [{"id": t.id, "title": t.title, "artist": t.artist} for t in self.queue]
+        if self.busy:
+            s["busy"] = self.busy
         return s
+
+    def downloads_msg(self) -> dict:
+        """PROTOCOL.md "Browsing" 6: every cached id and every collection's progress."""
+        return {"t": "music.downloads", "cached": sorted(self.cached),
+                "downloads": [{"ref": ref, **p} for ref, p in self.downloads.items()]}
+
+    def send_downloads(self) -> None:
+        self.send(self.downloads_msg())
+
+    def set_busy(self, text: str | None) -> None:
+        """state.busy: shown with a spinner on the client until a state without it."""
+        if text == self.busy:
+            return
+        self.busy = text
+        self.send_state()
 
     def send_state(self) -> None:
         self.send(self.state())
@@ -439,6 +469,7 @@ class Host:
             self.client_ready.clear()
             self.prefetched = self.next_sent = None
             self._music_changed()
+            self.send_downloads()  # PROTOCOL.md "Browsing" 6: right after the client's hello
             return None
         if c is not self.current:
             log("   (from a connection that has not sent hello; ignored)")
@@ -487,6 +518,8 @@ class Host:
             self._enqueue(msg)
         elif t == "music.edit":
             self._edit(msg)
+        elif t == "music.download":
+            self._download(msg)
         elif t not in C2H_ONLY:
             log(f"   ({t!r} is host-to-client; ignored)")
         return None
@@ -873,6 +906,52 @@ class Host:
             self._start(track)
         self.send_state()
 
+    def _download(self, msg: dict) -> None:
+        """PROTOCOL.md "Browsing" 6: start or stop one collection's download, by its ref."""
+        ref = msg["ref"]
+        if not VALID_ID.fullmatch(ref):
+            log(f"   (invalid ref {ref!r}; ignored)")
+            return
+        if msg["op"] == "stop":
+            task = self.download_tasks.pop(ref, None)
+            if task is None:
+                log("   (not downloading; ignored)")
+                return
+            task.cancel()
+            self.downloads.pop(ref, None)
+            log(f"   download {ref}: stopped")
+            self.send_downloads()
+            return
+        task = self.download_tasks.get(ref)
+        if task is not None and not task.done():
+            log("   (already downloading; ignored)")
+            return
+        ids = list(dict.fromkeys(i for i in msg["ids"] if VALID_ID.fullmatch(i)))[:MAX_QUEUE]
+        if not ids:
+            log("   (no valid ids; ignored)")
+            return
+        self.downloads[ref] = {"done": 0, "total": len(ids), "failed": 0, "running": True}
+        self.download_tasks[ref] = asyncio.ensure_future(self._run_download(ref, ids))
+        self.send_downloads()
+
+    async def _run_download(self, ref: str, ids: list[str]) -> None:
+        done = failed = 0
+        for id_ in ids:
+            if id_ not in self.cached:
+                async with self.download_lock:
+                    await asyncio.sleep(self.download_step_ms / 1000)
+                if id_ in self.by_id:
+                    self.cached.add(id_)
+                else:
+                    failed += 1
+                    log(f"   download {ref}: {id_} failed (not a track this host serves)")
+            done += 1
+            self.downloads[ref] = {"done": done, "total": len(ids), "failed": failed, "running": done < len(ids)}
+            self.send_downloads()
+        log(f"   download {ref}: done, {failed} failed")
+        if self.download_tasks.get(ref) is asyncio.current_task():
+            del self.download_tasks[ref]
+
     def _touch_play_ends_talk(self, by: str) -> None:
         """PROTOCOL.md "Browsing" 3, Play by touch ends a talk: a `now` enqueue or a `jump` edit
         during a talk closes it like a spoken `play` (by the side that touched); the new track
@@ -1189,6 +1268,11 @@ class Host:
                     log("usage: repeat off|track|queue")
                     continue
                 self._set_repeat(arg)
+            elif cmd == "busy":
+                arg = rest.strip()
+                self.set_busy(None if arg in ("", "off") else arg)
+            elif cmd == "downloads":
+                self.send_downloads()
             elif cmd == "talk":
                 if self.talk:
                     self._close_talk("host", "trigger")

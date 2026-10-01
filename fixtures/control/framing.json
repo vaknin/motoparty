@@ -110,6 +110,30 @@
   {
    "_doc": "state queue item with a mistyped optional durationMs: drop, keep",
    "json": "{\"t\":\"state\",\"talk\":false,\"queue\":[{\"id\":\"x1\",\"title\":\"A\",\"artist\":\"B\",\"durationMs\":\"65000\"}]}"
+  },
+  {
+   "_doc": "music.download start without ids: drop, keep",
+   "json": "{\"t\":\"music.download\",\"op\":\"start\",\"ref\":\"PL1234567890\"}"
+  },
+  {
+   "_doc": "music.download with an op outside its set: drop, keep",
+   "json": "{\"t\":\"music.download\",\"op\":\"pause\",\"ref\":\"PL1234567890\"}"
+  },
+  {
+   "_doc": "music.download with an id that is not a string: drop, keep",
+   "json": "{\"t\":\"music.download\",\"op\":\"start\",\"ref\":\"PL1234567890\",\"ids\":[\"abc-_123\",1]}"
+  },
+  {
+   "_doc": "music.downloads without cached: drop, keep",
+   "json": "{\"t\":\"music.downloads\",\"downloads\":[]}"
+  },
+  {
+   "_doc": "music.downloads item without running: drop, keep",
+   "json": "{\"t\":\"music.downloads\",\"cached\":[],\"downloads\":[{\"ref\":\"PL1234567890\",\"done\":0,\"total\":2,\"failed\":0}]}"
+  },
+  {
+   "_doc": "state with a busy that is not a string: drop, keep",
+   "json": "{\"t\":\"state\",\"talk\":false,\"queue\":[],\"busy\":true}"
   }
  ],
  "fatal": [

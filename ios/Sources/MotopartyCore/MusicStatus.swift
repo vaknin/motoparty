@@ -11,12 +11,25 @@ public enum MusicStatus: Equatable, Sendable {
     /// A talk is open and holds the music: the host resumes it with
     /// `music.play` once the talk closes (PROTOCOL.md "Talk flow" step 4).
     case pausedForTalk
+    /// The host is searching for a voice command (`state.busy`, 2026-10-01),
+    /// e.g. `Searching song "moby"`; shown with a spinner, also with nothing
+    /// loaded. The two above come first, as on the Pixel.
+    case searching(String)
 
     public var text: String? {
         switch self {
         case .none: nil
         case .loading: "Downloading song…"
         case .pausedForTalk: "Paused for talk — plays when the talk ends"
+        case .searching(let what): "\(what)…"
+        }
+    }
+
+    /// The line turns with a spinner (it is waiting for something).
+    public var spins: Bool {
+        switch self {
+        case .loading, .searching: true
+        case .none, .pausedForTalk: false
         }
     }
 }
@@ -35,10 +48,18 @@ public struct MusicStatusTracker: Equatable, Sendable {
     private var awaitingPlay: Set<String> = []
     /// Being fetched from the host (download + decode check).
     private var downloading: Set<String> = []
+    /// `state.busy`: the host's voice search, nil when none runs.
+    public private(set) var busy: String?
 
     public init() {}
 
     public var status: MusicStatus {
+        let track = trackStatus
+        if track == .none, let busy, !busy.isEmpty { return .searching(busy) }
+        return track
+    }
+
+    private var trackStatus: MusicStatus {
         guard let id = currentId else { return .none }
         if downloading.contains(id) { return .loading }
         let pending = awaitingPlay.contains(id)
@@ -48,6 +69,11 @@ public struct MusicStatusTracker: Equatable, Sendable {
     }
 
     // MARK: - Events
+
+    /// Every `state`: its `busy` (absent ends the search line).
+    public mutating func hostBusy(_ text: String?) {
+        busy = text
+    }
 
     /// The track now playing changed (or was confirmed); nil: nothing loaded.
     public mutating func setCurrent(_ id: String?) {
@@ -122,5 +148,6 @@ public struct MusicStatusTracker: Equatable, Sendable {
     /// The link dropped: the host re-sends `music.load` after the next join.
     public mutating func linkLost() {
         awaitingPlay.removeAll()
+        busy = nil
     }
 }

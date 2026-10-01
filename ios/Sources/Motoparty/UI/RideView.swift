@@ -385,8 +385,9 @@ private struct NowPlayingCard: View {
             }
             if let track = model.nowPlaying {
                 TrackProgress(durationMs: track.durationMs)
-                MusicStatusLine(status: model.musicStatus)
             }
+            // Also with nothing loaded: "Searching …" for a spoken play.
+            MusicStatusLine(status: model.musicStatus)
             TransportControls()
             UpNextLine()
         }
@@ -452,19 +453,20 @@ private struct TrackProgress: View {
 }
 
 /// Why the clock is not moving: the track is still on its way, or a talk
-/// holds the music. Nothing while playing or plainly paused.
+/// holds the music; else the host's voice search ("Searching …", with a
+/// spinner, as on the Pixel). Nothing while playing or plainly paused.
 private struct MusicStatusLine: View {
     let status: MusicStatus
 
     var body: some View {
         if let text = status.text {
             HStack(spacing: 6) {
-                switch status {
-                case .loading: ProgressView().controlSize(.small)
-                case .pausedForTalk: Image(systemName: "mic.fill")
-                case .none: EmptyView()
+                if status.spins {
+                    ProgressView().controlSize(.small)
+                } else if status == .pausedForTalk {
+                    Image(systemName: "mic.fill")
                 }
-                Text(text)
+                Text(text).lineLimit(1)
             }
             .font(.caption)
             .foregroundStyle(.secondary)

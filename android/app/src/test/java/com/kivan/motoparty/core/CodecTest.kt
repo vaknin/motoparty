@@ -144,6 +144,49 @@ class CodecTest {
         }
     }
 
+    /** PROTOCOL.md "Browsing" step 6: `start` needs `ids`, `stop` does not; `op` is a closed set. */
+    @Test
+    fun downloadStartNeedsIds() {
+        val start = MusicDownload(DownloadOp.START, "PL1", listOf("a1", "a2"))
+        assertEquals("""{"t":"music.download","op":"start","ref":"PL1","ids":["a1","a2"]}""", Codec.encode(start))
+        assertEquals(start, Codec.decode(Codec.encode(start)))
+        assertEquals("""{"t":"music.download","op":"stop","ref":"PL1"}""", Codec.encode(MusicDownload(DownloadOp.STOP, "PL1")))
+        assertEquals(MusicDownload(DownloadOp.START, "PL1", emptyList()), Codec.decode("""{"t":"music.download","op":"start","ref":"PL1","ids":[]}"""))
+        for (json in listOf(
+            """{"t":"music.download","op":"start","ref":"PL1"}""",
+            """{"t":"music.download","op":"start","ref":"PL1","ids":null}""",
+            """{"t":"music.download","op":"start","ref":"PL1","ids":"a1"}""",
+            """{"t":"music.download","op":"start","ref":"PL1","ids":[1]}""",
+            """{"t":"music.download","op":"Stop","ref":"PL1"}""",
+            """{"t":"music.download","op":"stop"}""",
+            """{"t":"music.downloads","cached":[]}""",
+            """{"t":"music.downloads","cached":[],"downloads":[{"ref":"PL1","done":0,"total":1,"failed":0}]}""",
+            """{"t":"state","talk":false,"queue":[],"busy":1}""",
+        )) {
+            try {
+                Codec.decode(json)
+                fail("accepted $json")
+            } catch (_: MalformedMessageException) {
+            }
+        }
+    }
+
+    /** `state.busy` is optional and omitted when absent; `music.downloads` keeps its frame by dropping cached ids. */
+    @Test
+    fun busyAndDownloadsFit() {
+        assertEquals("""{"t":"state","talk":false,"queue":[],"busy":"Searching song \"x\""}""",
+            Codec.encode(State(talk = false, queue = emptyList(), busy = "Searching song \"x\"")))
+        val progress = listOf(DownloadItem("PL1", 1, 3, 0, true))
+        val small = MusicDownloads(listOf("a1"), progress)
+        assertEquals(small, Codec.fit(small))
+        val big = MusicDownloads((0 until 6000).map { "track-%05d".format(it) }, progress)
+        val fitted = Codec.fit(big)
+        assertTrue(Codec.fits(fitted))
+        assertTrue(fitted.cached.size in 1 until big.cached.size)
+        assertEquals(big.cached.take(fitted.cached.size), fitted.cached)
+        assertEquals(progress, fitted.downloads)
+    }
+
     /** PROTOCOL.md "Host-mic talk": `mic` is optional on `talk.open` and `state`, and only ever "host". */
     @Test
     fun hostMicIsOptionalAndOnlyHost() {

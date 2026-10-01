@@ -223,6 +223,47 @@
    "to": 0
   },
   {
+   "t": "music.download",
+   "op": "start",
+   "ref": "OLAK5uy_nMr9h2VlS-2PULNz3M3XVXQj_P3C2bqaY",
+   "ids": [
+    "abc-_123",
+    "dQw4w9WgXcQ"
+   ]
+  },
+  {
+   "t": "music.download",
+   "op": "stop",
+   "ref": "OLAK5uy_nMr9h2VlS-2PULNz3M3XVXQj_P3C2bqaY"
+  },
+  {
+   "t": "music.downloads",
+   "cached": [
+    "abc-_123"
+   ],
+   "downloads": [
+    {
+     "ref": "OLAK5uy_nMr9h2VlS-2PULNz3M3XVXQj_P3C2bqaY",
+     "done": 1,
+     "total": 2,
+     "failed": 0,
+     "running": true
+    },
+    {
+     "ref": "PL1234567890",
+     "done": 3,
+     "total": 3,
+     "failed": 1,
+     "running": false
+    }
+   ]
+  },
+  {
+   "t": "music.downloads",
+   "cached": [],
+   "downloads": []
+  },
+  {
    "t": "announce",
    "text": "Playing Money by Pink Floyd",
    "earcon": "ok"
@@ -350,6 +391,12 @@
      "artist": "D"
     }
    ]
+  },
+  {
+   "t": "state",
+   "talk": false,
+   "queue": [],
+   "busy": "Searching song \"moby\""
   }
  ]
 }

@@ -35,6 +35,7 @@ HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase r
           unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
           browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit move <i> <to> |
           edit clear | repeat off|track|queue |
+          download [stop] (the browsed album or playlist into the host's cache) |
           stats | raw <json> (send unvalidated) | quit"""
 
 MUSIC_CONTROL = {"pause": "pause", "resume": "resume", "next": "next", "previous": "previous"}
@@ -91,6 +92,10 @@ class Client:
         self.results: list[dict] = []
         self.queue: list[dict] = []
         self.repeat: str | None = None  # state.music.repeat, None = off
+        self.busy: str | None = None  # state.busy: the host's "Searching …" line
+        # PROTOCOL.md "Browsing" 6: the collection last browsed and the host's cached ids
+        self.browsed_ref: str | None = None
+        self.host_cached: set[str] = set()
         # Talk flow 1: the timer of a talk.open request the host has not decided yet
         self.talk_request: asyncio.TimerHandle | None = None
         self.got_bye = False
@@ -315,9 +320,14 @@ class Client:
             if repeat != self.repeat:
                 self.repeat = repeat
                 log(f"   repeat: {repeat or 'off'}")
+            if msg.get("busy") != self.busy:
+                self.busy = msg.get("busy")
+                log(f"   busy: {self.busy}…" if self.busy else "   busy: done")
             self._state_vs_next(msg.get("music"))
         elif t == "music.results":
             self._results(msg)
+        elif t == "music.downloads":
+            self._downloads(msg)
         elif t == "talk.open":
             if msg.get("mic") == "host":
                 # PROTOCOL.md "Host-mic talk": we open no microphone, so a dead or unpermitted
@@ -710,7 +720,28 @@ class Client:
     def _request(self, msg: dict, kind: str, album: str | None = None) -> None:
         self.req_id += 1
         self.req_kind, self.req_album = kind, album
+        self.browsed_ref = msg.get("ref")  # the collection being browsed, for `download`
         self.send({**msg, "id": self.req_id})
+
+    def _download_cmd(self, rest: str) -> None:
+        """PROTOCOL.md "Browsing" 6: download the browsed collection's songs, or stop it."""
+        if self.browsed_ref is None:
+            log("usage: download [stop] (after `browse <n>`)")
+        elif rest.strip() == "stop":
+            self.send({"t": "music.download", "op": "stop", "ref": self.browsed_ref})
+        elif rest.strip():
+            log("usage: download [stop] (after `browse <n>`)")
+        else:
+            self.send({"t": "music.download", "op": "start", "ref": self.browsed_ref,
+                       "ids": [it["ref"] for it in self.results]})
+
+    def _downloads(self, msg: dict) -> None:
+        self.host_cached = set(msg["cached"])
+        for d in msg["downloads"]:
+            state = "downloading" if d["running"] else "finished"
+            log(f"   {d['ref']}: {state} {d['done']}/{d['total']}, {d['failed']} failed")
+        marked = [it["title"] for it in self.results if it["ref"] in self.host_cached]
+        log(f"   {len(self.host_cached)} track(s) cached" + (f"; downloaded here: {marked}" if marked else ""))
 
     def _results(self, msg: dict) -> None:
         if msg["id"] != self.req_id:  # PROTOCOL.md "Browsing" 1: only the newest request
@@ -823,6 +854,8 @@ class Client:
                     log("usage: repeat off|track|queue")
                     continue
                 self.send({"t": "music.control", "action": "repeat", "mode": mode})
+            elif cmd == "download":
+                self._download_cmd(rest)
             elif cmd in ("search", "browse", "enqueue", "edit"):
                 self._browse_cmd(cmd, rest)
             elif cmd == "stats":

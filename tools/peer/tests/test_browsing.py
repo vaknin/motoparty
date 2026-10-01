@@ -1,6 +1,7 @@
 """Fake-host browsing: search/browse over local tracks and the enqueue/edit queue semantics
 (PROTOCOL.md "Browsing"). No sockets: Host.send and Host._start are stubbed."""
 
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -337,3 +338,65 @@ def test_queue_ends_the_talk_then_announces(host):
     assert not host.talk and talk_closes(host) == [CLIENT_CLOSE]
     assert [m["t"] for m in after_close(host)] == ["music.play", "announce"]
     assert after_close(host)[0]["id"] == "a1" and after_close(host)[1]["text"].startswith("Next: ")
+
+
+# ---------------------------------------------------------------- downloads (Browsing 6)
+
+
+def downloads_sent(h):
+    return [m for m in h.sent if m["t"] == "music.downloads"]
+
+
+def test_download_a_collection_reports_progress_and_marks(host):
+    """A start downloads each id in turn; library tracks become cached, other ids fail."""
+    host.download_step_ms = 1
+    ref = album_ref("First")
+
+    async def run(ids):
+        host._download({"t": "music.download", "op": "start", "ref": ref, "ids": ids})
+        await host.download_tasks[ref]
+
+    asyncio.run(run(["a1", "a2", "zz9", "a1", "bad id!"]))
+    sent = downloads_sent(host)
+    # Invalid and repeated ids are left out: three tracks.
+    assert sent[0]["downloads"] == [{"ref": ref, "done": 0, "total": 3, "failed": 0, "running": True}]
+    assert [m["downloads"][0]["done"] for m in sent] == [0, 1, 2, 3]
+    assert sent[-1] == {"t": "music.downloads", "cached": ["a1", "a2"],
+                        "downloads": [{"ref": ref, "done": 3, "total": 3, "failed": 1, "running": False}]}
+    assert ref not in host.download_tasks
+    # Everything cached already: done at once.
+    asyncio.run(run(["a1", "a2"]))
+    assert downloads_sent(host)[-1]["downloads"] == [{"ref": ref, "done": 2, "total": 2, "failed": 0, "running": False}]
+
+
+def test_download_stop_forgets_the_progress_and_keeps_what_was_cached(host):
+    host.download_step_ms = 50
+    ref = album_ref("First")
+
+    async def run():
+        host._download({"t": "music.download", "op": "start", "ref": ref, "ids": ["a1", "a2"]})
+        # A second start of the same collection is ignored while it runs.
+        host._download({"t": "music.download", "op": "start", "ref": ref, "ids": ["b1"]})
+        await asyncio.sleep(0.08)  # a1 done, a2 in flight
+        host._download({"t": "music.download", "op": "stop", "ref": ref})
+        await asyncio.sleep(0.08)
+
+    asyncio.run(run())
+    assert host.cached == {"a1"}
+    assert downloads_sent(host)[-1] == {"t": "music.downloads", "cached": ["a1"], "downloads": []}
+    assert host.download_tasks == {} and host.downloads == {}
+    n = len(host.sent)
+    host._download({"t": "music.download", "op": "stop", "ref": ref})  # nothing running: ignored
+    host._download({"t": "music.download", "op": "start", "ref": "bad ref!", "ids": ["a1"]})
+    host._download({"t": "music.download", "op": "start", "ref": ref, "ids": ["bad id!"]})
+    assert len(host.sent) == n
+
+
+def test_busy_rides_on_state_until_cleared(host):
+    host.set_busy('Searching song "moby"')
+    assert last_state(host)["busy"] == 'Searching song "moby"'
+    n = len(host.sent)
+    host.set_busy('Searching song "moby"')  # no change, no state
+    assert len(host.sent) == n
+    host.set_busy(None)
+    assert "busy" not in last_state(host)

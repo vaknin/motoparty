@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 43)
+        XCTAssertEqual(messages.count, 48)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -30,7 +30,7 @@ final class MessageFixtureTests: XCTestCase {
             "hello", "ping", "pong", "talk.open", "talk.close", "music.load", "music.ready",
             "music.error", "music.play", "music.pause", "music.next", "music.stop", "music.control",
             "command.text", "music.search", "music.browse", "music.results", "music.enqueue",
-            "music.edit", "announce", "state", "bye",
+            "music.edit", "music.download", "music.downloads", "announce", "state", "bye",
         ]
         XCTAssertEqual(seenTypes, allTypes, "fixtures should cover every message type")
     }
@@ -78,6 +78,63 @@ final class MessageFixtureTests: XCTestCase {
                 XCTAssertFalse((error as? ControlCodecError)?.closesConnection ?? true, json)
             }
         }
+    }
+
+    /// PROTOCOL.md "Browsing" step 6: `start` carries the songs' refs and needs
+    /// them; `stop` sends none. `state.busy` is optional.
+    func testDownloadMessages() throws {
+        let start = ControlMessage.musicDownload(.start("PL1", ids: ["a1", "a2"]))
+        XCTAssertEqual(try Fixtures.canonical(jsonData: try ControlCodec.encode(start)),
+                       try Fixtures.canonical(["t": "music.download", "op": "start", "ref": "PL1", "ids": ["a1", "a2"]]))
+        XCTAssertEqual(try ControlCodec.decode(try ControlCodec.encode(start)), start)
+        let stop = String(decoding: try ControlCodec.encode(.musicDownload(.stop("PL1"))), as: UTF8.self)
+        XCTAssertFalse(stop.contains("ids"))
+        XCTAssertEqual(DownloadOp.allCases.map(\.rawValue), ["start", "stop"])
+
+        let downloads = try ControlCodec.decode(Data(#"{"t":"music.downloads","cached":["a1"],"downloads":[{"ref":"PL1","done":1,"total":2,"failed":0,"running":true}]}"#.utf8))
+        XCTAssertEqual(downloads, .musicDownloads(MusicDownloads(cached: ["a1"], downloads: [
+            DownloadItem(ref: "PL1", done: 1, total: 2, failed: 0, running: true),
+        ])))
+        let busy = try ControlCodec.decode(Data(#"{"t":"state","talk":false,"queue":[],"busy":"Searching song \"x\""}"#.utf8))
+        XCTAssertEqual(busy, .state(HostState(talk: false, busy: #"Searching song "x""#)))
+        XCTAssertFalse(String(decoding: try ControlCodec.encode(.state(HostState(talk: false))), as: UTF8.self).contains("busy"))
+
+        for json in [#"{"t":"music.download","op":"start","ref":"PL1"}"#,
+                     #"{"t":"music.download","op":"start","ref":"PL1","ids":null}"#,
+                     #"{"t":"music.download","op":"start","ref":"PL1","ids":[1]}"#,
+                     #"{"t":"music.download","op":"Stop","ref":"PL1"}"#,
+                     #"{"t":"music.download","op":"stop"}"#,
+                     #"{"t":"music.downloads","cached":[]}"#,
+                     #"{"t":"music.downloads","cached":[],"downloads":[{"ref":"PL1","done":0,"total":1,"failed":0}]}"#,
+                     #"{"t":"state","talk":false,"queue":[],"busy":1}"#] {
+            XCTAssertThrowsError(try ControlCodec.decode(Data(json.utf8)), json) { error in
+                XCTAssertFalse((error as? ControlCodecError)?.closesConnection ?? true, json)
+            }
+        }
+    }
+
+    /// The Download button reads as on the Pixel and the marks follow `cached`.
+    func testCollectionDownloadButton() {
+        var downloads = HostDownloads()
+        XCTAssertEqual(downloads.button(ref: "PL1", songs: ["a", "b"]).label, "Download")
+        XCTAssertEqual(downloads.button(ref: "PL1", songs: []).phase, .idle)
+        downloads = HostDownloads(MusicDownloads(cached: ["a"], downloads: [
+            DownloadItem(ref: "PL1", done: 1, total: 2, failed: 0, running: true),
+            DownloadItem(ref: "PL2", done: 3, total: 3, failed: 1, running: false),
+            DownloadItem(ref: "PL3", done: 2, total: 2, failed: 0, running: false),
+        ]))
+        XCTAssertTrue(downloads.isCached("a"))
+        XCTAssertFalse(downloads.isCached("b"))
+        let running = downloads.button(ref: "PL1", songs: ["a", "b"])
+        XCTAssertEqual(running.label, "Downloading 1/2 · Stop")
+        XCTAssertTrue(running.isRunning)
+        XCTAssertEqual(running.fraction, 0.5)
+        XCTAssertEqual(downloads.button(ref: "PL2", songs: ["a", "b", "c"]).label, "Retry · 2/3 saved")
+        XCTAssertTrue(downloads.button(ref: "PL3", songs: ["x"]).isDone, "finished without failures")
+        // Every song already cached: done without any download of this one.
+        let cached = downloads.button(ref: "PL9", songs: ["a"])
+        XCTAssertEqual(cached.label, "Downloaded")
+        XCTAssertNil(cached.fraction)
     }
 
     /// The button cycles like the Pixel's, from the mode in the host's last `state`.
@@ -252,7 +309,7 @@ final class FramingFixtureTests: XCTestCase {
     func testMalformedMessagesAreDroppedNotFatal() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let malformed = try XCTUnwrap(fixture["malformed"] as? [[String: Any]])
-        XCTAssertEqual(malformed.count, 21, "every malformed vector must be exercised")
+        XCTAssertEqual(malformed.count, 27, "every malformed vector must be exercised")
         for m in malformed {
             let json = try XCTUnwrap(m["json"] as? String)
             // Framed and received like any other frame…
