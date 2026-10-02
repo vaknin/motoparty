@@ -41,7 +41,7 @@ from .commands import (
     parse_command,
     to_actions,
 )
-from .music import VALID_ID, TrackInfo, browse, load_library, search
+from .music import VALID_ID, TrackInfo, browse, browse_artist, load_library, search
 from .opus import is_voice_activity
 from .protocol import (
     CONTROL_PORT,
@@ -845,6 +845,12 @@ class Host:
             res["items"] = search(self.library, msg["kind"], msg["query"])
         elif not VALID_ID.fullmatch(msg["ref"]):
             res["error"] = "Invalid ref"
+        elif msg.get("kind") == "artist":
+            # PROTOCOL.md "Browsing" 2a: one reply holds the top songs and the albums.
+            if (page := browse_artist(self.library, msg["ref"])) is None:
+                res["error"] = "Not found"
+            else:
+                res["items"], res["albums"] = page
         elif (items := browse(self.library, msg["ref"])) is None:
             res["error"] = "Not found"
         else:

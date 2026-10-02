@@ -301,6 +301,46 @@ class CodecTest {
         assertTrue(cut.items.size in 100 until 2000)
     }
 
+    /** PROTOCOL.md "Browsing" step 2a: an artist page drops art, then trailing albums, then trailing songs. */
+    @Test
+    fun oversizeArtistPageLosesArtThenAlbumsThenSongs() {
+        val art = "https://lh3.googleusercontent.com/" + "a".repeat(200)
+        val songs = List(20) { ResultItem("s$it", "song $it", "artist", durationMs = 1000, art = art) }
+        val albums = List(300) { ResultItem("PL$it", "album $it", "artist", count = 10, art = art) }
+        val fitted = Codec.fit(MusicResults(1, songs, albums = albums))
+        assertTrue(Codec.fits(fitted))
+        assertEquals(20, fitted.items.size)
+        assertEquals(300, fitted.albums!!.size) // dropping the art was enough
+        assertTrue(fitted.items.all { it.art == null } && fitted.albums!!.all { it.art == null })
+
+        val manyAlbums = List(2000) { ResultItem("PL$it", "ש".repeat(20), "artist", count = 10) }
+        val cut = Codec.fit(MusicResults(2, songs, albums = manyAlbums))
+        assertTrue(Codec.fits(cut))
+        assertEquals(20, cut.items.size) // the songs stay whole while albums can go
+        assertEquals("PL0", cut.albums!!.first().ref)
+        assertTrue(cut.albums!!.size in 100 until 2000)
+    }
+
+    /** `music.browse` `kind` is optional and only ever "artist"; `albums` is optional on results. */
+    @Test
+    fun artistBrowseKindAndAlbums() {
+        assertEquals("""{"t":"music.browse","id":1,"ref":"PL1"}""", Codec.encode(MusicBrowse(1, "PL1")))
+        assertEquals(MusicBrowse(1, "UC1", BrowseKind.ARTIST), Codec.decode("""{"t":"music.browse","id":1,"ref":"UC1","kind":"artist"}"""))
+        assertEquals("""{"t":"music.results","id":1,"items":[]}""", Codec.encode(MusicResults(1, emptyList())))
+        assertEquals(MusicSearch(1, SearchKind.ARTISTS, "x"), Codec.decode("""{"t":"music.search","id":1,"kind":"artists","query":"x"}"""))
+        for (json in listOf(
+            """{"t":"music.browse","id":1,"ref":"UC1","kind":"Artist"}""",
+            """{"t":"music.browse","id":1,"ref":"UC1","kind":1}""",
+            """{"t":"music.results","id":1,"items":[],"albums":{}}""",
+        )) {
+            try {
+                Codec.decode(json)
+                fail("accepted $json")
+            } catch (_: MalformedMessageException) {
+            }
+        }
+    }
+
     /** P11: invalid UTF-8 is fatal (not replaced with U+FFFD and processed), like invalid JSON. */
     @Test
     fun invalidUtf8IsFatal() {

@@ -44,6 +44,14 @@ object SearchKind {
     const val SONGS = "songs"
     const val ALBUMS = "albums"
     const val PLAYLISTS = "playlists"
+
+    /** Artists (2026-10-02): a result's `ref` is a channel id, opened with [BrowseKind.ARTIST]. */
+    const val ARTISTS = "artists"
+}
+
+/** PROTOCOL.md "Browsing" step 2a (2026-10-02): `music.browse` `kind`; absent = an album or playlist. */
+object BrowseKind {
+    const val ARTIST = "artist"
 }
 
 /** PROTOCOL.md "Browsing": where `music.enqueue` puts its tracks. */
@@ -91,7 +99,8 @@ internal val ENUM_FIELDS: Map<Pair<String, String>, Set<String>> = mapOf(
     // Unlike `state.music.repeat`, `off` is a value here: the mode to set.
     ("music.control" to "mode") to RepeatMode.entries.map { it.word }.toSet(),
     ("announce" to "earcon") to setOf(Earcon.OK, Earcon.ERROR),
-    ("music.search" to "kind") to setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS),
+    ("music.search" to "kind") to setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS, SearchKind.ARTISTS),
+    ("music.browse" to "kind") to setOf(BrowseKind.ARTIST),
     ("music.enqueue" to "mode") to setOf(EnqueueMode.NOW, EnqueueMode.NEXT, EnqueueMode.END),
     ("music.edit" to "op") to setOf(EditOp.JUMP, EditOp.REMOVE, EditOp.CLEAR, EditOp.MOVE),
     ("music.download" to "op") to setOf(DownloadOp.START, DownloadOp.STOP),
@@ -191,13 +200,30 @@ data class MusicSearch(val id: Long, val kind: String, val query: String) : Mess
 
 @Serializable
 @SerialName("music.browse")
-data class MusicBrowse(val id: Long, val ref: String) : Message
+data class MusicBrowse(
+    val id: Long,
+    val ref: String,
+    /** [BrowseKind.ARTIST] for an artist's page (2026-10-02); absent = an album or playlist. */
+    val kind: String? = null,
+) : Message
 
 @Serializable
 @SerialName("music.results")
-data class MusicResults(val id: Long, val items: List<ResultItem>, val error: String? = null) : Message
+data class MusicResults(
+    val id: Long,
+    val items: List<ResultItem>,
+    val error: String? = null,
+    /**
+     * An artist page's albums and singles (2026-10-02, PROTOCOL.md "Browsing" step 2a), next to
+     * its top songs in [items]: one reply, so the page is one request. Absent elsewhere.
+     */
+    val albums: List<ResultItem>? = null,
+) : Message
 
-/** A song (`ref` = track id) or an album/playlist (`ref` = playlist id), PROTOCOL.md "Browsing". */
+/**
+ * A song (`ref` = track id), an album/playlist (`ref` = playlist id) or an artist (`ref` =
+ * channel id, `artist` empty), PROTOCOL.md "Browsing".
+ */
 @Serializable
 data class ResultItem(
     val ref: String,

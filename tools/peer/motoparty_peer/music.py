@@ -139,6 +139,16 @@ def album_ref(album: str) -> str:
     return "al" + base64.urlsafe_b64encode(hashlib.sha1(album.encode()).digest()).decode()[:14]
 
 
+def artist_ref(artist: str) -> str:
+    """A stable ref for a local artist name (2026-10-02; the real host uses a YouTube channel id)."""
+    return "ar" + base64.urlsafe_b64encode(hashlib.sha1(artist.encode()).digest()).decode()[:14]
+
+
+# PROTOCOL.md "Browsing" 2a: an artist page's limits.
+ARTIST_SONGS = 20
+ARTIST_ALBUMS = 50
+
+
 def search(library: list[TrackInfo], kind: str, query: str) -> list[dict]:
     """music.search over the local tracks: substring match on title/artist/album."""
     q = query.casefold()
@@ -152,6 +162,10 @@ def search(library: list[TrackInfo], kind: str, query: str) -> list[dict]:
                 n = sum(1 for u in library if u.album == t.album)
                 albums[t.album] = {"ref": album_ref(t.album), "title": t.album, "artist": t.artist, "count": n}
         return list(albums.values())
+    if kind == "artists":
+        # Artists are the library's artist names; an artist matches on its own name only.
+        names = dict.fromkeys(t.artist for t in library if q in t.artist.casefold())
+        return [{"ref": artist_ref(a), "title": a, "artist": ""} for a in names]
     return []  # playlists: the fake host has none
 
 
@@ -159,6 +173,19 @@ def browse(library: list[TrackInfo], ref: str) -> list[dict] | None:
     """An album's songs in library order; None for an unknown ref."""
     songs = [song_item(t) for t in library if t.album and album_ref(t.album) == ref]
     return songs or None
+
+
+def browse_artist(library: list[TrackInfo], ref: str) -> tuple[list[dict], list[dict]] | None:
+    """An artist page (2026-10-02): (top songs, albums) in library order; None for an unknown ref."""
+    mine = [t for t in library if artist_ref(t.artist) == ref]
+    if not mine:
+        return None
+    albums: dict[str, dict] = {}
+    for t in mine:
+        if t.album and t.album not in albums:
+            n = sum(1 for u in library if u.album == t.album)
+            albums[t.album] = {"ref": album_ref(t.album), "title": t.album, "artist": t.artist, "count": n}
+    return [song_item(t) for t in mine][:ARTIST_SONGS], list(albums.values())[:ARTIST_ALBUMS]
 
 
 def song_item(t: TrackInfo) -> dict:

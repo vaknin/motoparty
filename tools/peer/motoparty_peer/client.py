@@ -32,8 +32,8 @@ from .voice import Pacer, VoiceProtocol, VoiceReceiver, VoiceSender
 HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase rule; a command
           ends the talk, a volume phrase is local and closes it from here) |
           say <text> (command.text as is) | pause | resume | next | previous | vol+ | vol- (local) |
-          unavailable (toggle "my mic is dead") | search songs|albums|playlists <query> |
-          browse <n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit move <i> <to> |
+          unavailable (toggle "my mic is dead") | search songs|albums|playlists|artists <query> |
+          browse <n>|a<n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit move <i> <to> |
           edit clear | repeat off|track|queue |
           download [stop] (the browsed album or playlist into the host's cache) |
           stats | raw <json> (send unvalidated) | quit"""
@@ -90,6 +90,7 @@ class Client:
         self.req_kind = "songs"
         self.req_album: str | None = None  # collection title when browsing one
         self.results: list[dict] = []
+        self.albums: list[dict] = []  # an artist page's albums (2026-10-02), browsed with `browse a<n>`
         self.queue: list[dict] = []
         self.repeat: str | None = None  # state.music.repeat, None = off
         self.busy: str | None = None  # state.busy: the host's "Searching …" line
@@ -748,12 +749,16 @@ class Client:
             log(f"   (results for old request {msg['id']} ignored)")
             return
         self.results = msg["items"]
+        self.albums = msg.get("albums", [])
         if "error" in msg:
             log(f"   results: {msg['error']}")
-        for n, it in enumerate(self.results, 1):
-            extra = f" ({it['count']} tracks)" if "count" in it else ""
-            extra += f" {it['durationMs'] // 1000}s" if "durationMs" in it else ""
-            log(f"   {n:3}. {it['title']} - {it['artist'] or '?'}{extra}")
+        for prefix, items in (("", self.results), ("a", self.albums)):
+            if prefix and items:
+                log("   albums:")
+            for n, it in enumerate(items, 1):
+                extra = f" ({it['count']} tracks)" if "count" in it else ""
+                extra += f" {it['durationMs'] // 1000}s" if "durationMs" in it else ""
+                log(f"   {prefix + str(n):>4}. {it['title']} - {it['artist'] or '?'}{extra}")
 
     def _pick(self, arg: str) -> list[dict] | None:
         """`all` or a 1-based result number -> result items, else None."""
@@ -768,14 +773,28 @@ class Client:
         args = rest.split()
         if cmd == "search":
             kind, _, query = rest.strip().partition(" ")
-            if kind not in ("songs", "albums", "playlists"):
-                log("usage: search songs|albums|playlists <query>")
+            if kind not in ("songs", "albums", "playlists", "artists"):
+                log("usage: search songs|albums|playlists|artists <query>")
                 return
             self._request({"t": "music.search", "kind": kind, "query": query.strip()}, kind)
         elif cmd == "browse":
-            items = self._pick(args[0]) if len(args) == 1 and args[0] != "all" else None
+            arg = args[0] if len(args) == 1 else ""
+            if arg[:1] == "a" and arg[1:].isdigit():  # an artist page's album (2026-10-02)
+                n = int(arg[1:])
+                if not 1 <= n <= len(self.albums):
+                    log(f"no album {arg!r} (have {len(self.albums)})")
+                    return
+                album = self.albums[n - 1]
+                self._request({"t": "music.browse", "ref": album["ref"]}, "songs", album["title"])
+                return
+            items = self._pick(arg) if arg and arg != "all" else None
             if items is None or self.req_kind == "songs":
-                log("usage: browse <n> (an album or playlist result)")
+                log("usage: browse <n> (an album, playlist or artist result) | browse a<n> (an artist's album)")
+                return
+            if self.req_kind == "artists":
+                # PROTOCOL.md "Browsing" 2a: the page's top songs as results, its albums as a<n>.
+                self._request({"t": "music.browse", "ref": items[0]["ref"], "kind": "artist"}, "songs")
+                self.browsed_ref = None  # an artist page is not a downloadable collection
                 return
             self._request({"t": "music.browse", "ref": items[0]["ref"]}, "songs",
                           items[0]["title"] if self.req_kind == "albums" else None)

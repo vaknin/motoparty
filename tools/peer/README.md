@@ -76,8 +76,8 @@ Stdin commands:
 | `repeat off\|track\|queue` | `music.control{action:"repeat", mode}`, the repeat button (PROTOCOL.md "Repeat by touch") |
 | `vol+` `vol-` | nothing: volume is local (the peer has no real volume, so it just logs it) |
 | `unavailable` | toggles "my mic is dead": while on, the host's `talk.open` is answered with `talk.close{by:"client",reason:"unavailable"}` and talk never opens locally; `talk` will not ask for talk either |
-| `search <kind> <query>` | `music.search{id, kind, query}` (`songs`/`albums`/`playlists`, empty query allowed); the newest request's results print numbered |
-| `browse <n>` | `music.browse` for album/playlist result `n` |
+| `search <kind> <query>` | `music.search{id, kind, query}` (`songs`/`albums`/`playlists`/`artists`, empty query allowed); the newest request's results print numbered |
+| `browse <n>` / `browse a<n>` | `music.browse` for album/playlist result `n`; for an artist result, `music.browse{kind:"artist"}` (2026-10-02): its top songs print numbered as song results and its albums as `a1`, `a2` …, which `browse a<n>` opens |
 | `download [stop]` | after `browse <n>`: `music.download{op:"start", ref, ids}` with the collection's song refs, or `{op:"stop", ref}`. The host's `music.downloads` prints each collection's progress and which listed songs are cached; a changed `state.busy` prints as `busy: …` |
 | `enqueue now\|next\|end <n>\|all` | `music.enqueue` with song result `n` (or all of them); `album` is set after a `browse` of an album |
 | `edit jump\|remove <i>` / `edit move <i> <to>` / `edit clear` | `music.edit`; `i` is 0-based into the last `state.queue`, and its `id` is filled in from there; for `move`, `to` is the track's new 0-based index (past the end = the end) |
@@ -154,7 +154,11 @@ and `state`, then the host logs the close; nothing else changes.
 - Browsing: `music.search` matches title/artist/album (case-insensitive substring, empty query
   = all) over those tracks. `albums` are the distinct album tags among the matching songs, with
   `ref` = `al` + 14 chars of the album name's SHA-1; `playlists` is always empty.
-  `music.browse` answers an album's tracks or `error` ("Invalid ref" / "Not found").
+  `artists` (2026-10-02) are the distinct artist tags matching the query by name, `ref` = `ar` +
+  14 chars of the name's SHA-1, `artist` empty.
+  `music.browse` answers an album's tracks or `error` ("Invalid ref" / "Not found"); with
+  `kind:"artist"` it answers the artist's songs (≤ 20) in `items` and their albums (≤ 50) in
+  `albums`.
   `music.enqueue`/`music.edit` (including `move`) change the queue as the spec says and
   broadcast `state`;
   `next`/`previous` walk it. There is no auto-advance at the end of a track.
