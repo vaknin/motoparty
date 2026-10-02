@@ -46,6 +46,11 @@ data class Settings(
      * default (user, 2026-09-30); the TALK button still shows "Connecting…" until the mic is live.
      */
     val liveBeep: Boolean = false,
+    /**
+     * Synced lyrics on the Ride screen in place of the cover (PROTOCOL.md "Tracks", Lyrics): this
+     * phone's own toggle, off by default. The host looks lyrics up whatever it says.
+     */
+    val lyrics: Boolean = false,
 )
 
 class SettingsStore(context: Context) {
@@ -73,6 +78,7 @@ class SettingsStore(context: Context) {
             larkSwap = prefs.getBoolean("larkSwap", d.larkSwap),
             smartCommands = prefs.getBoolean("smartCommands", d.smartCommands),
             liveBeep = prefs.getBoolean("liveBeep", d.liveBeep),
+            lyrics = prefs.getBoolean("lyrics", d.lyrics),
         )
     }
 
@@ -99,6 +105,7 @@ class SettingsStore(context: Context) {
             .putBoolean("larkSwap", s.larkSwap)
             .putBoolean("smartCommands", s.smartCommands)
             .putBoolean("liveBeep", s.liveBeep)
+            .putBoolean("lyrics", s.lyrics)
             .apply()
         _flow.value = load()
     }

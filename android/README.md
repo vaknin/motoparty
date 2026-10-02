@@ -26,6 +26,7 @@ the source is missing. To bump libopus, change `VERSION`/`SHA256` in the script 
 ```sh
 ./gradlew test                       # JVM unit tests (protocol fixtures from ../fixtures)
 ./gradlew :app:testDebugUnitTest -Pnetwork --tests '*CatalogNetworkTest*'   # live YouTube
+./gradlew :app:testDebugUnitTest -Pnetwork --tests '*LyricsNetworkTest*'    # live LRCLIB
 ./gradlew testDebugUnitTest -Pscreenshots --tests '*ScreensTest*'   # PNGs of every tab → app/build/outputs/roborazzi/
 ./gradlew assembleDebug
 adb -s 192.168.1.100:5555 install -r app/build/outputs/apk/debug/app-debug.apk
@@ -39,7 +40,8 @@ Unit tests read `../fixtures` through the `motoparty.fixtures` system property t
 `app/build.gradle.kts` sets on every test task. Covered: control codec round-trips, framing
 (64 KiB cap, UTF-8, unknown types/fields), clock estimator, UDP header, command parser (all
 fixtures), jitter buffer, talk state machine, `ControlServer` over loopback sockets (hello/state,
-ping/pong, replacement, 6 s liveness, oversize frame), and `TrackServer` (Range, 404s).
+ping/pong, replacement, 6 s liveness, oversize frame), `TrackServer` (Range, 404s, lyrics
+200/404/503), and lyrics (`fixtures/lyrics.json`, LRCLIB ranking on canned bodies, the cache).
 
 ## Release build
 
@@ -79,6 +81,7 @@ type (it cannot be claimed from the background).
 | `link/` | `Discovery` (NSD `_motoparty._tcp`, TXT proto/voice/http), `ControlServer` (TCP 47800), `VoiceSocket` (UDP 47801), `TalkController` (talk authority; ends on a trigger or link loss) |
 | `audio/` | `Opus` (JNI), `VoiceEngine` (AudioRecord VOICE_COMMUNICATION 16 kHz → Opus → UDP; UDP → jitter → Opus FEC/PLC → AudioTrack), `AudioRouter` (MODE_IN_COMMUNICATION + `setCommunicationDevice`), `Earcons` (generated tones), `LiveCue` (when the "live" beep may play: first captured frame **and** the SCO link up, fallback timer 2.5 s), `ScoWatch`/`AudioModeWatch` (Bluetooth SCO link state and audio mode, cached off Main) |
 | `music/` | `Catalog` (NewPipeExtractor, YouTube Music search, Opus itag-251 resolve with AAC itag-140 fallback), `OkHttpDownloader`, `TrackCache` (1 GiB LRU, ranged download, prefetch; `tracks-opus/` and, after a client's "not decodable", `tracks/` for AAC), `Remux` + `OpusDops` (WebM Opus → MP4, packet copy with Media3's `MatroskaExtractor` and `Mp4Muxer`, not the slow platform `MediaExtractor`; fixes Media3's little-endian `dOps`), `TrackServer` (hand-rolled HTTP on 47802), `Player` (ExoPlayer + MediaSession; outside transport controls go through `MusicController`), `SyncController` (scheduled start with learned start-up latency, 10 s drift check, speed nudge 80 ms–1 s, re-seek > 1 s, latency trim), `MusicController` (queue, load/ready/play, talk pause/resume) |
+| `lyrics/` | Synced lyrics (2026-10-02): `Lrc` (LRC → lines + word times per PROTOCOL.md), `LyricsSource` (LRCLIB search + ranking + YouTube title cleaning), `LyricsCache` (`cacheDir/lyrics`, served on `/lyrics/<id>.json`, looked up whenever a track is cached) |
 | `voicecmd/` | `TalkRecognizer` (in-talk commands: on-device SpeechRecognizer fed the talk's own capture through a pipe — `audio/PcmTee`, never blocks the capture thread — segmented session, falls back to the default service; API 33+), `Announcer` (TTS + earcons, on the media route or, in a talk, the call route) |
 | `overlay/OverlayService` | Draggable TYPE_APPLICATION_OVERLAY with one TALK button (120×120 dp), colour = state; drag onto the X at the bottom to hide (sets `overlayEnabled=false`, back via the notification's "Show buttons") |
 | `trigger/` | `Triggers`: one stream fed by overlay, headset buttons, notification and UI |

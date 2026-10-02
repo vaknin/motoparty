@@ -96,7 +96,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var toast: Toast?
     @Published private(set) var hostState: HostState?
     @Published private(set) var nowPlaying: MusicLoad? {
-        didSet { if nowPlaying?.id != oldValue?.id { musicStatusTracker.setCurrent(nowPlaying?.id) } }
+        didSet {
+            if nowPlaying?.id != oldValue?.id {
+                musicStatusTracker.setCurrent(nowPlaying?.id)
+                lyrics.setCurrent(nowPlaying?.id)
+            }
+        }
     }
     @Published private(set) var musicPlaying = false
     /// "Downloading song…" / "Paused for talk" under now playing (`MusicStatus`).
@@ -164,6 +169,8 @@ final class AppModel: ObservableObject {
 
     let settings = AppSettings()
     let stats = LinkStats()
+    /// Synced lyrics, fetched only while `settings.showLyrics` is on.
+    let lyrics = LyricsStore()
 
     // MARK: Components
     private let clock = HostClock()
@@ -302,6 +309,11 @@ final class AppModel: ObservableObject {
         volumeLevel = settings.appVolumeLevel
         history = settings.browseHistory
         lastHostName = settings.lastHostName
+        lyrics.endpoint = { [weak self] in
+            guard let self, let host = self.hostAddress else { return nil }
+            return (host, self.httpPort)
+        }
+        lyrics.setEnabled(settings.showLyrics)
         volumeKey.armLevel = volumeLevel
         volumeKey.start()
         // The volume slider needs the window and a layout pass: make it now,
@@ -539,6 +551,7 @@ final class AppModel: ObservableObject {
             let newVoice = hello.voicePort ?? LinkDefaults.voicePort
             httpPort = hello.httpPort ?? LinkDefaults.httpPort
             assign(\.hostInterprets, hello.interpret ?? false)
+            lyrics.linked()
             if newVoice != voicePort || voice == nil {
                 voicePort = newVoice
                 startVoiceSocket()
@@ -567,6 +580,7 @@ final class AppModel: ObservableObject {
             // Also re-sent (current + next) right after a client joins.
             loads[load.id] = load
             musicStatusTracker.load(load.id)
+            lyrics.loaded(load.id)
             if nowPlaying?.id == load.id, nowPlaying != load {
                 nowPlaying = load
                 // The album (and any corrected title) reaches the lock screen.
@@ -1688,6 +1702,19 @@ final class AppModel: ObservableObject {
         guard ms != settings.trims.of(route) else { return }
         settings.trims = settings.trims.with(route, ms)
         if player.isPlaying { resumeMusic() }
+    }
+
+    /// The lyrics toggle on the Ride card: fetching starts and stops with it.
+    func setShowLyrics(_ on: Bool) {
+        if settings.showLyrics != on { settings.showLyrics = on }
+        lyrics.setEnabled(on)
+    }
+
+    /// The lyrics offset of the current track, `steps` × 0.2 s (negative:
+    /// the lyrics come sooner).
+    func stepLyricsOffset(_ steps: Int) {
+        guard let id = nowPlaying?.id else { return }
+        settings.lyricsOffsets = settings.lyricsOffsets.stepped(id, by: steps)
     }
 
     /// Settings → "Compensate output latency" (audit M2); a playing track

@@ -36,6 +36,8 @@ import com.kivan.motoparty.music.History
 import com.kivan.motoparty.music.RecentSearch
 import com.kivan.motoparty.music.Track
 import com.kivan.motoparty.audio.MicLevel
+import com.kivan.motoparty.lyrics.Lrc
+import com.kivan.motoparty.lyrics.LyricsView
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -120,14 +122,84 @@ class ScreensTest {
         tab: Tab,
         permissions: List<Permission> = emptyList(),
         history: History = History(),
+        settings: Settings = Settings(),
+        prefs: UiPrefs = UiPrefs(),
     ) {
-        compose.setContent { MotopartyTheme { Motoparty(status, Settings(), permissions, Callbacks(), tab, history, dev = dev) } }
+        compose.setContent { MotopartyTheme { Motoparty(status, settings, permissions, Callbacks(), tab, history, prefs, dev = dev) } }
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")
     }
 
     @Test
     fun ridePlaying() = shoot("1-ride-playing", playing, Tab.RIDE)
+
+    // ---- lyrics (2026-10-02): made-up words, the third line half sung at 97.8 s ----
+
+    private val lyricLines = Lrc.parse(
+        """
+        [01:26.00]Paper boats along the gutter run
+        [01:30.00]Counting coins beneath a paper moon
+        [01:34.00]Every promise folded into June
+        [01:37.00]Spend the night and whistle out of tune
+        [01:41.00]
+        [01:45.00]Wake me when the morning comes too soon
+        """.trimIndent(),
+    )
+    private val withLyrics = playing.copy(
+        anchor = PlaybackAnchor(97_800, 0, playing = false),
+        lyrics = LyricsView("id0", LyricsView.Kind.FOUND, lyricLines),
+    )
+    private val lyricsOn = Settings(lyrics = true)
+
+    @Test
+    fun rideLyrics() = shoot("1w-ride-lyrics", withLyrics, Tab.RIDE, settings = lyricsOn, prefs = UiPrefs().withLyricsOffset("id0", -400))
+
+    @Test
+    @Config(qualifiers = "w412dp-h840dp-420dpi")
+    fun rideLyricsPixelHeight() = shoot("1w2-ride-lyrics-pixel-height", withLyrics, Tab.RIDE, settings = lyricsOn)
+
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideLyricsLandscape() = shoot("1x-ride-lyrics-landscape", withLyrics, Tab.RIDE, settings = lyricsOn)
+
+    /** Short upright: two banners leave the middle under 400 dp, so the compact lyrics. */
+    @Test
+    @Config(qualifiers = "w412dp-h700dp-420dpi")
+    fun rideLyricsShort() = shoot(
+        "1x2-ride-lyrics-short",
+        withLyrics.copy(micOff = true, error = "Couldn't find pink floid"),
+        Tab.RIDE,
+        settings = lyricsOn,
+    )
+
+    /** Toggle off (the default): the cover, whatever lyrics the host has. */
+    @Test
+    fun rideLyricsOff() = shoot("1y-ride-lyrics-off", withLyrics, Tab.RIDE)
+
+    @Test
+    fun rideLyricsNotFound() = shoot(
+        "1z-ride-lyrics-not-found",
+        playing.copy(lyrics = LyricsView("id0", LyricsView.Kind.NOT_FOUND)),
+        Tab.RIDE,
+        settings = lyricsOn,
+    )
+
+    @Test
+    fun rideLyricsLoading() = shoot(
+        "1z2-ride-lyrics-loading",
+        playing.copy(lyrics = LyricsView("id0", LyricsView.Kind.LOADING)),
+        Tab.RIDE,
+        settings = lyricsOn,
+    )
+
+    /** At an instrumental break: the "♪" in the middle. */
+    @Test
+    fun rideLyricsBreak() = shoot(
+        "1z3-ride-lyrics-break",
+        withLyrics.copy(anchor = PlaybackAnchor(102_000, 0, playing = false)),
+        Tab.RIDE,
+        settings = lyricsOn,
+    )
 
     /** The cover's colour behind the music: an orange cover here, the strongest case being a light one. */
     @Test

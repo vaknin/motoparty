@@ -1,5 +1,6 @@
 package com.kivan.motoparty.music
 
+import com.kivan.motoparty.lyrics.LyricsAnswer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,12 +19,15 @@ import java.net.SocketTimeoutException
 
 /**
  * Minimal HTTP/1.1 server for PROTOCOL.md "Tracks": only `GET|HEAD /track/<id>.m4a`, with single
- * `Range` support. Hand-rolled (≈150 lines) instead of NanoHTTPD. Pure JVM.
+ * `Range` support, and `GET|HEAD /lyrics/<id>.json` (Lyrics, 2026-10-02). Hand-rolled (≈150
+ * lines) instead of NanoHTTPD. Pure JVM.
  */
 class TrackServer(
     private val scope: CoroutineScope,
     private val lookup: (id: String) -> File?,
     private val port: Int = PORT,
+    /** The lyrics of a track id; called on this server's IO threads (it may read the disk). */
+    private val lyrics: (id: String) -> LyricsAnswer = { LyricsAnswer.NotFound },
 ) {
     private var server: ServerSocket? = null
     private var job: Job? = null
@@ -99,6 +103,7 @@ class TrackServer(
 
     private fun respond(req: HttpRequest, out: OutputStream) {
         if (req.method != "GET" && req.method != "HEAD") return status(out, 405, "Method Not Allowed")
+        LYRICS_PATH.matchEntire(req.path.substringBefore('?'))?.let { return respondLyrics(req, it.groupValues[1], out) }
         val id = PATH.matchEntire(req.path.substringBefore('?'))?.groupValues?.get(1)
         val file = id?.takeIf(::isValidTrackId)?.let(lookup)
         if (file == null || !file.isFile) return status(out, 404, "Not Found")
@@ -125,19 +130,41 @@ class TrackServer(
         }
     }
 
-    private fun head(out: OutputStream, code: Int, reason: String, length: Long, extra: List<String>) {
+    /** `200` with the JSON body, `404` (none, or not a track we know), `503` (try again in 5 s). */
+    private fun respondLyrics(req: HttpRequest, id: String, out: OutputStream) {
+        val answer = if (isValidTrackId(id)) lyrics(id) else LyricsAnswer.NotFound
+        when (answer) {
+            is LyricsAnswer.Ok -> {
+                head(out, 200, "OK", answer.body.size.toLong(), emptyList(), JSON, ranges = false)
+                if (req.method == "GET") out.write(answer.body)
+            }
+            LyricsAnswer.NotFound -> status(out, 404, "Not Found")
+            LyricsAnswer.Busy -> status(out, 503, "Service Unavailable", listOf("Retry-After: 5"))
+        }
+    }
+
+    private fun head(
+        out: OutputStream,
+        code: Int,
+        reason: String,
+        length: Long,
+        extra: List<String>,
+        type: String = "audio/mp4",
+        ranges: Boolean = true,
+    ) {
         val sb = StringBuilder("HTTP/1.1 $code $reason\r\n")
-        sb.append("Content-Type: audio/mp4\r\n")
-        sb.append("Accept-Ranges: bytes\r\n")
+        sb.append("Content-Type: $type\r\n")
+        if (ranges) sb.append("Accept-Ranges: bytes\r\n")
         sb.append("Content-Length: $length\r\n")
         extra.forEach { sb.append(it).append("\r\n") }
         sb.append("\r\n")
         out.write(sb.toString().toByteArray(Charsets.US_ASCII))
     }
 
-    private fun status(out: OutputStream, code: Int, reason: String) {
+    private fun status(out: OutputStream, code: Int, reason: String, extra: List<String> = emptyList()) {
         val body = "$code $reason\n".toByteArray()
-        out.write("HTTP/1.1 $code $reason\r\nContent-Type: text/plain\r\nContent-Length: ${body.size}\r\n\r\n".toByteArray())
+        val headers = extra.joinToString("") { "$it\r\n" }
+        out.write("HTTP/1.1 $code $reason\r\nContent-Type: text/plain\r\n${headers}Content-Length: ${body.size}\r\n\r\n".toByteArray())
         out.write(body)
     }
 
@@ -146,6 +173,8 @@ class TrackServer(
         /** DSCP CS1 (background) in the TOS byte. */
         const val TRAFFIC_CLASS = 0x20
         private val PATH = Regex("/track/([^/]+)\\.m4a")
+        private val LYRICS_PATH = Regex("/lyrics/([^/]+)\\.json")
+        private const val JSON = "application/json; charset=utf-8"
         internal val INVALID = -1L to -1L
 
         /** Single-range `bytes=a-b`, `bytes=a-`, `bytes=-n`. Null = ignore header (serve 200). */

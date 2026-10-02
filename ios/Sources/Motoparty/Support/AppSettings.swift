@@ -23,6 +23,14 @@ final class AppSettings: ObservableObject {
     @Published var compensateOutputLatency: Bool {
         didSet { defaults.set(compensateOutputLatency, forKey: "compensateOutputLatency") }
     }
+    /// Synced lyrics in place of the cover on the Ride card (2026-10-02).
+    /// Off by default; while off nothing is fetched (`LyricsStore`). Set
+    /// through `AppModel.setShowLyrics`.
+    @Published var showLyrics: Bool { didSet { defaults.set(showLyrics, forKey: "showLyrics") } }
+    /// This phone's lyrics offset per track (`LyricsOffsets`, ±0.2 s steps).
+    @Published var lyricsOffsets: LyricsOffsets {
+        didSet { defaults.set(lyricsOffsets.encoded(), forKey: "lyricsOffsets") }
+    }
     /// BCP-47 tag for on-device ASR and TTS.
     @Published var speechLanguage: String { didSet { defaults.set(speechLanguage, forKey: "speechLanguage") } }
     /// The app volume level (`AppVolume`, 0...16) the keys and spoken
@@ -58,6 +66,8 @@ final class AppSettings: ObservableObject {
         keepScreenOn = defaults.object(forKey: "keepScreenOn") as? Bool ?? false
         compensateOutputLatency = defaults.object(forKey: "compensateOutputLatency") as? Bool ?? true
         speechLanguage = defaults.string(forKey: "speechLanguage") ?? "en-US"
+        showLyrics = defaults.object(forKey: "showLyrics") as? Bool ?? false
+        lyricsOffsets = LyricsOffsets.load(defaults.data(forKey: "lyricsOffsets"))
         // Removed 2026-09-29: the command mode, and headset buttons as talk
         // triggers (the earbuds sit inside the helmet).
         for key in ["commandMaxSeconds", "playPauseAction", "nextTrackAction", "previousTrackAction", "pauseCommandTriggers"] {

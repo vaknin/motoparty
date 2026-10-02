@@ -181,6 +181,8 @@ fun Motoparty(
                 status, permissions, cb, onOpenQueue = { tab = Tab.QUEUE }, modifier = m,
                 // The host interprets: the smart-command hints are true.
                 smart = settings.smartCommands && BuildConfig.GEMINI_API_KEY.isNotEmpty(),
+                lyrics = settings.lyrics,
+                prefs = prefs,
             )
             Tab.SEARCH -> SearchTab(status, cb, m, history)
             Tab.QUEUE -> QueueTab(status, cb, onSearch = { tab = Tab.SEARCH }, modifier = m)

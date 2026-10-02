@@ -97,6 +97,11 @@ object Icons {
         "repeat_one",
         "M7,7h10v3l4,-4 -4,-4v3H5v6h2V7zM17,17H7v-3l-4,4 4,4v-3h12v-6h-2v4zM13,15V9h-1l-2,1v1h1.5v4H13z",
     )
+    /** A speech bubble with lines: the lyrics toggle on the Ride screen. */
+    val Lyrics = icon(
+        "lyrics",
+        "M20,2H4c-1.1,0 -1.99,0.9 -1.99,2L2,22l4,-4h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zM6,9h12v2H6V9zM14,14H6v-2h8v2zM18,8H6V6h12v2z",
+    )
     val ChevronUp = icon("chevron_up", "M7.41,15.41L12,10.83l4.59,4.58L18,14l-6,-6 -6,6z")
 
     private fun icon(name: String, path: String): ImageVector =

@@ -1375,6 +1375,47 @@ Dead ends (high confidence):
 - **Device-unknown**: whether the Releases tab keeps parsing (NewPipe v0.26.5) and how long a
   page takes on mobile data (channel + channel search + channel + tab pages + song search).
 
+### 2026-10-02 lyrics
+
+- **Wire** (PROTOCOL.md "Tracks", Lyrics; vectors `fixtures/lyrics.json`): `GET|HEAD
+  /lyrics/<id>.json` on `TrackServer` — `200` (`application/json; charset=utf-8`), `404`
+  (invalid id, LRCLIB had none, or a track the host has no title for), `503` + `Retry-After: 5`
+  (lookup running, or the last one failed and the 20 s retry wait has not passed). Nothing on
+  the control channel.
+- **`lyrics/`** (pure, JVM-tested): `Lrc` (LRC → lines + word times per the spec: stamps only
+  from the first character, ASCII digits, code points, integer squeeze; `plausibility` from
+  chordhand), `LyricsPosition.at` (timeline), `LyricsBody` (the served JSON). `LyricsSource`:
+  LRCLIB `/api/search` by `artist_name`+`track_name`, then by `q=`; chordhand's `rank` (synced
+  only, plausibility in 0.1 steps — floored, as in chordhand — then duration, deduped), dropping
+  candidates > 8 s off a known length; `clean()` strips YouTube noise ("(Official Video)",
+  "[Lyric Video]", "(Remastered …)", "feat. …"), " - Topic"/"VEVO" channel suffixes, and takes
+  "Artist - Song" apart when the left side is the artist (that spelling then wins: "Queen
+  Official" → "Queen"). `LyricsCache`: `cacheDir/lyrics/<id>.json` (the served body) and
+  `<id>.none` (negative, 30-day TTL by mtime); failures are not written, retried at most once a
+  minute per id; one lookup per id at a time; ids asked for before their title is known wait for
+  `know()`. No size cap on the directory (a few KB per track).
+- **Hooks** (`LinkHost`): `TrackCaches(onEnsure)` requests lyrics on every `ensure` (play,
+  next, prefetch, collection downloads); `CollectionDownloads.cached` requests them for tracks
+  already cached. Titles are learned from enqueues (both phones), UI downloads, the client's
+  song searches / album browses / artist pages (a `music.download` carries ids only), and once a
+  second the current track plus the next 5 (`LYRICS_AHEAD`). Network back re-requests the current.
+- **Host UI**: `LinkStatus.lyrics: LyricsView?` (current track: LOADING / FOUND / NOT_FOUND /
+  OFFLINE), read from our own cache, no HTTP. `Settings.lyrics` (off by default) is the toggle,
+  in the Transport row's formerly empty left slot (`Icons.Lyrics`). Per-track offsets in
+  `UiPrefs.lyricsOffsets` (≤ 300 tracks, ±0.2 s buttons). `ui/LyricsPane`: line before, current
+  line with sung words lit, next lines — as many as fit the height —, `AnimatedContent` on line
+  change, "♪" for a break; ticked by `withFrameMillis` from `PlaybackAnchor.at` only while
+  composed and playing, recomposing only when (line, sung) changes. Tall layout: the pane in
+  the cover's place, "Up next" dropped. Short layout: title + artist on one block with the
+  offset beside it, no cover/album, and below 240 dp no timeline. Screens: `1w*`–`1z3`.
+- **Tests**: `LrcTest` (5, every fixture section), `LyricsSourceTest` (7, canned made-up bodies
+  in `src/test/resources/lrclib/`), `LyricsCacheTest` (5), `TrackServerTest` +2,
+  `LyricsNetworkTest` (1, `-Pnetwork`; passed: Bohemian Rhapsody → 56 lines).
+- **Device-unverified**: all of it on the Pixel — the frame tick's cost while riding, how the
+  pane reads in sunlight, LRCLIB from mobile data, whether the 75 ms/code point word timing
+  feels right against real singing. The retry wait after a failed lookup is 20 s so it falls
+  inside a client's ~30 s 503 window (it was 60 s, which let a client give up first).
+
 ## 3. Not done, in priority order
 
 Coordinator spec updates, all implemented: (1) DTX frames not sent, kind-1 = activity,

@@ -11,6 +11,28 @@ was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Andro
 F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
 and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
+## Latest (2026-10-02, evening): synced lyrics with word-by-word highlight, device-unverified
+
+Idea 8df40ce6 ("lyrics, karaoke too"). The user chose: karaoke = **words lighting up as they're sung**
+(no vocal removal, no mics over music, so "music and talk never together" stands), on **both
+phones, only on request** (a per-phone toggle, off by default). Plan:
+`~/.claude/plans/look-at-idea-8df40ce606774533a2949d76174-radiant-widget.md`.
+- Contract: PROTOCOL.md "Tracks" → "Lyrics": `GET /lyrics/<id>.json` on the track server
+  (200 lines + host-computed word times / 404 / 503 with 6 retries 5 s apart); nothing on the
+  control channel; LRC → words rules pinned by `fixtures/lyrics.json`, passed by all three.
+- Pixel: LRCLIB `/api/search` (ranking ported from chordhand), disk cache with negative
+  entries, a lookup whenever a track is cached (so downloaded albums have lyrics without
+  coverage), 20 s retry wait after a failed lookup. Ride: toggle in the transport row's left
+  slot, `LyricsPane` replaces the cover, ±0.2 s per-track offset (`android/HANDOFF.md`
+  "2026-10-02 lyrics").
+- iPhone: `LyricsStore` fetches only while the toggle is on; same pane and offset
+  (`ios/README.md` "2026-10-02 lyrics" checklist). Peer: fake host serves sidecar `.lrc`,
+  client `lyrics` command, `--lyrics-503 N`.
+
+Tests: iOS 313, Android 640 (10 skipped; live LRCLIB passes with `-Pnetwork`), peer 640
+(1 skipped). Not committed. Device check: words on time on both phones, toggles independent,
+a downloaded album shows lyrics with mobile data off.
+
 ## Latest (2026-10-02, afternoon): artist pages and phone calls, waiting for a device session
 
 Built on both phones, all device-unverified:

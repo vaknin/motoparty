@@ -2,6 +2,7 @@ package com.kivan.motoparty
 
 import com.kivan.motoparty.core.RepeatMode
 import com.kivan.motoparty.core.SearchKind
+import com.kivan.motoparty.lyrics.LyricsView
 import com.kivan.motoparty.music.ArtistItem
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.DownloadProgress
@@ -87,6 +88,12 @@ data class LinkStatus(
     val micOff: Boolean = false,
     /** The rider's cellular call, ringing or answered; null when there is none (2026-10-02). */
     val call: CallUi? = null,
+    /**
+     * [nowPlaying]'s lyrics as the host's own cache has them (2026-10-02); null with nothing
+     * playing. Changes only when the track or its lookup does; the Ride screen shows them only
+     * while the rider's lyrics toggle is on ([Settings.lyrics]).
+     */
+    val lyrics: LyricsView? = null,
 )
 
 /**

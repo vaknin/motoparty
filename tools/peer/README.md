@@ -57,6 +57,7 @@ nothing received) or a `bye`, and the backoff table and the last host's name car
 | `--host IP`, `--port N` | connect directly (default port 47800) |
 | `--no-mdns` | skip the Bonjour browse and start the /24 sweep at once (e.g. to test the sweep on the Pixel's hotspot); not allowed with `--host` |
 | `--tone` | send 440 Hz beeps instead of the mic (400 ms on / 100 ms off; see notes) |
+| `--lyrics` | start with the lyrics toggle on (stdin `lyrics on\|off`); see `lyrics` below |
 | `--no-audio` | no sound devices at all. Received voice still runs through the jitter buffer and decoder on a 20 ms clock, and the stats get logged |
 | `--play` | play music with mpv/ffplay at the scheduled moment (otherwise the schedule is only logged) |
 | `--name`, `--lang` | hello name (default hostname), BCP-47 tag for `say`/`hear` (default `en-US`) |
@@ -79,6 +80,7 @@ Stdin commands:
 | `search <kind> <query>` | `music.search{id, kind, query}` (`songs`/`albums`/`playlists`/`artists`, empty query allowed); the newest request's results print numbered |
 | `browse <n>` / `browse a<n>` | `music.browse` for album/playlist result `n`; for an artist result, `music.browse{kind:"artist"}` (2026-10-02): its top songs print numbered as song results and its albums as `a1`, `a2` …, which `browse a<n>` opens |
 | `download [stop]` | after `browse <n>`: `music.download{op:"start", ref, ids}` with the collection's song refs, or `{op:"stop", ref}`. The host's `music.downloads` prints each collection's progress and which listed songs are cached; a changed `state.busy` prints as `busy: …` |
+| `lyrics [on\|off]` | the lyrics toggle (off by default, PROTOCOL.md "Tracks", Lyrics). While on, each `music.load` (and turning it on: the current and last loaded track) fetches `GET /lyrics/<id>.json`; a `503` is retried every 5 s, at most 6 times, then given up until the id is loaded again; `404` is final for that load. Logs `lyrics: <id> N lines (M sung) from lrclib`. Bare `lyrics` prints the current track's lines, marking the current line and its sung word count (no per-track offset in the peer) |
 | `enqueue now\|next\|end <n>\|all` | `music.enqueue` with song result `n` (or all of them); `album` is set after a `browse` of an album |
 | `edit jump\|remove <i>` / `edit move <i> <to>` / `edit clear` | `music.edit`; `i` is 0-based into the last `state.queue`, and its `id` is filled in from there; for `move`, `to` is the track's new 0-based index (past the end = the end) |
 | `stats` | prints jitter-buffer/voice stats and the clock estimate |
@@ -165,6 +167,13 @@ and `state`, then the host logs the close; nothing else changes.
 - HTTP: `GET`/`HEAD /track/<id>.m4a` for each `--track` file, `Content-Type: audio/mp4`, single
   `Range` → 206, unsatisfiable → 416, anything else → 404. `<id>` is 11 URL-safe characters
   derived from the file's SHA-1.
+  `GET`/`HEAD /lyrics/<id>.json` (2026-10-02): `200` with `{"id","source":"lrclib","lines"}`,
+  `Content-Type: application/json; charset=utf-8`, built from a sidecar `.lrc` next to the
+  track file (same stem, e.g. `tracks/song.m4a` + `tracks/song.lrc`, read as UTF-8 with an
+  optional BOM). `404` for an invalid or unknown id, no sidecar, or an LRC with no timed line.
+  `--lyrics-503 N` answers `503` the first N requests per known id, to test the client's retries.
+  LRC → lines and word times and the timeline are `motoparty_peer/lyrics.py`, pinned by
+  `fixtures/lyrics.json` (`tests/test_lyrics.py`).
 - Commands (PROTOCOL.md "Commands", The first phrase decides). The host acts on a client's
   `command.text` only while a talk is open, the client opened it, and it is the first
   `command.text` of that talk; any other is ignored and logged (`command.text ignored: <why>`)
@@ -384,6 +393,11 @@ message is kept): the spec only says the host sends it while talk is true. `titl
 and `repeat` are optional; a `repeat` other than `track`/`queue` drops the `state`). A
 `music.edit` `move` without an integer `to` ≥ 0 is dropped; `to` on other ops is kept but unused. Only an
 oversize length (> 65536; exactly 65536 is allowed) closes the connection.
+
+**Lyrics.** "Tries again after 5 s, at most 6 times" is read as 6 retries: up to 7 requests
+per id, 30 s of waiting, then give up. A status other than `200`/`404`/`503`, or a `200` whose
+JSON does not decode (`ms` not an integer, missing `words`, …) is logged as failed and not
+retried. The fake host treats an LRC with no timed line as no synced lyrics (`404`).
 
 **Clock.** `hostToLocal`/`localToHost` return floats; nothing rounds. Discarded (rtt < 0)
 samples never enter the 8-sample window. A sample whose offset is more than `500 + rtt/2` ms

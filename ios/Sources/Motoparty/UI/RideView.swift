@@ -366,6 +366,7 @@ private struct ConnectionPill: View {
 
 private struct NowPlayingCard: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
     /// nil: a small cover beside the title (little room).
     let artSize: CGFloat?
 
@@ -373,7 +374,13 @@ private struct NowPlayingCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            if let artSize {
+            // The lyrics toggle (on the transport row) puts them where the
+            // cover was; the titles, the clock and the buttons stay.
+            if settings.showLyrics, let track = model.nowPlaying {
+                LyricsPane(store: model.lyrics, trackId: track.id,
+                           height: artSize.map { max($0, 180) } ?? 150)
+                titles(centered: artSize != nil)
+            } else if let artSize {
                 Artwork(url: art, size: artSize, cornerRadius: 20)
                     .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
                 titles(centered: true)
@@ -506,23 +513,23 @@ private struct MusicStatusLine: View {
 
 /// Previous / play-pause / next, sent to the host as `music.control`: plain
 /// large glyphs, each at least 64 pt to press. The repeat button (off → queue
-/// → track) sits at the right end, balanced by an empty slot on the left so
-/// play stays in the middle, as on the Pixel.
+/// → track) sits at the right end, balanced by the lyrics toggle on the left
+/// (an empty slot until 2026-10-02) so play stays in the middle, as on the Pixel.
 private struct TransportControls: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
     @State private var pressed = 0
 
     /// Not while the music is held because the headset went away (the button
     /// is then Play, for this phone's speaker) or for a call.
     private var playingHere: Bool { model.playingHere }
 
-    /// The repeat button's side, and the empty slot's.
+    /// The repeat button's side, and the lyrics toggle's.
     private static let repeatSize: CGFloat = 44
 
     var body: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: Self.repeatSize, height: Self.repeatSize)
-                .accessibilityHidden(true)
+            lyricsButton
             Spacer(minLength: 0)
             Button { press { model.musicControl(.previous) } } label: {
                 Image(systemName: "backward.fill").font(.system(size: 28)).frame(width: 64, height: 64)
@@ -573,9 +580,178 @@ private struct TransportControls: View {
         .accessibilityLabel(mode.label)
     }
 
+    /// Lyrics on or off, this phone only, on the left end (the repeat
+    /// button's balance); lit like the repeat button when on.
+    private var lyricsButton: some View {
+        let on = settings.showLyrics
+        return Button { press { model.setShowLyrics(!on) } } label: {
+            Image(systemName: "quote.bubble")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(on ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .frame(width: Self.repeatSize, height: Self.repeatSize)
+                .background { if on { Circle().fill(.tint.opacity(0.2)) } }
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Lyrics")
+        .accessibilityValue(on ? "On" : "Off")
+    }
+
     private func press(_ action: () -> Void) {
         action()
         pressed += 1
+    }
+}
+
+// MARK: - Lyrics
+
+/// Synced lyrics in the cover's place: the line before, the current one large
+/// with its words lit as they are sung, and the two after. "♪" for an
+/// instrumental break. The offset buttons move this track's lyrics by 0.2 s.
+private struct LyricsPane: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var settings: AppSettings
+    @ObservedObject var store: LyricsStore
+    let trackId: String
+    let height: CGFloat
+
+    var body: some View {
+        let shown = store.shown(for: trackId)
+        VStack(spacing: 6) {
+            switch shown {
+            case .loading:
+                Spacer(minLength: 0)
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking for lyrics…")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            case .none:
+                Spacer(minLength: 0)
+                Label("No lyrics found", systemImage: "quote.bubble")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            case .found(let lyrics):
+                LyricsLines(lyrics: lyrics, offsetMs: settings.lyricsOffsets.of(trackId))
+                    .frame(maxHeight: .infinity)
+                offsetRow
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .clipped()
+    }
+
+    /// −0.2 s / the offset / +0.2 s (negative: the lyrics come sooner).
+    private var offsetRow: some View {
+        let ms = settings.lyricsOffsets.of(trackId)
+        let label = ms == 0 ? "Lyrics timing" : String(format: "%+.1f s", Double(ms) / 1000)
+        return HStack(spacing: 4) {
+            Button { model.stepLyricsOffset(-1) } label: {
+                Image(systemName: "minus").frame(width: 44, height: 32).contentShape(Rectangle())
+            }
+            .accessibilityLabel("Lyrics sooner")
+            Text(label)
+                .font(.caption.monospacedDigit())
+                .frame(minWidth: 90)
+                .accessibilityLabel(ms == 0 ? "Lyrics offset none" : "Lyrics offset \(label)")
+            Button { model.stepLyricsOffset(1) } label: {
+                Image(systemName: "plus").frame(width: 44, height: 32).contentShape(Rectangle())
+            }
+            .accessibilityLabel("Lyrics later")
+        }
+        .font(.footnote.weight(.semibold))
+        .buttonStyle(GlyphButtonStyle())
+        .foregroundStyle(.secondary)
+    }
+}
+
+/// The lines around the lyrics position, redrawn every frame only while the
+/// pane is up and the music plays (`TrackProgress` keeps its own 1 s clock).
+private struct LyricsLines: View {
+    @EnvironmentObject private var model: AppModel
+    let lyrics: Lyrics
+    let offsetMs: Int64
+
+    /// A line on screen, by its index (-1: the "♪" before the first line).
+    private struct Shown: Identifiable {
+        enum Role { case previous, current, next }
+        let id: Int
+        let line: LyricLine?
+        let role: Role
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !model.playingHere)) { _ in
+            let t = LyricsOffsets.lyricsMs(positionMs: model.displayPositionMs() ?? 0, offsetMs: offsetMs)
+            let position = lyrics.position(atMs: t)
+            VStack(spacing: 8) {
+                ForEach(shown(position.line)) { item in
+                    lineView(item, sung: item.role == .current ? position.sung : 0)
+                        .transition(.asymmetric(insertion: .move(edge: .bottom).combined(with: .opacity),
+                                                removal: .move(edge: .top).combined(with: .opacity)))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.spring(duration: 0.4), value: position.line)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Lyrics")
+            .accessibilityValue(currentText(position.line))
+        }
+    }
+
+    private func shown(_ current: Int?) -> [Shown] {
+        var items: [Shown] = []
+        if let current, let previous = lyrics.previous(current) {
+            items.append(Shown(id: current - 1, line: previous, role: .previous))
+        }
+        let base = current ?? -1
+        items.append(Shown(id: base, line: current.map { lyrics.lines[$0] }, role: .current))
+        for (n, line) in lyrics.upcoming(current, count: 2).enumerated() {
+            items.append(Shown(id: base + 1 + n, line: line, role: .next))
+        }
+        return items
+    }
+
+    @ViewBuilder
+    private func lineView(_ item: Shown, sung: Int) -> some View {
+        let isBreak = item.line?.isBreak ?? true
+        switch item.role {
+        case .current:
+            Group {
+                if isBreak {
+                    Text("♪")
+                } else if let line = item.line {
+                    words(line, sung: sung)
+                }
+            }
+            .font(.title2.bold())
+            .lineLimit(3)
+            .minimumScaleFactor(0.6)
+            .multilineTextAlignment(.center)
+        case .previous, .next:
+            Text(isBreak ? "♪" : item.line?.text ?? "")
+                .font(.callout)
+                .foregroundStyle(.secondary.opacity(item.role == .previous ? 0.6 : 1))
+                .lineLimit(item.role == .previous ? 1 : 2)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    /// The words sung so far lit, the rest dim.
+    private func words(_ line: LyricLine, sung: Int) -> Text {
+        line.words.enumerated().reduce(Text("")) { text, word in
+            let (n, w) = word
+            return text + Text(n == 0 ? w.text : " " + w.text)
+                .foregroundStyle(n < sung ? AnyShapeStyle(Brand.orange) : AnyShapeStyle(Color.primary.opacity(0.45)))
+        }
+    }
+
+    private func currentText(_ current: Int?) -> String {
+        guard let current, !lyrics.lines[current].isBreak else { return "Instrumental" }
+        return lyrics.lines[current].text
     }
 }
 

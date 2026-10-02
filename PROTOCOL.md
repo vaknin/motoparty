@@ -235,14 +235,59 @@ Vectors: `fixtures/jitter.json`.
 ## Tracks (HTTP 47802)
 
 `GET /track/<id>.m4a` → `200` with `Content-Type: audio/mp4` and the full audio-only MP4 file,
-or `206` for a `Range` request. `404` if the host has not cached it (yet). Nothing else is
-served. The client downloads the whole file before replying `music.ready`.
+or `206` for a `Range` request. `404` if the host has not cached it (yet). The only other
+path served is `/lyrics/<id>.json` (see Lyrics below). The client downloads the whole file before replying `music.ready`.
 
 The audio is **Opus** (YouTube itag 251, 48 kHz stereo, remuxed from WebM, `dOps` pre-skip 0) or
 **AAC-LC** (itag 140). The host serves Opus until a client answers `music.error` with a message
 starting `"not decodable"`; it then switches to AAC for the rest of the session and sends
 `music.load` for that track once more. Lossless does not exist on YouTube, and the Bluetooth
 link re-encodes to AAC or SBC anyway.
+
+### Lyrics (2026-10-02)
+
+`GET /lyrics/<id>.json` on the same server, `<id>` a valid track id (else `404`). Answers:
+
+- `200`, `Content-Type: application/json; charset=utf-8`, body
+  `{"id":"<id>","source":"lrclib","lines":[{"ms":int,"text":str,"words":[{"ms":int,"text":str}]}]}`.
+  `lines` is sorted by `ms` (track position, ms); a line with empty `text` and no `words` is an
+  instrumental break. Word times are computed by the host (rules below) so both phones light
+  up the same word at the same moment.
+- `404`: the host looked and there are no synced lyrics for this track, or it does not know
+  the track (no title and artist to look up). Final for this `music.load`.
+- `503`: a lookup is running, or the host is offline and has not looked yet. The client tries
+  again after 5 s, at most 6 retries per id (7 requests, about 30 s), then gives up until the id
+  is loaded again. Any other status, or a `200` body it cannot decode, is not retried.
+
+Lyrics are **shown only on request**: each phone has its own toggle, off by default, and the
+client fetches lyrics only while its toggle is on (for the current track and the one its last
+`music.load` prefetched). Nothing about lyrics goes over the control channel. The host looks
+lyrics up whenever it caches a track (including collection downloads), whatever its own
+toggle, so they are there without coverage. Source: LRCLIB synced lyrics (`/api/search`),
+best candidate by timing plausibility, then by duration closest to the track's.
+
+Each phone keeps its own lyrics offset per track (±0.2 s steps, like its output-latency trim):
+the position used for lyrics is `positionMs - offsetMs`, so a negative offset shows them
+sooner.
+
+**LRC to lines** (host, and the peer's fake host): split the LRC on line breaks (`\n`,
+`\r\n`). Each stamp `[m:ss]` or `[m:ss.f]` (regex `\[(\d+):(\d+)(?:\.(\d+))?]`, ASCII digits, any number
+of them from the very first character of the line; a stamp after leading whitespace does not count) gives `ms = m*60000 + ss*1000 + f`, where `f` is the fraction's
+digits padded with zeros or cut to three (`.5` = 500, `.12` = 120, `.123` = 123). The text is
+whatever follows the last stamp, trimmed of spaces and tabs. A source line with several stamps
+gives one line per stamp; a source line with no stamp (`[ar:…]` tags, plain text) is dropped.
+Lines are sorted by `ms`, stable (equal times keep source order).
+
+**Words**: the text split on runs of spaces and tabs (U+0020, U+0009; nothing else
+separates). A word's length is its count of Unicode code points (not UTF-16 units, not
+grapheme clusters); `c_i` is the summed length of the words before word `i` and `total` that
+of all the line's words. Word `i` starts at `line.ms + 75 * c_i`, unless the line has a next
+line and `line.ms + 75 * total > next.ms` (it would run into the next line); then it starts at
+`line.ms + floor(c_i * (next.ms - line.ms) / total)`, in integers.
+
+**Timeline** (both phones): at lyrics position `t`, the current line is the last line with
+`ms <= t` (none before the first line); the sung words are those of the current line with
+`ms <= t`.
 
 ## Talk flow
 
@@ -784,3 +829,4 @@ side** is the reply. The model is told to ask rarely: a request with a reasonabl
 | `fixtures/commands.json`         | command parser, including `queue …` |
 | `fixtures/first_phrase.json`     | the first-phrase gate: command text or conversation per phrase, with and without interpretation, and the reply to a question |
 | `fixtures/interpret.json`        | an interpreter answer → voice actions, question or conversation |
+| `fixtures/lyrics.json`           | LRC → lines and word times (stamps, tags, repeats, compression, code points), and the timeline |

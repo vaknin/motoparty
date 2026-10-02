@@ -2,7 +2,7 @@
 
 Advertises over Bonjour, serves control/voice/HTTP, is the talk authority (talk ends on a
 trigger or a talk-ending command, never on silence), echoes voice back to the client, serves its
---track files, parses command.text (only the first of a talk the client opened, with its effect
+--track files (and their lyrics from a sidecar .lrc of the same stem), parses command.text (only the first of a talk the client opened, with its effect
 on the talk) and stdin `hear` phrases (the host's own first phrase, or solo talk), and answers the
 Browsing messages (search, browse, enqueue, edit) from those files.
 
@@ -41,6 +41,7 @@ from .commands import (
     parse_command,
     to_actions,
 )
+from . import lyrics
 from .music import VALID_ID, TrackInfo, browse, browse_artist, load_library, search
 from .opus import is_voice_activity
 from .protocol import (
@@ -182,6 +183,12 @@ class Host:
         self.download_tasks: dict[str, asyncio.Task] = {}
         self.download_lock = asyncio.Lock()
         self.download_step_ms = 300  # tests shorten it
+        # PROTOCOL.md "Tracks", Lyrics: /lyrics/<id>.json from a sidecar .lrc next to the track
+        # file. --lyrics-503 N answers 503 ("lookup running") N times per id first, for the
+        # client's retry rule; the handler threads share the counts.
+        self.lyrics_503 = int(getattr(args, "lyrics_503", 0) or 0)
+        self.lyrics_503_sent: dict[str, int] = {}
+        self.lyrics_lock = threading.Lock()
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -1367,6 +1374,29 @@ def parse_range(header: str, size: int) -> tuple[int, int] | None | str:
     return start, end
 
 
+def lyrics_response(host: Host, id_: str) -> tuple[int, bytes]:
+    """(status, body) for GET /lyrics/<id>.json: 404 for an invalid or unknown id or no sidecar
+    .lrc with timed lines, 503 while --lyrics-503 lasts for this id, else 200."""
+    t = host.by_id.get(id_) if VALID_ID.fullmatch(id_) else None
+    if t is None:
+        return 404, b""
+    with host.lyrics_lock:
+        n = host.lyrics_503_sent.get(id_, 0)
+        if n < host.lyrics_503:
+            host.lyrics_503_sent[id_] = n + 1
+            return 503, b""
+    try:
+        lines = lyrics.parse_lrc(t.file.with_suffix(".lrc").read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return 404, b""
+    except (OSError, UnicodeDecodeError) as e:
+        log(f"lyrics: {id_}: cannot read the .lrc ({e}); 404")
+        return 404, b""
+    if not lines:
+        return 404, b""  # nothing timed: no synced lyrics
+    return 200, lyrics.served(id_, lines)
+
+
 def _make_handler(host: Host):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -1377,6 +1407,17 @@ def _make_handler(host: Host):
 
         def _serve(self, body: bool) -> None:
             path = self.path.split("?", 1)[0]
+            if path.startswith("/lyrics/"):
+                m = re.fullmatch(r"/lyrics/(.*)\.json", path)
+                status, data = lyrics_response(host, m[1]) if m else (404, b"")
+                self.send_response(status)
+                if status == 200:
+                    self.send_header("Content-Type", lyrics.CONTENT_TYPE)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                if body:
+                    self.wfile.write(data)
+                return
             m = re.fullmatch(r"/track/([A-Za-z0-9_-]+)\.m4a", path)
             t = host.by_id.get(m[1]) if m else None
             if t is None:

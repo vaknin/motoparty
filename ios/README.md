@@ -29,14 +29,17 @@ Sources/MotopartyCore/   pure Swift + Foundation, tested on Linux:
                            TalkRoute (the talk's mic: Bluetooth, wired, USB, phone),
                            AnnounceGate (an announcement waits out the switch back to A2DP),
                            MusicStatus ("Loading…" / "Paused for talk" under now playing),
-                           BrowseHistory (Search tab: recent searches, recently played)
+                           BrowseHistory (Search tab: recent searches, recently played),
+                           Lyrics (synced lyrics: model, timeline, LRC→lines, LyricsFetch
+                           503 policy, LyricsOffsets)
 Sources/Motoparty/       the iOS app (only compiled by xtool against the iOS SDK):
   Link/                    Discovery (NWBrowser + /24 sweep; see below), ControlClient, VoiceSocket
   Audio/                   SessionController (A2DP music ↔ HFP talk; host-mic talk stays A2DP),
                            VoiceEngine (duplex or receive only), KeepAlive, EarconPlayer,
                            LocalVolume (this phone's system volume), VolumeKey (outputVolume KVO,
                            park, app gains)
-  Music/                   TrackCache (URLSession), SyncedPlayer (AVPlayer setRate atHostTime), NowPlaying
+  Music/                   TrackCache (URLSession), SyncedPlayer (AVPlayer setRate atHostTime), NowPlaying,
+                           LyricsStore (`/lyrics/<id>.json`, only while the lyrics toggle is on)
   Voice/                   Transcriber (on-device SFSpeechRecognizer fed by the talk's mic, one
                            request per phrase), Announcer (AVSpeechSynthesizer)
   UI/                      SwiftUI tabs: Ride (link pill, now playing + transport, TALK),
@@ -115,11 +118,12 @@ blanket `@unchecked Sendable`, not a local fix, so it is a deliberate separate j
 ```bash
 cd ios
 swift build           # COpus + MotopartyCore (+ empty app module)
-swift test            # 292 tests: fixtures, command parser + first-phrase gate, app volume +
+swift test            # 313 tests: fixtures, command parser + first-phrase gate, app volume +
                       # volume-key gate, talk mode (host-mic), talk route (wired
                       # headsets), announce gate, music status line,
                       # search history, jitter buffer, Opus, drift controller, the
-                      # screens' wording, ambient tint and per-route sync offset
+                      # screens' wording, ambient tint and per-route sync offset,
+                      # lyrics (fixtures/lyrics.json, retry policy, offsets)
 ```
 
 Opus prints "compiling without optimization" in debug builds. That is expected. Use
@@ -264,6 +268,21 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
 
 ## Behaviour notes
 
+- **Lyrics** (2026-10-02, PROTOCOL.md "Tracks", "Lyrics"): the speech-bubble button at the
+  left end of the transport row (where an empty slot balanced the repeat button) turns this
+  phone's lyrics on or off; off by default, kept in UserDefaults (`showLyrics`). While on,
+  `LyricsStore` fetches `GET /lyrics/<id>.json` from the track server for the current track
+  and the one the last `music.load` prefetched, keeps them in memory (the last 20 found), and
+  asks again after a 503 every 5 s, at most 6 times (`LyricsFetch`; a request with no answer
+  counts as a 503, a 404 / other status / bad body is final); a new `music.load` of the id
+  starts over after a 404 or a give-up. Off: nothing is fetched and pending requests are
+  dropped. On the Ride card the lyrics take the cover's place (titles, clock and buttons
+  stay): the line before, the current one large with its words lit orange as they are sung,
+  the next two, a spring as the lines move, "♪" for a break, "Looking for lyrics…" / "No
+  lyrics found". It redraws at up to 30 fps from `displayPositionMs()` only while shown and
+  playing (`TrackProgress` keeps its 1 s clock). −/+ under the lines move this track's lyrics
+  by 0.2 s (`lyricsOffsets` in UserDefaults; the lyrics position is `position − offset`, so −
+  shows them sooner).
 - **No floating buttons on iOS.** The TALK overlay above other apps exists on the Pixel
   only (decided with the user 2026-09-20): iOS cannot draw over other apps, and nothing in
   `ios/` tries to. The passenger's triggers are the app's own buttons, the headset controls and
@@ -964,6 +983,28 @@ the open questions, in the order a ride needs them:
     the music back (`call hold released by the user`).
   - *Auto-Answer:* Settings › Accessibility › Touch › Call Audio Routing › Auto-Answer Calls
     on: an incoming call is answered after the set seconds and the hold works as above.
+- **2026-10-02 lyrics (built on Linux only; needs a host that serves `/lyrics/<id>.json`).**
+  - *Off by default:* fresh install, music playing: the cover shows, no `lyrics` line in the
+    `music` log, and the host's log shows no `/lyrics/` request from the iPhone.
+  - *On:* tap the speech bubble left of Previous: it lights, the cover gives way to the lines
+    (`lyrics <id>: <n> lines`), and the next track's lyrics are fetched too (a second `lyrics`
+    line soon after its `music.load`); at the track change they show at once, no spinner.
+    The toggle survives an app restart.
+  - *Sync by ear and eye:* the lit word follows the singing on a song with clear vocals; both
+    phones light the same word at the same moment (side by side with the Pixel). Pause: the
+    highlight stops; seek / skip: it jumps to the right line. If it is off, −/+ fix it in
+    0.2 s steps (− = sooner), the value stays for that track only, and survives a restart.
+  - *Smoothness:* the word highlight and the line change (a spring, lines moving up) run
+    without stutter at 30 fps; the phone gets no warmer with the Ride tab open and lyrics on
+    than with them off.
+  - *States:* a track the host has no lyrics for: "No lyrics found". A track just cached by
+    the host while offline (503): "Looking for lyrics…", then the lines or "No lyrics found"
+    within ~30 s (`lyrics <id>: none (503)` after the 7th request). An instrumental break
+    shows "♪" large. Hebrew lines read right to left with the lit words in order.
+  - *Layout:* on a small phone / large text (where the cover was 88 pt beside the title), the
+    150 pt pane and its −/+ row fit with the titles, clock and buttons, and the screen scrolls
+    rather than clips.
+    VoiceOver reads "Lyrics", the current line, and the toggle as "Lyrics, On/Off".
 - The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
   the AirPods A2DP ↔ HFP switch time.
 

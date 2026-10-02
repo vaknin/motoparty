@@ -8,7 +8,7 @@ import json
 import socket
 from pathlib import Path
 
-from . import discovery
+from . import discovery, lyrics
 from .audio import Mic, Speaker, Tone
 from .clock import ClockEstimator
 from .commands import VOLUME_ACTIONS, FirstPhraseGate, parse_command
@@ -36,6 +36,7 @@ HELP = """commands: talk | hear <phrase> (recognised in the talk: first phrase r
           browse <n>|a<n> | enqueue now|next|end <n>|all | edit jump|remove <i> | edit move <i> <to> |
           edit clear | repeat off|track|queue |
           download [stop] (the browsed album or playlist into the host's cache) |
+          lyrics [on|off] (print the current track's lyrics, or toggle fetching them) |
           stats | raw <json> (send unvalidated) | quit"""
 
 MUSIC_CONTROL = {"pause": "pause", "resume": "resume", "next": "next", "previous": "previous"}
@@ -111,6 +112,13 @@ class Client:
         self.changed: tuple[str, int] | None = None
         self.changed_timer: asyncio.TimerHandle | None = None
         self.durations: dict[str, int] = {}
+        # PROTOCOL.md "Tracks", Lyrics: the toggle (off by default), the newest music.load, what
+        # each id's fetch got (decoded body, or None for 404 / retries spent) and the fetches.
+        self.lyrics_on = bool(getattr(args, "lyrics", False))
+        self.loaded_id: str | None = None
+        self.lyrics_got: dict[str, dict | None] = {}
+        self.lyrics_tasks: dict[str, asyncio.Task] = {}
+        self.lyrics_retry_s = lyrics.RETRY_S  # tests shorten it
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -360,6 +368,9 @@ class Client:
         elif t == "music.load":
             self.durations[msg["id"]] = msg["durationMs"]
             self._start_download(msg)
+            self.loaded_id = msg["id"]
+            if self.lyrics_on:
+                self._fetch_lyrics(msg["id"], again=True)
         elif t == "music.play":
             await self._music_play(msg)
         elif t == "music.next":
@@ -716,6 +727,74 @@ class Client:
         self.cur_id, self.anchor = id_, (id_, msg["positionMs"], msg["atHostTimeMs"])
         self.player.schedule(file, msg["positionMs"], local)
 
+    # ------------------------------------------------------------------ lyrics
+
+    def _fetch_lyrics(self, id_: str, again: bool = False) -> None:
+        """Fetch an id's lyrics unless a fetch is running or done; `again` (a new music.load)
+        retries a 404 or a give-up, which are final only for that music.load."""
+        old = self.lyrics_tasks.get(id_)
+        if old and not old.done() or self.lyrics_got.get(id_) or id_ in self.lyrics_got and not again:
+            return
+        if self.conn is None or self.http_port is None:
+            return
+        url = f"http://{self.conn.ip}:{self.http_port}/lyrics/{id_}.json"
+        self.lyrics_tasks[id_] = asyncio.create_task(self._lyrics_task(id_, url))
+
+    async def _lyrics_task(self, id_: str, url: str) -> None:
+        async def wait(s: float) -> None:
+            log(f"lyrics: {id_} not ready (503), trying again in {s:g} s")
+            await asyncio.sleep(s)
+
+        try:
+            status, body = await lyrics.fetch(url, retry_s=self.lyrics_retry_s, sleep=wait)
+        except RuntimeError as e:
+            log(f"lyrics: {id_} failed: {e}")
+            return
+        if status == 200 and body["id"] != id_:
+            log(f"warning: lyrics for {id_} came back with id {body['id']!r}")
+        self.lyrics_got[id_] = body
+        if status == 200:
+            n = sum(1 for ln in body["lines"] if ln["words"])
+            log(f"lyrics: {id_} {len(body['lines'])} lines ({n} sung) from {body['source']}")
+        elif status == 404:
+            log(f"lyrics: {id_} has none (404)")
+        else:
+            log(f"lyrics: {id_} still 503 after {lyrics.MAX_RETRIES} retries; giving up until it is loaded again")
+
+    def _lyrics_cmd(self, rest: str) -> None:
+        arg = rest.strip().lower()
+        if arg in ("on", "off"):
+            self.lyrics_on = arg == "on"
+            log(f"lyrics {arg}")
+            if self.lyrics_on:
+                for id_ in dict.fromkeys(i for i in (self.cur_id, self.loaded_id) if i):
+                    self._fetch_lyrics(id_)
+            return
+        if arg:
+            log("usage: lyrics [on|off]")
+            return
+        id_ = self.cur_id or self.loaded_id
+        if id_ is None:
+            log("lyrics: no track loaded")
+        elif not self.lyrics_on:
+            log("lyrics: off (`lyrics on` fetches them)")
+        elif id_ not in self.lyrics_got:
+            log(f"lyrics: {id_} not fetched yet")
+        elif self.lyrics_got[id_] is None:
+            log(f"lyrics: {id_} has none")
+        else:
+            lines = self.lyrics_got[id_]["lines"]
+            # Where the music is (no per-track offset in the peer): the anchor plus elapsed host time.
+            cur, sung = -1, 0
+            if self.anchor and self.anchor[0] == id_ and self.clock.ready:
+                t = round(self.anchor[1] + self.clock.local_to_host(now_ms()) - self.anchor[2])
+                cur, sung = lyrics.timeline(lines, t)
+            log(f"lyrics: {id_}, {len(lines)} lines")
+            for i, ln in enumerate(lines):
+                mark = f"> ({sung}/{len(ln['words'])} sung)" if i == cur else " "
+                log(f"   {mark} [{ln['ms'] // 60000}:{ln['ms'] // 1000 % 60:02d}.{ln['ms'] % 1000:03d}] "
+                    f"{ln['text'] or '(instrumental)'}")
+
     # ------------------------------------------------------------------ browsing
 
     def _request(self, msg: dict, kind: str, album: str | None = None) -> None:
@@ -875,6 +954,8 @@ class Client:
                 self.send({"t": "music.control", "action": "repeat", "mode": mode})
             elif cmd == "download":
                 self._download_cmd(rest)
+            elif cmd == "lyrics":
+                self._lyrics_cmd(rest)
             elif cmd in ("search", "browse", "enqueue", "edit"):
                 self._browse_cmd(cmd, rest)
             elif cmd == "stats":

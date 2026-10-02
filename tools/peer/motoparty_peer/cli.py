@@ -31,6 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--mic-unavailable", action="store_true",
                    help="start with the mic marked unavailable: answer talk.open with "
                         "talk.close{by:'client',reason:'unavailable'} (stdin `unavailable` toggles)")
+    c.add_argument("--lyrics", action="store_true",
+                   help="start with the lyrics toggle on: fetch /lyrics/<id>.json for each music.load "
+                        "(stdin `lyrics on|off` toggles, `lyrics` prints)")
     c.add_argument("--cache-dir", default="~/.cache/motoparty-peer", help="track cache (default %(default)s)")
     c.add_argument("--input-device", type=_device, help="PortAudio input device (index or name)")
     c.add_argument("--output-device", type=_device, help="PortAudio output device (index or name)")
@@ -52,6 +55,9 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--interpret-table",
                    help="JSON file {normalised phrase: answer JSON string, e.g. '{\"actions\":[{\"type\":\"next\"}]}'}: a stub interpreter; "
                         "with it the hello says interpret:true (PROTOCOL.md 'Commands')")
+    h.add_argument("--lyrics-503", type=int, default=0, metavar="N",
+                   help="answer GET /lyrics/<id>.json with 503 N times per id before the real answer "
+                        "(lyrics come from a sidecar .lrc next to each --track file)")
     h.add_argument("-v", "--verbose", action="store_true", help="also print ping/pong frames")
     return p
 

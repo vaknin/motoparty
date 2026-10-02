@@ -1,5 +1,6 @@
 package com.kivan.motoparty.music
 
+import com.kivan.motoparty.lyrics.LyricsAnswer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -17,7 +18,16 @@ import java.net.URL
 class TrackServerTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val file = File.createTempFile("track", ".m4a").apply { writeBytes(ByteArray(1000) { it.toByte() }) }
-    private val server = TrackServer(scope, { id -> if (id == "abc-_1") file else null }, port = 0)
+    private val lyricsBody = """{"id":"abc-_1","source":"lrclib","lines":[{"ms":1000,"text":"Ünï","words":[{"ms":1000,"text":"Ünï"}]}]}"""
+    private val lyricsAsked = ArrayList<String>()
+    private val server = TrackServer(scope, { id -> if (id == "abc-_1") file else null }, port = 0, lyrics = { id ->
+        synchronized(lyricsAsked) { lyricsAsked += id }
+        when (id) {
+            "abc-_1" -> LyricsAnswer.Ok(lyricsBody.toByteArray())
+            "looking" -> LyricsAnswer.Busy
+            else -> LyricsAnswer.NotFound
+        }
+    })
 
     @Before fun start() = server.start()
 
@@ -60,6 +70,29 @@ class TrackServerTest {
         assertEquals(404, get("/track/other.m4a").responseCode)
         assertEquals(404, get("/").responseCode)
         assertEquals(404, get("/track/..%2Fetc.m4a").responseCode)
+    }
+
+    @Test
+    fun lyricsAnswers() {
+        val ok = get("/lyrics/abc-_1.json")
+        assertEquals(200, ok.responseCode)
+        assertEquals("application/json; charset=utf-8", ok.contentType)
+        assertEquals(lyricsBody, ok.inputStream.readBytes().toString(Charsets.UTF_8))
+        val busy = get("/lyrics/looking.json")
+        assertEquals(503, busy.responseCode)
+        assertEquals("5", busy.getHeaderField("Retry-After"))
+        assertEquals(404, get("/lyrics/none.json").responseCode)
+        // An invalid id never reaches the cache.
+        assertEquals(404, get("/lyrics/..%2Fetc.json").responseCode)
+        assertEquals(404, get("/lyrics/abc-_1.lrc").responseCode)
+        assertEquals(listOf("abc-_1", "looking", "none"), synchronized(lyricsAsked) { lyricsAsked.toList() })
+    }
+
+    @Test
+    fun lyricsHead() {
+        val c = get("/lyrics/abc-_1.json").apply { requestMethod = "HEAD" }
+        assertEquals(200, c.responseCode)
+        assertEquals(lyricsBody.toByteArray().size.toLong(), c.contentLengthLong)
     }
 
     @Test

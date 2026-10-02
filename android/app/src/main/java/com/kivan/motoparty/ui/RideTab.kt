@@ -103,6 +103,9 @@ fun RideTab(
     onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
     smart: Boolean = false,
+    /** The lyrics toggle ([com.kivan.motoparty.Settings.lyrics]). */
+    lyrics: Boolean = false,
+    prefs: UiPrefs = UiPrefs(),
 ) {
     val phase = TalkPhase.of(s)
     var commandsSheet by rememberSaveable { mutableStateOf(false) }
@@ -119,7 +122,7 @@ fun RideTab(
         when {
             call != null -> CallCard(call, s.clientName, cb.onAction, m)
             showCommands -> CommandsCard(solo = s.clientName == null, smart = smart, modifier = m)
-            else -> NowPlaying(s, cb, onOpenQueue, m)
+            else -> NowPlaying(s, cb, onOpenQueue, m, lyrics, prefs)
         }
     }
     // No command list under a call card: nothing said during a call is a command.
@@ -298,15 +301,71 @@ private fun PermissionsList(missing: List<Permission>, onGrant: (Permission) -> 
 
 // ---- now playing ----
 
+/**
+ * The playing track. With [lyrics] on (2026-10-02) the lyrics take the cover's place, and the
+ * "Up next" line goes: their own next lines are what is next.
+ */
 @Composable
-private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, modifier: Modifier) {
+private fun NowPlaying(
+    s: LinkStatus,
+    cb: Callbacks,
+    onOpenQueue: () -> Unit,
+    modifier: Modifier,
+    lyrics: Boolean = false,
+    prefs: UiPrefs = UiPrefs(),
+) {
     val t = s.nowPlaying
     // The artist and album lines open their pages on the Search tab (2026-10-02); the host searches, so only while it runs.
     val open = if (s.running) cb.onAction else null
+    val onLyrics = { cb.onSettings { it.copy(lyrics = !it.lyrics) } }
+    val transport: @Composable (big: Boolean) -> Unit = { big ->
+        Transport(s.playing, big, s.repeat, { cb.onAction(UiAction.Repeat(s.repeat.toggled())) }, lyrics, onLyrics) {
+            cb.onAction(UiAction.Control(it))
+        }
+    }
+    val pane: @Composable (Track, Modifier, Boolean) -> Unit = { track, m, compact ->
+        // Keyed by track, so a new song starts with no line shown rather than animating from the last one.
+        androidx.compose.runtime.key(track.id) {
+            LyricsPane(
+                s.lyrics?.takeIf { it.id == track.id }, s.anchor, track.durationMs,
+                offsetMs = prefs.lyricsOffset(track.id),
+                onOffset = { ms -> cb.onUiPrefs { it.withLyricsOffset(track.id, ms) } },
+                modifier = m,
+                compact = compact,
+            )
+        }
+    }
     BoxWithConstraints(modifier) {
         val h = maxHeight
         when {
             t == null -> NothingPlaying(s, compact = h < 260.dp)
+            // Lyrics, upright with room: where the cover was, the titles under them as usual.
+            lyrics && h >= 400.dp -> Column(
+                Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                pane(t, Modifier.weight(1f).fillMaxWidth(), false)
+                Crossfade(t, label = "title") { track -> Titles(track, centred = true, open) }
+                StatusLine(s)
+                Timeline(s, t)
+                transport(true)
+            }
+            // Lyrics where it is tight: the title on one side line, no cover.
+            lyrics -> Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Title and artist only, the offset beside them: every line of height goes to the lyrics.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Crossfade(t, Modifier.weight(1f), label = "title") { track -> Titles(track, centred = false, open, compact = true) }
+                    if (s.lyrics?.id == t.id && s.lyrics.kind == com.kivan.motoparty.lyrics.LyricsView.Kind.FOUND) {
+                        LyricsOffset(prefs.lyricsOffset(t.id), { ms -> cb.onUiPrefs { it.withLyricsOffset(t.id, ms) } })
+                    }
+                }
+                StatusLine(s)
+                pane(t, Modifier.weight(1f).fillMaxWidth(), true)
+                // Very tight (banners on a short screen): the lyrics need the timeline's height more.
+                if (h >= 240.dp) Timeline(s, t)
+                transport(h >= 300.dp)
+            }
             // Upright with room: the cover on top, as big as the space left over.
             h >= 400.dp -> Column(
                 Modifier.fillMaxSize(),
@@ -320,7 +379,7 @@ private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, mo
                 Crossfade(t, label = "title") { track -> Titles(track, centred = true, open) }
                 StatusLine(s)
                 Timeline(s, t)
-                Transport(s.playing, big = true, s.repeat, { cb.onAction(UiAction.Repeat(s.repeat.toggled())) }) { cb.onAction(UiAction.Control(it)) }
+                transport(true)
                 UpNext(s.queue, onOpenQueue)
             }
             // Tight (a banner or two, or the handlebar layout): the cover beside the title.
@@ -340,9 +399,7 @@ private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, mo
                     }
                 }
                 Timeline(s, t)
-                Transport(s.playing, big = h >= 300.dp, s.repeat, { cb.onAction(UiAction.Repeat(s.repeat.toggled())) }) {
-                    cb.onAction(UiAction.Control(it))
-                }
+                transport(h >= 300.dp)
                 if (h >= 330.dp) UpNext(s.queue, onOpenQueue)
             }
         }
@@ -373,10 +430,10 @@ private fun NothingPlaying(s: LinkStatus, compact: Boolean) {
 /**
  * The title, then the artist and (when known) the album. With [open], a tap on the artist or the
  * album line sends [UiAction.OpenArtist] / [UiAction.OpenAlbum] (2026-10-02): the main screen
- * switches to the Search tab, where the host opens the page.
+ * switches to the Search tab, where the host opens the page. [compact]: a smaller title and no album.
  */
 @Composable
-private fun Titles(t: Track, centred: Boolean, open: ((UiAction) -> Unit)? = null) {
+private fun Titles(t: Track, centred: Boolean, open: ((UiAction) -> Unit)? = null, compact: Boolean = false) {
     val align = if (centred) TextAlign.Center else TextAlign.Start
     Column(
         if (centred) Modifier.fillMaxWidth() else Modifier,
@@ -384,7 +441,11 @@ private fun Titles(t: Track, centred: Boolean, open: ((UiAction) -> Unit)? = nul
     ) {
         Text(
             t.title,
-            style = if (centred) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+            style = when {
+                centred -> MaterialTheme.typography.headlineSmall
+                compact -> MaterialTheme.typography.titleMedium
+                else -> MaterialTheme.typography.titleLarge
+            },
             // One line; a title that does not fit scrolls (and only then) instead of being cut.
             modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
             fontWeight = FontWeight.Bold,
@@ -404,7 +465,8 @@ private fun Titles(t: Track, centred: Boolean, open: ((UiAction) -> Unit)? = nul
             },
         )
         val album = t.album
-        if (!album.isNullOrBlank()) {
+        // [compact]: no album line (lyrics on a short screen).
+        if (!compact && !album.isNullOrBlank()) {
             Text(
                 album,
                 style = MaterialTheme.typography.bodyMedium,
@@ -462,8 +524,8 @@ private fun Timeline(s: LinkStatus, t: Track) {
 
 /**
  * Previous, play/pause, next: 72 / 96 / 72 dp, or 64 / 80 / 64 where the height is short. The
- * repeat toggle (off → queue → track) sits at the right end, balanced by an empty slot on the
- * left so play stays in the middle.
+ * repeat toggle (off → queue → track) sits at the right end, balanced by the lyrics toggle on
+ * the left so play stays in the middle.
  */
 @Composable
 private fun Transport(
@@ -471,6 +533,8 @@ private fun Transport(
     big: Boolean,
     repeat: com.kivan.motoparty.core.RepeatMode,
     onRepeat: () -> Unit,
+    lyrics: Boolean,
+    onLyrics: () -> Unit,
     control: (String) -> Unit,
 ) {
     val side = if (big) 72.dp else 64.dp
@@ -480,7 +544,7 @@ private fun Transport(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spacer(Modifier.size(RepeatSize))
+        LyricsToggle(lyrics, onLyrics)
         IconButton(onClick = { control(ControlAction.PREVIOUS) }, Modifier.size(side)) {
             Icon(Icons.Previous, "Previous", Modifier.size(side * 0.6f))
         }
@@ -530,6 +594,25 @@ private fun RepeatToggle(repeat: com.kivan.motoparty.core.RepeatMode, onClick: (
             },
             Modifier.size(26.dp),
         )
+    }
+}
+
+/** Lit like the repeat toggle while the lyrics show. */
+@Composable
+private fun LyricsToggle(on: Boolean, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(RepeatSize),
+        colors = if (on) {
+            IconButtonDefaults.iconButtonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        } else {
+            IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    ) {
+        Icon(Icons.Lyrics, if (on) "Hide lyrics" else "Show lyrics", Modifier.size(24.dp))
     }
 }
 

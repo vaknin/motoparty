@@ -90,6 +90,8 @@ import com.kivan.motoparty.music.Player
 import com.kivan.motoparty.music.RemoteAction
 import com.kivan.motoparty.music.SyncController
 import com.kivan.motoparty.music.remuxWebmToMp4
+import com.kivan.motoparty.lyrics.LyricsCache
+import com.kivan.motoparty.lyrics.LyricsSource
 import com.kivan.motoparty.music.TrackCache
 import com.kivan.motoparty.music.OutputRoute
 import com.kivan.motoparty.music.TrackCaches
@@ -195,12 +197,25 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             onChange = { scope.launch { refreshCached() } },
             log = Hub::log,
         ),
+        // Whenever a track is cached, its lyrics too (PROTOCOL.md "Tracks", Lyrics).
+        onEnsure = { lyrics.request(it) },
+    )
+    /**
+     * Synced lyrics by track id (2026-10-02), looked up whatever our own toggle says; served on
+     * `/lyrics/<id>.json` and read directly by our own Ride screen ([LinkStatus.lyrics]).
+     */
+    private val lyrics: LyricsCache = LyricsCache(
+        File(context.cacheDir, "lyrics"), scope,
+        find = LyricsSource(http)::find,
+        onChange = { id -> scope.launch { if (id == music.current?.id) refreshStatus() } },
+        log = Hub::log,
     )
     /** The Search tab's album/playlist Download button: whole collections into the active cache. */
     private val downloads: CollectionDownloads = CollectionDownloads(
         scope,
         ensure = { caches.ensure(it, DownloadPriority.COLLECTION) },
-        cached = { caches.cached(it) },
+        // An already-cached track skips [ensure]; its lyrics are looked up all the same.
+        cached = { id -> caches.cached(id).also { if (it != null) lyrics.request(id) } },
         onProgress = { p ->
             Hub.status.update { it.copy(downloads = p) }
             downloadsFeed.push()
@@ -220,7 +235,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         // The earbuds dropped: pause both phones instead of playing on the Pixel's speaker.
         onNoisy = { music.onBecomingNoisy() },
     )
-    private val network = NetworkWatch(context) { music.onNetworkBack() }
+    private val network = NetworkWatch(context) {
+        music.onNetworkBack()
+        music.current?.let { lyrics.request(it.id) }
+    }
     /**
      * The output music plays on (from [devices]) and the trim in force for it. Main only. The trim
      * is per route since the first two-phone run (2026-09-29): the AirPods value applied on the
@@ -284,7 +302,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         voice.onPacket(it)
         lark.onPacket(it)
     })
-    private val trackServer = TrackServer(scope, lookup = { caches.active.cached(it) })
+    private val trackServer = TrackServer(scope, lookup = { caches.active.cached(it) }, lyrics = { lyrics.answer(it) })
     private val discovery = Discovery(context, deviceName, Hub::log)
     private val announcer = Announcer(context, earconPlayer = { kind, call -> earcon(kind, call) })
     /** In-talk speech recognition on the talk's own capture (PROTOCOL.md "Commands"). Main only. */
@@ -619,7 +637,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is CommandText -> onClientCommand(m.text)
             is MusicSearch -> onClientSearch(m.id) {
                 when (m.kind) {
-                    SearchKind.SONGS -> MusicResults(m.id, catalog.searchSongs(m.query).also(::preResolveTop).map(::songItem))
+                    SearchKind.SONGS -> MusicResults(m.id, catalog.searchSongs(m.query).also(::preResolveTop).also(lyrics::know).map(::songItem))
                     // PROTOCOL.md "Browsing" step 2a (2026-10-02): ref = channel id, artist empty.
                     SearchKind.ARTISTS -> MusicResults(m.id, catalog.searchArtists(m.query).map { ResultItem(it.id, it.name, "", art = it.art) })
                     else -> MusicResults(m.id, catalog.searchCollections(m.kind == SearchKind.ALBUMS, m.query).map(::collectionItem))
@@ -630,12 +648,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 if (m.kind == BrowseKind.ARTIST) {
                     // One reply holds the page; Codec.fit drops art, then albums, then songs.
                     val page = catalog.artistPage(m.ref)
+                    lyrics.know(page.songs)
                     Hub.log("client artist ${m.ref}: ${page.songs.size} songs, ${page.albums.size} albums" +
                         if (page.releases) " (Releases)" else " (album search)")
                     MusicResults(m.id, page.songs.map(::songItem), albums = page.albums.map(::collectionItem))
                 } else {
                     // Per-item art is left out: the client already has the collection's cover.
-                    MusicResults(m.id, catalog.browse(m.ref).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs) })
+                    // Known for lyrics: a `music.download` of this collection carries only the ids.
+                    MusicResults(m.id, catalog.browse(m.ref).also(lyrics::know).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs) })
                 }
             }
             is MusicEnqueue -> onClientEnqueue(m)
@@ -1836,7 +1856,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is UiAction.ClearQueue -> music.clearUpcoming()
             is UiAction.Restore -> restore(a.index, a.track)
             is UiAction.DismissError -> Hub.status.update { it.copy(error = null) }
-            is UiAction.Download -> downloads.start(a.collection.id, a.tracks.map { it.id })
+            is UiAction.Download -> {
+                lyrics.know(a.tracks)
+                downloads.start(a.collection.id, a.tracks.map { it.id })
+            }
             is UiAction.CancelDownload -> downloads.cancel(a.collectionId)
             is UiAction.Command -> submitCommand(a.text)
             is UiAction.Control -> requests.control(a.action, "ui")
@@ -1999,6 +2022,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     /** An enqueue from either screen; a `now` one is a play by touch, which ends an open talk. */
     private fun enqueue(mode: String, tracks: List<Track>, by: String) {
         if (tracks.isEmpty()) return
+        lyrics.know(tracks)
         if (TouchPlay.enqueueEndsTalk(mode)) playByTouch(by) { music.enqueue(mode, tracks) } else music.enqueue(mode, tracks)
     }
 
@@ -2046,6 +2070,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             refreshCached()
         }
         val now = clock()
+        // Lyrics of the playing track; the next few are known for theirs (a spoken `add` skips [enqueue]).
+        val current = music.current
+        if (current != null) {
+            lyrics.know(listOf(current) + music.upcoming.take(LYRICS_AHEAD))
+            lyrics.request(current.id)
+        }
+        val lyricsView = current?.let { lyrics.view(it.id) }
         Hub.status.update {
             it.copy(
                 running = true,
@@ -2065,6 +2096,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 repeat = music.repeat,
                 outputRoute = outputRoute,
                 call = callUi(),
+                lyrics = if (lyricsView == it.lyrics) it.lyrics else lyricsView,
             )
         }
         Hub.diagnostics.value = Diagnostics(
@@ -2144,6 +2176,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     companion object {
         /** Song results whose stream address is looked up before a tap (each is one extraction). */
         private const val PRE_RESOLVE_TOP = 3
+        /** Upcoming tracks whose title and artist are handed to the lyrics lookup each second. */
+        private const val LYRICS_AHEAD = 5
         /** In a solo talk, phrases this soon after our own speech are taken for its echo. */
         private const val ECHO_MS = 2_000L
         /** Shorter than any spoken reply takes to be recognised after our question ends. */

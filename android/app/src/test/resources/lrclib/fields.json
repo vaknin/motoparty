@@ -1,0 +1,8 @@
+[
+ {"id": 1, "trackName": "Paper Lantern", "artistName": "The Made Up Band", "duration": 200.0, "syncedLyrics": null, "plainLyrics": "no sync here"},
+ {"id": 2, "trackName": "Paper Lantern", "artistName": "The Made Up Band", "duration": 230.0, "syncedLyrics": "[00:10.00]A different recording far too long"},
+ {"id": 3, "trackName": "Paper Lantern (Live)", "artistName": "The Made Up Band", "duration": 203.0, "syncedLyrics": "[00:10.00]Lanterns float above the quiet river\n[00:10.70]Paper wings that never learned to shiver\n[00:11.40]Rushed copy of a sloppy sync line\n[00:12.10]Every line is far too close together"},
+ {"id": 4, "trackName": "Paper Lantern", "artistName": "The Made Up Band", "duration": 201.0, "syncedLyrics": "[00:10.00]Lanterns float above the quiet river\n[00:14.00]Paper wings that never learned to shiver\n[00:18.00]\n[00:22.00]Hold the light and let it go"},
+ {"id": 5, "trackName": "Paper Lantern", "artistName": "The Made Up Band", "duration": 201.0, "syncedLyrics": "[00:10.00]Lanterns float above the quiet river\n[00:14.00]Paper wings that never learned to shiver\n[00:18.00]\n[00:22.00]Hold the light and let it go"},
+ {"id": 6, "trackName": "Paper Lantern", "artistName": "The Made Up Band", "duration": 206.0, "syncedLyrics": "[00:11.00]Lanterns float above the quiet river\n[00:15.00]Paper wings that never learned to shiver"}
+]

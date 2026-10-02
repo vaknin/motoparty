@@ -626,11 +626,19 @@ class TrackCache(
  * open. [opus] until a client reports an Opus-in-MP4 file as not decodable
  * ([MusicController.onClientError]); from then on, for this session, every track is AAC.
  */
-class TrackCaches(private val opusCache: TrackCache, private val aacCache: TrackCache) : TrackStore {
+class TrackCaches(
+    private val opusCache: TrackCache,
+    private val aacCache: TrackCache,
+    /** A track is being cached (or was asked for and is there): its lyrics are looked up (2026-10-02). */
+    private val onEnsure: (id: String) -> Unit = {},
+) : TrackStore {
     override var opus = true
     val active: TrackCache get() = if (opus) opusCache else aacCache
-    override suspend fun ensure(id: String): File = active.ensure(id)
-    override suspend fun ensure(id: String, priority: DownloadPriority): File = active.ensure(id, priority)
+    override suspend fun ensure(id: String): File = ensure(id, DownloadPriority.CURRENT)
+    override suspend fun ensure(id: String, priority: DownloadPriority): File {
+        onEnsure(id)
+        return active.ensure(id, priority)
+    }
     override fun cached(id: String): File? = active.cached(id)
     override fun cancel(id: String) { opusCache.cancel(id); aacCache.cancel(id) }
     override fun retain(ids: Collection<String>) { opusCache.retain(ids); aacCache.retain(ids) }

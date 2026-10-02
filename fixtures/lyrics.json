@@ -1,0 +1,380 @@
+{
+ "_doc": "PROTOCOL.md 'Tracks', Lyrics. parse: feed lrc; the result must equal lines (ms, text, words with ms and text). timeline: against the lines of parse case 0, at lyrics position t the current line index is line (-1 = none) and sung is how many of its words have ms <= t. served: a 200 body a client must decode (unknown fields ignored).",
+ "parse": [
+  {
+   "name": "tags, repeats, empty break, short fraction, spaces and tabs",
+   "lrc": "[ar:Made Up]\n[ti:Test Song]\n[00:01.00]Hello bright world\n[00:04.50][00:20.00]Sing it again\n[00:08.123]\nnot a timed line\n[00:09.5]  Late \t short  \n",
+   "lines": [
+    {
+     "ms": 1000,
+     "text": "Hello bright world",
+     "words": [
+      {
+       "ms": 1000,
+       "text": "Hello"
+      },
+      {
+       "ms": 1375,
+       "text": "bright"
+      },
+      {
+       "ms": 1825,
+       "text": "world"
+      }
+     ]
+    },
+    {
+     "ms": 4500,
+     "text": "Sing it again",
+     "words": [
+      {
+       "ms": 4500,
+       "text": "Sing"
+      },
+      {
+       "ms": 4800,
+       "text": "it"
+      },
+      {
+       "ms": 4950,
+       "text": "again"
+      }
+     ]
+    },
+    {
+     "ms": 8123,
+     "text": "",
+     "words": []
+    },
+    {
+     "ms": 9500,
+     "text": "Late \t short",
+     "words": [
+      {
+       "ms": 9500,
+       "text": "Late"
+      },
+      {
+       "ms": 9800,
+       "text": "short"
+      }
+     ]
+    },
+    {
+     "ms": 20000,
+     "text": "Sing it again",
+     "words": [
+      {
+       "ms": 20000,
+       "text": "Sing"
+      },
+      {
+       "ms": 20300,
+       "text": "it"
+      },
+      {
+       "ms": 20450,
+       "text": "again"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "compression into the next line, CRLF",
+   "lrc": "[00:00.00]Supercalifragilistic expialidocious\r\n[00:01.00]Next\r\n",
+   "lines": [
+    {
+     "ms": 0,
+     "text": "Supercalifragilistic expialidocious",
+     "words": [
+      {
+       "ms": 0,
+       "text": "Supercalifragilistic"
+      },
+      {
+       "ms": 588,
+       "text": "expialidocious"
+      }
+     ]
+    },
+    {
+     "ms": 1000,
+     "text": "Next",
+     "words": [
+      {
+       "ms": 1000,
+       "text": "Next"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "code points: Hebrew, a combining accent (2 code points, 1 grapheme), an emoji (1 code point, 2 UTF-16 units)",
+   "lrc": "[00:02]שלום עולם\n[1:05.25]Ünïcödé café 🎵la ok",
+   "lines": [
+    {
+     "ms": 2000,
+     "text": "שלום עולם",
+     "words": [
+      {
+       "ms": 2000,
+       "text": "שלום"
+      },
+      {
+       "ms": 2300,
+       "text": "עולם"
+      }
+     ]
+    },
+    {
+     "ms": 65250,
+     "text": "Ünïcödé café 🎵la ok",
+     "words": [
+      {
+       "ms": 65250,
+       "text": "Ünïcödé"
+      },
+      {
+       "ms": 65775,
+       "text": "café"
+      },
+      {
+       "ms": 66150,
+       "text": "🎵la"
+      },
+      {
+       "ms": 66375,
+       "text": "ok"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "stable sort of equal times, unsorted source",
+   "lrc": "[00:03.00]First at three\n[00:03.00]Same time later\n[00:02.00]Earlier in file order",
+   "lines": [
+    {
+     "ms": 2000,
+     "text": "Earlier in file order",
+     "words": [
+      {
+       "ms": 2000,
+       "text": "Earlier"
+      },
+      {
+       "ms": 2388,
+       "text": "in"
+      },
+      {
+       "ms": 2500,
+       "text": "file"
+      },
+      {
+       "ms": 2722,
+       "text": "order"
+      }
+     ]
+    },
+    {
+     "ms": 3000,
+     "text": "First at three",
+     "words": [
+      {
+       "ms": 3000,
+       "text": "First"
+      },
+      {
+       "ms": 3000,
+       "text": "at"
+      },
+      {
+       "ms": 3000,
+       "text": "three"
+      }
+     ]
+    },
+    {
+     "ms": 3000,
+     "text": "Same time later",
+     "words": [
+      {
+       "ms": 3000,
+       "text": "Same"
+      },
+      {
+       "ms": 3300,
+       "text": "time"
+      },
+      {
+       "ms": 3600,
+       "text": "later"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "nothing timed",
+   "lrc": "no stamps here\n[length: 3:20]\n[offset:+500]",
+   "lines": []
+  }
+ ],
+ "timeline": {
+  "case": 0,
+  "steps": [
+   {
+    "t": 0,
+    "line": -1,
+    "sung": 0
+   },
+   {
+    "t": 999,
+    "line": -1,
+    "sung": 0
+   },
+   {
+    "t": 1000,
+    "line": 0,
+    "sung": 1
+   },
+   {
+    "t": 1374,
+    "line": 0,
+    "sung": 1
+   },
+   {
+    "t": 1375,
+    "line": 0,
+    "sung": 2
+   },
+   {
+    "t": 1825,
+    "line": 0,
+    "sung": 3
+   },
+   {
+    "t": 4499,
+    "line": 0,
+    "sung": 3
+   },
+   {
+    "t": 4500,
+    "line": 1,
+    "sung": 1
+   },
+   {
+    "t": 4950,
+    "line": 1,
+    "sung": 3
+   },
+   {
+    "t": 8123,
+    "line": 2,
+    "sung": 0
+   },
+   {
+    "t": 9799,
+    "line": 3,
+    "sung": 1
+   },
+   {
+    "t": 9800,
+    "line": 3,
+    "sung": 2
+   },
+   {
+    "t": 20000,
+    "line": 4,
+    "sung": 1
+   },
+   {
+    "t": 99999,
+    "line": 4,
+    "sung": 3
+   }
+  ]
+ },
+ "served": {
+  "id": "abcDEF_-123",
+  "source": "lrclib",
+  "extra": 1,
+  "lines": [
+   {
+    "ms": 1000,
+    "text": "Hello bright world",
+    "words": [
+     {
+      "ms": 1000,
+      "text": "Hello"
+     },
+     {
+      "ms": 1375,
+      "text": "bright"
+     },
+     {
+      "ms": 1825,
+      "text": "world"
+     }
+    ]
+   },
+   {
+    "ms": 4500,
+    "text": "Sing it again",
+    "words": [
+     {
+      "ms": 4500,
+      "text": "Sing"
+     },
+     {
+      "ms": 4800,
+      "text": "it"
+     },
+     {
+      "ms": 4950,
+      "text": "again"
+     }
+    ]
+   },
+   {
+    "ms": 8123,
+    "text": "",
+    "words": []
+   },
+   {
+    "ms": 9500,
+    "text": "Late \t short",
+    "words": [
+     {
+      "ms": 9500,
+      "text": "Late"
+     },
+     {
+      "ms": 9800,
+      "text": "short"
+     }
+    ]
+   },
+   {
+    "ms": 20000,
+    "text": "Sing it again",
+    "words": [
+     {
+      "ms": 20000,
+      "text": "Sing"
+     },
+     {
+      "ms": 20300,
+      "text": "it"
+     },
+     {
+      "ms": 20450,
+      "text": "again"
+     }
+    ]
+   }
+  ]
+ }
+}
