@@ -18,6 +18,16 @@ class LogicTest {
 
     private val running = LinkStatus(running = true, nsdName = "Pixel 8", nowPlaying = track("now"))
 
+    /** The Ride screen's artist and album taps switch to the Search tab (2026-10-02); nothing else does. */
+    @Test
+    fun artistAndAlbumTapsOpenTheSearchTab() {
+        assertTrue(opensSearch(UiAction.OpenArtist("Queen")))
+        assertTrue(opensSearch(UiAction.OpenAlbum(track("a"))))
+        assertFalse(opensSearch(UiAction.Browse(CollectionItem("PL1", "A", "B"))))
+        assertFalse(opensSearch(UiAction.CloseBrowse))
+        assertNull(confirmation(UiAction.OpenArtist("Queen"), running))
+    }
+
     // ---- the playback position, from the anchor ----
 
     @Test

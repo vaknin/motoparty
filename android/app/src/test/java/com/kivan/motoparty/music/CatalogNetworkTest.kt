@@ -116,6 +116,46 @@ class CatalogNetworkTest {
         assertTrue(tracks[1].title, tracks[1].title.contains("Breathe", ignoreCase = true))
     }
 
+    /** 2026-10-02: an artist search and that artist's page (prints whether the Releases tab filled it). */
+    @Test
+    fun searchAnArtistAndOpenTheirPage(): Unit = runBlocking {
+        val catalog = Catalog(http)
+        val artists = catalog.searchArtists("pink floyd")
+        artists.take(5).forEach { println("artist $it") }
+        assertTrue(artists.isNotEmpty())
+        assertTrue(artists.all { isValidTrackId(it.id) && it.name.isNotBlank() })
+        val floyd = Catalog.pickArtist(artists, "Pink Floyd") ?: artists.first()
+        assertTrue(floyd.name.equals("Pink Floyd", ignoreCase = true)) // YouTube Music says "PINK FLOYD"
+        assertTrue(floyd.art?.startsWith("https://") == true)
+
+        val page = catalog.artistPage(floyd.id) // no name: it comes from the channel
+        println("page ${page.name} art=${page.art}: ${page.songs.size} songs, ${page.albums.size} albums, releases=${page.releases}")
+        page.songs.forEach { println("  song ${it.title} – ${it.artist}") }
+        page.albums.forEach { println("  album $it") }
+        assertEquals("Pink Floyd", page.name)
+        assertTrue(page.songs.size in 5..Catalog.ARTIST_SONGS)
+        assertTrue(page.albums.size in 5..Catalog.ARTIST_ALBUMS)
+        assertTrue(page.albums.all { isValidTrackId(it.id) && it.title.isNotBlank() })
+        assertTrue(page.albums.any { it.title.contains("Dark Side of the Moon", ignoreCase = true) })
+        // Each album opens like any search result.
+        val dsotm = page.albums.first { it.title.contains("Dark Side of the Moon", ignoreCase = true) }
+        assertTrue(catalog.browse(dsotm.id).size >= 5)
+    }
+
+    /** Which source fills the albums: the Releases tab, or the album-search fallback. */
+    @Test
+    fun releasesTabOrFallback(): Unit = runBlocking {
+        val catalog = Catalog(http)
+        for (q in listOf("queen", "moby", "ishay ribo", "radiohead", "omer adam")) {
+            val a = catalog.searchArtists(q).first()
+            val page = catalog.artistPage(a.id, a.name)
+            println("artist '${a.name}' ${a.id} -> '${page.name}': ${page.songs.size} songs, ${page.albums.size} albums " +
+                "(${if (page.releases) "Releases tab" else "album-search fallback"}); " +
+                "first ${page.albums.take(3).map { it.title }}, songs ${page.songs.take(3).map { "${it.title} – ${it.artist}" }}")
+            assertTrue(page.songs.isNotEmpty())
+        }
+    }
+
     @Test
     fun searchPlaylists(): Unit = runBlocking {
         val lists = Catalog(http).searchCollections(albums = false, "road trip")

@@ -82,7 +82,9 @@ _ACTION = ("pause", "resume", "next", "previous", "repeat")
 _SET_REPEAT = ("off", "track", "queue")
 _EARCON = ("ok", "error")
 # Browsing (PROTOCOL.md "Browsing")
-_KIND = ("songs", "albums", "playlists")
+_KIND = ("songs", "albums", "playlists", "artists")
+# music.browse kind (2026-10-02, PROTOCOL.md "Browsing" 2a): absent = an album or playlist.
+_BROWSE_KIND = ("artist",)
 _MODE = ("now", "next", "end")
 _OP = ("jump", "remove", "clear", "move")
 # state.music.repeat (2026-10-01): absent = off, and the host never sends "off".
@@ -170,11 +172,13 @@ SCHEMAS: dict[str, dict[str, tuple[Any, bool]]] = {
     "music.control": {"action": (_ACTION, True), "mode": (_SET_REPEAT, False)},
     "command.text": {"text": ("str", True), "lang": ("str", True)},
     "music.search": {"id": ("int", True), "kind": (_KIND, True), "query": ("str", True)},
-    "music.browse": {"id": ("int", True), "ref": ("str", True)},
+    "music.browse": {"id": ("int", True), "ref": ("str", True), "kind": (_BROWSE_KIND, False)},
     "music.results": {
         "id": ("int", True),
         "items": (("list", RESULT_ITEM_SCHEMA), True),
         "error": ("str", False),
+        # An artist page's albums and singles (2026-10-02), next to its top songs in items.
+        "albums": (("list", RESULT_ITEM_SCHEMA), False),
     },
     "music.enqueue": {
         "mode": (_MODE, True),

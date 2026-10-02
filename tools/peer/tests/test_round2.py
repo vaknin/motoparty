@@ -248,6 +248,35 @@ def _has(logs: list[str], text: str) -> bool:
     return any(text in line for line in logs)
 
 
+def test_client_opens_an_artist_page_and_its_albums(tmp_path, monkeypatch):
+    """PROTOCOL.md "Browsing" 2a (2026-10-02): `browse <n>` of an artist sends kind artist; the
+    reply's songs are song results and its albums open with `browse a<n>`."""
+    async def go():
+        c, w, logs = _client(tmp_path, monkeypatch)
+        c._browse_cmd("search", "artists floyd")
+        assert w.frames[-1] == {"t": "music.search", "id": c.req_id, "kind": "artists", "query": "floyd"}
+        await c._handle({"t": "music.results", "id": c.req_id, "items": [
+            {"ref": "UCpf", "title": "Pink Floyd", "artist": ""}]})
+        c._browse_cmd("browse", "1")
+        assert w.frames[-1] == {"t": "music.browse", "id": c.req_id, "ref": "UCpf", "kind": "artist"}
+        await c._handle({"t": "music.results", "id": c.req_id,
+                         "items": [{"ref": "s1", "title": "Time", "artist": "Pink Floyd", "durationMs": 1000}],
+                         "albums": [{"ref": "PL1", "title": "Meddle", "artist": "Pink Floyd", "count": 6}]})
+        assert _has(logs, "a1. Meddle - Pink Floyd (6 tracks)")
+        c._download_cmd("")  # an artist page is not a collection
+        assert _has(logs, "usage: download")
+        c._browse_cmd("enqueue", "now 1")
+        assert w.frames[-1]["t"] == "music.enqueue" and w.frames[-1]["tracks"][0]["id"] == "s1"
+        assert "album" not in w.frames[-1]["tracks"][0]
+        c._browse_cmd("browse", "a2")
+        assert _has(logs, "no album 'a2'")
+        c._browse_cmd("browse", "a1")
+        assert w.frames[-1] == {"t": "music.browse", "id": c.req_id, "ref": "PL1"}
+        assert c.req_album == "Meddle" and c.browsed_ref == "PL1"
+
+    asyncio.run(go())
+
+
 def test_client_downloads_the_browsed_collection_and_shows_the_marks(tmp_path, monkeypatch):
     """PROTOCOL.md "Browsing" 6: `download` after `browse <n>` sends the songs' refs; `music.downloads`
     and state.busy are shown."""

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -55,8 +56,9 @@ fun mmss(ms: Long): String = "%d:%02d".format(ms / 60000, (ms / 1000) % 60)
  * the image loads and when there is none or it failed, and the image fades in over it.
  */
 @Composable
-fun Art(url: String?, size: Dp, modifier: Modifier = Modifier, placeholder: ImageVector = Icons.Note) {
-    val shape = RoundedCornerShape(if (size >= 160.dp) 20.dp else if (size >= 96.dp) 14.dp else 8.dp)
+fun Art(url: String?, size: Dp, modifier: Modifier = Modifier, placeholder: ImageVector = Icons.Note, round: Boolean = false) {
+    // Round for an artist's picture (2026-10-02), as music apps tell artists from albums.
+    val shape = if (round) CircleShape else RoundedCornerShape(if (size >= 160.dp) 20.dp else if (size >= 96.dp) 14.dp else 8.dp)
     Box(
         modifier.size(size).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
@@ -85,6 +87,8 @@ fun TrackRow(
     /** The track is in the cache: a small mark before [subtitle], so it plays without coverage. */
     downloaded: Boolean = false,
     onClick: (() -> Unit)? = null,
+    /** An artist's row: round art. */
+    roundArt: Boolean = false,
     trailing: @Composable () -> Unit = {},
 ) {
     Row(
@@ -95,7 +99,7 @@ fun TrackRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Art(art, 52.dp, placeholder = placeholder)
+        Art(art, 52.dp, placeholder = placeholder, round = roundArt)
         Column(Modifier.weight(1f)) {
             Text(
                 title,

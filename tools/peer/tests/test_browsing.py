@@ -8,7 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from motoparty_peer.host import MAX_QUEUE, Host
-from motoparty_peer.music import TrackInfo, album_ref
+from motoparty_peer.music import (ARTIST_ALBUMS, ARTIST_SONGS, VALID_ID, TrackInfo, album_ref, artist_ref,
+                                  browse_artist)
+from motoparty_peer.protocol import ProtocolError, decode_message, encode_message
 
 
 def track(id_, title, album=None, artist="Band"):
@@ -400,3 +402,58 @@ def test_busy_rides_on_state_until_cleared(host):
     assert len(host.sent) == n
     host.set_busy(None)
     assert "busy" not in last_state(host)
+
+
+# ------------------------------------------------------------------ artists (2026-10-02)
+
+ART_LIB = [track("a1", "Alpha", "First"), track("a2", "Beta", "First"), track("o1", "Omega", "Other", artist="Solo"),
+           track("o2", "Psi", artist="Solo"), track("b1", "Gamma", "Second")]
+
+
+def test_search_artists_by_name(host):
+    """PROTOCOL.md "Browsing" 2a: artists are the library's artist names, ref a valid id, artist empty."""
+    host.library = list(ART_LIB)
+    host._browse({"t": "music.search", "id": 1, "kind": "artists", "query": ""})
+    items = host.sent[-1]["items"]
+    assert [(i["title"], i["artist"]) for i in items] == [("Band", ""), ("Solo", "")]
+    assert all(VALID_ID.fullmatch(i["ref"]) and i["ref"] == artist_ref(i["title"]) for i in items)
+    host._browse({"t": "music.search", "id": 2, "kind": "artists", "query": "SOL"})
+    assert [i["title"] for i in host.sent[-1]["items"]] == ["Solo"]
+    host._browse({"t": "music.search", "id": 3, "kind": "artists", "query": "omega"})  # a title is not a name
+    assert host.sent[-1]["items"] == []
+
+
+def test_browse_an_artist_page(host):
+    host.library = list(ART_LIB)
+    host._browse({"t": "music.browse", "id": 4, "ref": artist_ref("Solo"), "kind": "artist"})
+    res = host.sent[-1]
+    assert res["id"] == 4 and "error" not in res
+    assert [i["ref"] for i in res["items"]] == ["o1", "o2"]
+    assert res["albums"] == [{"ref": album_ref("Other"), "title": "Other", "artist": "Solo", "count": 1}]
+    assert encode_message(res)  # a valid music.results
+    host._browse({"t": "music.browse", "id": 5, "ref": artist_ref("Band"), "kind": "artist"})
+    assert [a["title"] for a in host.sent[-1]["albums"]] == ["First", "Second"]
+    # An artist ref is not a collection, and an album ref is not an artist.
+    host._browse({"t": "music.browse", "id": 6, "ref": artist_ref("Solo")})
+    assert host.sent[-1]["error"] and host.sent[-1]["items"] == []
+    host._browse({"t": "music.browse", "id": 7, "ref": album_ref("First"), "kind": "artist"})
+    assert host.sent[-1]["error"] and "albums" not in host.sent[-1]
+    host._browse({"t": "music.browse", "id": 8, "ref": "bad ref!", "kind": "artist"})
+    assert host.sent[-1]["error"] == "Invalid ref"
+
+
+def test_artist_page_is_capped():
+    lib = [track(f"s{i:02}", f"Song {i}", f"Album {i}", artist="Many") for i in range(60)]
+    songs, albums = browse_artist(lib, artist_ref("Many"))
+    assert len(songs) == ARTIST_SONGS and len(albums) == ARTIST_ALBUMS
+    assert songs[0]["ref"] == "s00" and albums[-1]["title"] == "Album 49"
+
+
+def test_browse_kind_and_albums_on_the_wire():
+    assert decode_message(b'{"t":"music.browse","id":1,"ref":"UC1","kind":"artist"}')["kind"] == "artist"
+    assert "kind" not in decode_message(b'{"t":"music.browse","id":1,"ref":"PL1"}')
+    for bad in (b'{"t":"music.browse","id":1,"ref":"UC1","kind":"song"}',
+                b'{"t":"music.results","id":1,"items":[],"albums":[{"ref":"x"}]}',
+                b'{"t":"music.results","id":1,"items":[],"albums":{}}'):
+        with pytest.raises(ProtocolError):
+            decode_message(bad)

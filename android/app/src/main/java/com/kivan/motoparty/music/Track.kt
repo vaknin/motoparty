@@ -27,6 +27,23 @@ data class CollectionItem(
     val art: String? = null,
 )
 
+/** An artist from a search (2026-10-02): [id] is a YouTube channel id (`UC…`). */
+data class ArtistItem(val id: String, val name: String, val art: String? = null)
+
+/**
+ * An artist's page (PROTOCOL.md "Browsing" step 2a): the name and picture from the channel, its
+ * top [songs] (at most [Catalog.ARTIST_SONGS]) and its [albums] and singles (at most
+ * [Catalog.ARTIST_ALBUMS]); either may be empty.
+ */
+data class ArtistPage(
+    val name: String,
+    val art: String?,
+    val songs: List<Track>,
+    val albums: List<CollectionItem>,
+    /** The albums came from a Releases tab, not the album-search fallback (for the log). */
+    val releases: Boolean = false,
+)
+
 /**
  * YouTube video and playlist ids are [A-Za-z0-9_-]; anything else must never reach the file
  * system or a URL.

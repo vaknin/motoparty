@@ -155,12 +155,20 @@ object Codec {
 
     /**
      * PROTOCOL.md "Browsing" step 5: a `music.results` that would not fit loses its per-item
-     * `art` first, then trailing items.
+     * `art` first, then trailing items. An artist page (step 2a, 2026-10-02) loses its trailing
+     * `albums` before any song: the top songs are what the page is played from.
      */
     fun fit(results: MusicResults): MusicResults {
         if (fits(results)) return results
-        var r = results.copy(items = results.items.map { it.copy(art = null) })
-        while (!fits(r)) r = r.copy(items = r.items.dropLast(maxOf(1, r.items.size / 8)))
+        var r = results.copy(
+            items = results.items.map { it.copy(art = null) },
+            albums = results.albums?.map { it.copy(art = null) },
+        )
+        while (!fits(r) && !r.albums.isNullOrEmpty()) {
+            val albums = r.albums!!
+            r = r.copy(albums = albums.dropLast(maxOf(1, albums.size / 8)))
+        }
+        while (!fits(r) && r.items.isNotEmpty()) r = r.copy(items = r.items.dropLast(maxOf(1, r.items.size / 8)))
         return r
     }
 

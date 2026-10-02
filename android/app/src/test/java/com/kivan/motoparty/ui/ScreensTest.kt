@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.kivan.motoparty.ArtistState
 import com.kivan.motoparty.BrowseState
 import com.kivan.motoparty.CallUi
 import com.kivan.motoparty.Diagnostics
@@ -28,6 +29,7 @@ import com.kivan.motoparty.SearchState
 import com.kivan.motoparty.Settings
 import com.kivan.motoparty.core.RepeatMode
 import com.kivan.motoparty.core.SearchKind
+import com.kivan.motoparty.music.ArtistItem
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.DownloadProgress
 import com.kivan.motoparty.music.History
@@ -382,10 +384,12 @@ class ScreensTest {
         playing.copy(
             cached = setOf("id0", "id1"),
             downloads = mapOf("a1" to DownloadProgress(2, 5)),
-            browse = BrowseState(
-                CollectionItem("a1", "The Dark Side of the Moon", "Pink Floyd", 5, "art0"),
-                loading = false,
-                tracks = songs.take(5),
+            browse = listOf(
+                BrowseState(
+                    CollectionItem("a1", "The Dark Side of the Moon", "Pink Floyd", 5, "art0"),
+                    loading = false,
+                    tracks = songs.take(5),
+                ),
             ),
         ),
         Tab.SEARCH,
@@ -395,16 +399,72 @@ class ScreensTest {
     fun album() = shoot(
         "5-album",
         playing.copy(
-            browse = BrowseState(
-                CollectionItem("a1", "The Dark Side of the Moon", "Pink Floyd", 10, "art0"),
-                loading = false,
-                tracks = songs.take(2) + listOf(
-                    track(0, "Us and Them", "Pink Floyd"),
-                    track(0, "Brain Damage", "Pink Floyd"),
-                    track(0, "Eclipse", "Pink Floyd"),
+            browse = listOf(
+                BrowseState(
+                    CollectionItem("a1", "The Dark Side of the Moon", "Pink Floyd", 10, "art0"),
+                    loading = false,
+                    tracks = songs.take(2) + listOf(
+                        track(0, "Us and Them", "Pink Floyd"),
+                        track(0, "Brain Damage", "Pink Floyd"),
+                        track(0, "Eclipse", "Pink Floyd"),
+                    ),
                 ),
             ),
         ),
+        Tab.SEARCH,
+    )
+
+    private val floyd = ArtistItem("UCpf", "Pink Floyd", "art1")
+    private val floydAlbums = listOf(
+        CollectionItem("a1", "The Dark Side of the Moon", "Pink Floyd", 10, "art0"),
+        CollectionItem("a2", "Wish You Were Here", "Pink Floyd", 5, "art2"),
+        CollectionItem("a3", "The Wall", "Pink Floyd", 26, "art5"),
+        CollectionItem("a4", "Hey Hey Rise Up", "Pink Floyd", 2, null),
+    )
+    private val floydPage = ArtistState(floyd, loading = false, songs = songs.take(4), albums = floydAlbums)
+
+    /** Artist results (2026-10-02): round pictures, the Artists chip on. */
+    @Test
+    fun searchArtists() = shoot(
+        "4c-search-artists",
+        playing.copy(
+            search = SearchState(
+                SearchKind.ARTISTS, "pink floyd",
+                artists = listOf(floyd, ArtistItem("UCdg", "David Gilmour", "art3"), ArtistItem("UCrw", "Roger Waters", null)),
+            ),
+        ),
+        Tab.SEARCH,
+    )
+
+    /** An artist's page: picture, Play top songs, the songs, then albums and singles. */
+    @Test
+    fun artist() = shoot("5c-artist", playing.copy(browse = listOf(floydPage)), Tab.SEARCH)
+
+    /** An album opened from the artist's page: Back says where it goes. */
+    @Test
+    fun albumFromArtist() = shoot(
+        "5d-album-from-artist",
+        playing.copy(
+            browse = listOf(
+                floydPage,
+                BrowseState(floydAlbums[0], loading = false, tracks = songs.take(2)),
+            ),
+        ),
+        Tab.SEARCH,
+    )
+
+    /** The Ride screen's artist tap, while the host looks the name up; then nothing found. */
+    @Test
+    fun artistFromRide() = shoot(
+        "5e-artist-from-ride",
+        playing.copy(browse = listOf(ArtistState(ArtistItem("", "Pink Floyd & Friends")))),
+        Tab.SEARCH,
+    )
+
+    @Test
+    fun artistNotFound() = shoot(
+        "5f-artist-not-found",
+        playing.copy(browse = listOf(ArtistState(ArtistItem("", "Nobody"), loading = false, error = "No artist found for “Nobody”"))),
         Tab.SEARCH,
     )
 
