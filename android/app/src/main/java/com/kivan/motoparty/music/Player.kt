@@ -369,11 +369,34 @@ class Player(
             exo.setPlaybackSpeed(v)
         }
 
-    override var volume: Float
-        get() = exo.volume
+    /**
+     * The volume [MusicController] asked for (1, or the talk duck). What ExoPlayer gets is this,
+     * or 0 while [setLocalMute] is on: the two compose, so a duck that ends during a call does not
+     * unmute it, and the unmute restores whatever the duck is by then.
+     */
+    override var volume: Float = 1f
         set(v) {
-            exo.volume = v
+            field = v
+            applyVolume()
         }
+
+    /** The rider's cellular call (2026-10-02): silent here only. Never a pause — see [setLocalMute]. */
+    private var localMute = false
+
+    /**
+     * Silence this phone's music without stopping it. The player keeps running on the shared
+     * timeline, so nothing goes on the wire, the passenger plays on, track ends and gapless
+     * advance happen as usual, and the unmute is already at the live position.
+     */
+    fun setLocalMute(on: Boolean) {
+        if (localMute == on) return
+        localMute = on
+        applyVolume()
+    }
+
+    private fun applyVolume() {
+        exo.volume = if (localMute) 0f else volume
+    }
 
     fun release() {
         context.unregisterReceiver(noisy)

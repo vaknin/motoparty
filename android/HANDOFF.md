@@ -1217,6 +1217,71 @@ On-screen device checklist (nothing here has been seen on the phone):
 7. Bar is empty at the first instant of the next talk (no stale level), in portrait and landscape.
 8. `talk stats` / `capture:` lines: `slowest encode+send` no worse than before the meter.
 
+### Phone calls (2026-10-02) — the rider's cellular calls while riding
+
+Plan Part A1–A6 (`~/.claude/plans/1-yes-2-yes-i-also-elegant-muffin.md`). Built offline,
+**device-unverified** (573 tests / 0 fail / 7 skipped, `assembleRelease` builds). Nothing goes on
+the wire: no protocol change, no `announce`, no `state` field.
+
+- **`audio/CallWatch.kt`**: IDLE / RINGING / OFFHOOK from `TelephonyCallback.CallStateListener`
+  (API 31+, the `ACTION_PHONE_STATE_CHANGED` broadcast below that), the number from the
+  broadcast's `EXTRA_INCOMING_NUMBER` (only with `READ_CALL_LOG`; a caller that beats the RINGING
+  callback is held and reported after it), the name from `PhoneLookup` (`READ_CONTACTS`), and
+  `TelecomManager.acceptRingingCall()` / `endCall()` (`ANSWER_PHONE_CALLS`). All on its own
+  `motoparty-call` thread. Without `READ_PHONE_STATE` it does nothing; `ensureStarted()` runs every
+  second, so a grant mid-ride takes effect. Four new runtime permissions in `MainActivity`, so the
+  Ride permission banner lists them until granted.
+- **`link/CallController.kt`** (pure, `CallControllerTest` 28): ringing → mute here, close the
+  talk (`talk.close{host, unavailable}`, the passenger's normal "mic went away"), start the Lark
+  listen window, announce once the name is known (at most 1.5 s wait, else "Incoming call") and
+  once more 8 s later if still ringing; off-hook → stop listening, stay muted; idle → unmute.
+  Off-hook without a ring = outgoing call: muted, no announcement. Repeated states ignored; only
+  the first answer/decline counts. `CallPhrase.match`: whole words, ≤ 5 words, answer / accept /
+  yes / pick up / take it → answer; decline / reject / ignore / no / hang up / deny → decline;
+  "don't answer" → decline; Hebrew ענה/תענה/קבל/כן and דחה/תדחה/לא/נתק. `CallPhrase.announcement`
+  speaks Hebrew ("שיחה מ…", `he-IL`) when the contact name has Hebrew letters or the ASR language
+  is Hebrew.
+- **Mute**: `Player.setLocalMute` sets ExoPlayer's volume to 0 and composes with the talk duck
+  (`volume` is now the requested value; ExoPlayer gets 0 while muted). Not a pause: the timeline,
+  track ends and gapless advance are unchanged, so the passenger plays on and the unmute is at the
+  live position. `MusicPhase.ON_CALL` is set by `LinkHost.refreshStatus` for the host screen only.
+- **Sounds**: the call announcement is `LinkHost.announceCall` → `mediaSound(ANNOUNCE)`, local
+  only (logs `call announce (local only): …` and `call announce route: assistant -> [...]`). While
+  off-hook or `MODE_IN_CALL`, every media-route sound of this phone is skipped in `playMedia`
+  (`media cue: skipped, phone call in progress`); the client still gets its `announce`.
+- **Listen window**: `LarkEngine.Config.listenOnly` — rider channel to the tee only; no passenger
+  playback, no Opus, no dump, no live beep, no `onCaptureUp`, no `TalkOpen`, no call mode. A
+  second `TalkRecognizer` (`call recognizer`, biased to answer/decline) feeds
+  `CallController.onPhrase` (`heard (call): "…" (accept|reject|ignored)`), never `FirstPhraseGate`.
+  Started/stopped on the audio thread behind the closed talk's teardown; refused (buttons only)
+  with no Lark (card: "Say answer needs the Lark"), no mic permission/FGS type, the USB probe, or
+  API < 33. A capture failure ends it quietly. `micAvailable()` also refuses a talk while
+  `CallController` is not idle (the audio mode can lag the ring).
+- **Ride**: `ui/CallCard.kt` replaces the middle while ringing (name, voice line, Decline red /
+  Answer green, 104 dp) or on a call ("On a call", End call); without `ANSWER_PHONE_CALLS` it says
+  so instead of showing dead buttons. The "Say play · pause…" line is hidden under it.
+  `UiAction.AnswerCall / DeclineCall / EndCall`, `LinkStatus.call` (`CallUi`). Screenshots 2e–2i
+  (`-Pscreenshots`), looked at: portrait, landscape, Hebrew name, on call, no permission.
+
+Device checklist (call the Pixel while music plays and the iPhone is linked):
+
+1. The rider's music goes silent at the first ring; the iPhone keeps playing, no talk/announce on it.
+2. "Call from <name>" is heard in the AirPods over the in-band ring (USAGE_ASSISTANT). If it is
+   inaudible, switch `announceCall` to `call = true` (VOICE_COMMUNICATION) and re-test; note the
+   `call announce route:` line either way. Repeat after 8 s; a Hebrew contact in the Hebrew voice.
+3. `call listen: on "…"` and then `lark: routed …` during `MODE_RINGTONE`: is USB capture allowed
+   while it rings? If not, expect `call listen: capture failed`, and the buttons still work.
+4. "answer" into the Lark answers (`acceptRingingCall` still works on this Android version?),
+   "decline" declines (`endCall`). Talking to oneself does not decline.
+5. Answer / Decline / End with gloves on, portrait and on the handlebar mount.
+6. During the call: no earcons or replies of this phone in the call; the passenger's TALK is
+   refused (`talk.open refused: microphone unavailable`); a talk open at the ring closed.
+7. After hang-up the rider hears the song at the live position, in sync with the iPhone (watch
+   the next `drift` / `trace` lines: if A2DP suspension stalled the player, SyncController should
+   re-seek; if it lags for long, add a `sync.hold()`/`release(cold = true)` around the call).
+8. An outgoing call mutes too; a missed call unmutes; a second call ringing during a call changes
+   nothing.
+
 ## 3. Not done, in priority order
 
 Coordinator spec updates, all implemented: (1) DTX frames not sent, kind-1 = activity,

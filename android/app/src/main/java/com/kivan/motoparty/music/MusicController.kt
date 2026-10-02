@@ -997,6 +997,11 @@ enum class MusicPhase {
     WAITING_CLIENT,
     /** Parked by an open talk: it plays when the talk closes. */
     PAUSED_FOR_TALK,
+    /**
+     * Playing on, silent on this phone only: the rider is on a cellular call (2026-10-02). Set by
+     * the host for its own screen; it is never part of `state`, the passenger hears the music.
+     */
+    ON_CALL,
 }
 
 /** The queue arithmetic of PROTOCOL.md "Browsing", pure so it can be tested without a player. */

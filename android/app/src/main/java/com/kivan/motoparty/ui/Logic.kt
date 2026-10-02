@@ -55,6 +55,7 @@ fun phaseText(phase: MusicPhase, clientName: String?): String = when (phase) {
     MusicPhase.LOADING -> "Downloading song…"
     MusicPhase.WAITING_CLIENT -> "Waiting for ${clientName ?: "the passenger"}…"
     MusicPhase.PAUSED_FOR_TALK -> "Paused for talk — plays when the talk ends"
+    MusicPhase.ON_CALL -> "Muted for your call — ${clientName ?: "the passenger"} keeps listening"
 }
 
 // ---- the microphone meter of a live talk ----

@@ -11,6 +11,7 @@ import android.view.KeyEvent
 import com.kivan.motoparty.audio.AudioModeWatch
 import com.kivan.motoparty.audio.AudioRouter
 import com.kivan.motoparty.audio.AudioThread
+import com.kivan.motoparty.audio.CallWatch
 import com.kivan.motoparty.audio.DeviceWatch
 import com.kivan.motoparty.audio.Earcons
 import com.kivan.motoparty.audio.LarkEngine
@@ -63,6 +64,8 @@ import com.kivan.motoparty.core.VoiceAction
 import com.kivan.motoparty.core.toActions
 import com.kivan.motoparty.core.wireType
 import com.kivan.motoparty.link.BusyLine
+import com.kivan.motoparty.link.CallController
+import com.kivan.motoparty.link.CallPhrase
 import com.kivan.motoparty.link.ClientMusicRequests
 import com.kivan.motoparty.link.ControlServer
 import com.kivan.motoparty.link.DownloadsFeed
@@ -78,6 +81,7 @@ import com.kivan.motoparty.music.DownloadPriority
 import com.kivan.motoparty.music.isValidTrackId
 import com.kivan.motoparty.music.Track
 import com.kivan.motoparty.music.MusicController
+import com.kivan.motoparty.music.MusicPhase
 import com.kivan.motoparty.music.NetworkWatch
 import com.kivan.motoparty.music.Player
 import com.kivan.motoparty.music.RemoteAction
@@ -336,6 +340,54 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private val audioManager = context.getSystemService(AudioManager::class.java)
     /** `AudioManager.getMode()` cached off Main; see [AudioModeWatch] and [micAvailable]. */
     private val audioMode = AudioModeWatch(context)
+
+    // ---- the rider's cellular calls (2026-10-02) ----
+
+    /** The phone's call state and caller, on its own thread; every report hops to Main. */
+    private val callWatch = CallWatch(
+        context,
+        onState = { st -> scope.launch { guarded("call state") { onCallState(st) } } },
+        onCaller = { c -> scope.launch { guarded("caller") { call.onCaller(c) } } },
+        log = Hub::log,
+    )
+    /**
+     * The call rules (see [CallController]): local mute, talk closed, the name spoken here only,
+     * the Lark listen window while it rings. Main only. Nothing of it is ever sent to the client.
+     */
+    private val call: CallController = CallController(
+        clock = clock,
+        muteLocal = { on ->
+            player.setLocalMute(on)
+            refreshStatus()
+        },
+        closeTalk = ::closeTalkForCall,
+        announceLocal = ::announceCall,
+        startListen = ::startCallListen,
+        stopListen = ::stopCallListen,
+        accept = callWatch::accept,
+        reject = callWatch::decline,
+        hangUp = callWatch::hangUp,
+        onChange = ::refreshStatus,
+        log = Hub::log,
+    )
+    /**
+     * "Answer" / "decline" on the Lark while it rings: its own recognizer instance, fed by the
+     * listen-only [lark] session, so a phrase never reaches [phrases] or the commands.
+     */
+    private val callRecognizer = TalkRecognizer(
+        context,
+        attach = { lark.tee = it },
+        onPhrase = ::onCallPhrase,
+        log = Hub::log,
+        biasing = TalkRecognizer.CALL_BIASING,
+        name = "call recognizer",
+    )
+    /** Bumped on every listen start and stop; a late failure or phrase of an older one is dropped. Main. */
+    private var listenSession = 0
+    /** What the call card says about the voice answer. Main only. */
+    private var callVoice = CallUi.Voice.OFF
+    /** Ticks [call] while it is not idle (the name wait, the repeat). Main only. */
+    private var callTicker: Job? = null
     /**
      * Is call audio really flowing over the Bluetooth link? Cached off Main: the other half of the
      * live earcon's truth. Since F8 that is the framework's communication device, not a broadcast.
@@ -390,6 +442,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             }
         }
         audioMode.start()
+        callWatch.ensureStarted()
         sco.start()
         devices.start()
         Hub.log("host up as \"$deviceName\"")
@@ -416,6 +469,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         scope.launch {
             while (isActive) {
                 refreshStatus()
+                // A phone permission granted mid-ride starts the call watch.
+                callWatch.ensureStarted()
                 delay(1000)
             }
         }
@@ -431,6 +486,9 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         trackServer.stop()
         discovery.stop()
         recognizer.stop()
+        callRecognizer.stop()
+        callTicker?.cancel()
+        callWatch.stop()
         // Behind whatever talk teardown is still queued, then the thread retires. exitAll: a
         // route-back still queued behind the shutdown would be dropped, so do it here.
         audio.post("shutdown") {
@@ -886,6 +944,164 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
+    // ---- the rider's cellular calls (2026-10-02) ----
+
+    /** [CallWatch]'s state, on Main. The ticker runs while the phone rings or is on a call. */
+    private fun onCallState(st: CallController.State) {
+        when (st) {
+            CallController.State.RINGING -> call.onRinging()
+            CallController.State.OFFHOOK -> call.onOffhook()
+            CallController.State.IDLE -> call.onIdle()
+        }
+        if (call.state == CallController.State.IDLE) {
+            callTicker?.cancel()
+            callTicker = null
+        } else if (callTicker == null) {
+            callTicker = scope.launch {
+                while (isActive) {
+                    delay(CALL_TICK_MS)
+                    call.tick()
+                }
+            }
+        }
+    }
+
+    /**
+     * The phone rings, or an outgoing call went off-hook: the open talk closes as
+     * `talk.close{by:"host", reason:"unavailable"}` — the passenger's normal "the rider's mic went
+     * away" — and none opens until the call is over ([micAvailable]). The passenger is never told
+     * why: the rider's call is the rider's.
+     */
+    private fun closeTalkForCall() {
+        if (!talk.isOpen) return
+        Hub.log("talk closed: phone call")
+        talk.onMicFailure()?.let(::applyTalk)
+    }
+
+    /**
+     * "Call from Dana", on this phone only — never an `announce` to the client (the local-only
+     * precedent is [onVolumeCommand]). A media-route sound like every reply, so it waits for the
+     * talk the ring just closed to give the route back (F9b). Hebrew names use the Hebrew voice
+     * ([CallPhrase.announcement]).
+     *
+     * Device-unknown: the AirPods ring in-band over HFP, and whether `USAGE_ASSISTANT` speech is
+     * heard over that ring is for the device run; the line below says where it was routed.
+     */
+    private fun announceCall(caller: CallController.Caller?) {
+        val (text, language) = CallPhrase.announcement(caller, settings.value.asrLanguage)
+        mediaSound(MediaCue.Kind.ANNOUNCE) { announcer.announce(text, null, language) }
+        Hub.log("call announce (local only): \"$text\" ($language)")
+        audio.post("call announce route") {
+            val where = if (Build.VERSION.SDK_INT >= 33) {
+                val attrs = android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_ASSISTANT).build()
+                audioManager.getAudioDevicesForAttributes(attrs).joinToString { com.kivan.motoparty.audio.ScoRule.describe(it.type) }
+            } else {
+                "?"
+            }
+            Hub.log("call announce route: assistant -> [$where], mode ${audioMode.mode}")
+        }
+    }
+
+    /**
+     * Open the ring's listen window on the Lark: the rider's channel to [callRecognizer], nothing
+     * played, nothing sent, no `talk.open`, no call mode. It skips [micAvailable] on purpose (the
+     * ring is exactly what that refuses) but keeps its other conditions. No Lark, or anything
+     * else missing, leaves the buttons; a capture that fails later ends the window quietly.
+     */
+    private fun startCallListen() {
+        val session = ++listenSession
+        val mic = TalkMic.choose(devices.devices, settings.value.larkTalk) as? TalkMic.Lark
+        val why = when {
+            mic == null -> "no Lark receiver"
+            !hasMic() -> "RECORD_AUDIO not granted"
+            !Hub.micFgsType -> "service has no microphone type"
+            usbProbe.isRunning -> "usb probe running"
+            Build.VERSION.SDK_INT < 33 -> "recognizer needs Android 13"
+            else -> null
+        }
+        if (why != null) {
+            callVoice = if (mic == null) CallUi.Voice.NO_LARK else CallUi.Voice.OFF
+            Hub.log("call listen: off ($why), buttons only")
+            return
+        }
+        mic as TalkMic.Lark
+        callVoice = CallUi.Voice.LISTENING
+        val cfg = LarkEngine.Config(mic.id, mic.name, settings.value.larkSwap, listenOnly = true)
+        // On the audio thread, behind the teardown of the talk the ring just closed.
+        audio.post("call listen") {
+            if (lark.isRunning) {
+                scope.launch { onListenFailed(session, "the Lark is still in use") }
+                return@post
+            }
+            lark.config = cfg
+            larkListening = true
+            lark.start { what, e -> scope.launch { onListenFailed(session, "$what: ${e.message}") } }
+        }
+        callRecognizer.start(session, settings.value.asrLanguage)
+        Hub.log("call listen: on \"${mic.name}\" (${if (cfg.swap) "right" else "left"}, rider), say answer or decline")
+    }
+
+    /** Close the listen window (answered, declined, rang out). Idempotent. */
+    private fun stopCallListen() {
+        listenSession++
+        callVoice = CallUi.Voice.OFF
+        callRecognizer.stop()
+        audio.post("call listen stop") {
+            if (larkListening) {
+                larkListening = false
+                lark.stop()
+            }
+        }
+    }
+
+    /** Set and read on the audio thread only: the [lark] session running is the listen window's. */
+    private var larkListening = false
+
+    /** The listen capture failed: no voice answer for this ring, the buttons stay. Main. */
+    private fun onListenFailed(session: Int, why: String) {
+        if (session != listenSession) return
+        Hub.log("call listen: capture failed ($why), buttons only")
+        listenSession++
+        callVoice = CallUi.Voice.OFF
+        callRecognizer.stop()
+        audio.post("call listen stop") {
+            if (larkListening) {
+                larkListening = false
+                lark.stop()
+            }
+        }
+        refreshStatus()
+    }
+
+    /** A phrase heard on the Lark while it rings. Never a command, never conversation on the wire. */
+    private fun onCallPhrase(session: Int, text: String) {
+        if (session != listenSession) {
+            Hub.log("heard (call): \"$text\" (after the window, ignored)")
+            return
+        }
+        val d = call.onPhrase(text)
+        Hub.log("heard (call): \"$text\" (${d?.name?.lowercase() ?: "ignored"})")
+    }
+
+    /** The call card for the Ride tab, or null. */
+    private fun callUi(): CallUi? = when (call.state) {
+        CallController.State.IDLE -> null
+        CallController.State.RINGING -> CallUi(false, CallPhrase.label(call.caller), callWatch.canAnswer, callVoice)
+        CallController.State.OFFHOOK -> CallUi(
+            true,
+            if (call.outgoing && call.caller == null) null else CallPhrase.label(call.caller),
+            callWatch.canAnswer,
+            CallUi.Voice.OFF,
+        )
+    }
+
+    /**
+     * No sound of ours on this phone during a cellular call: it would play into the rider's call.
+     * Off-hook by our own reckoning, or the audio mode says a call holds the audio.
+     */
+    private val inCall: Boolean
+        get() = call.state == CallController.State.OFFHOOK || audioMode.mode == AudioManager.MODE_IN_CALL
+
     // ---- sounds on the media route (F9b) ----
 
     /**
@@ -949,6 +1165,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      */
     private fun playMedia(p: MediaCue.Play, play: () -> Unit) {
         Hub.log(p.line())
+        // During the rider's cellular call (2026-10-02) the sound would play into the call. The
+        // client was told already ([announce] sends first); only this phone stays quiet.
+        if (inCall) {
+            Hub.log("media cue: skipped, phone call in progress")
+            return
+        }
         play()
     }
 
@@ -1603,6 +1825,9 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 talk.isOpen -> Hub.log("usb probe: not during a talk")
                 !usbProbe.start() -> Hub.log("usb probe: already running")
             }
+            is UiAction.AnswerCall -> call.answer()
+            is UiAction.DeclineCall -> call.decline()
+            is UiAction.EndCall -> call.end()
             is UiAction.LongRecording -> when {
                 Hub.status.value.longRecording -> usbProbe.stopLong()
                 talk.isOpen -> Hub.log("usb probe: not during a talk")
@@ -1763,13 +1988,15 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 talkOnEarbudsFallback = talk.isOpen && talkOnEarbudsFallback,
                 nowPlaying = music.current,
                 playing = music.isPlaying,
-                musicPhase = music.phase,
+                // Host-only: the passenger's `state` never says the rider is on a call.
+                musicPhase = if (call.muted && music.current != null) MusicPhase.ON_CALL else music.phase,
                 // The anchor, not a position: equal from one second to the next, so an idle
                 // second changes nothing here and the screens stay as they are (UA4).
                 anchor = sync.anchor?.let { a -> PlaybackAnchor(a.positionMs, a.atHostTimeMs, a.playing) },
                 queue = music.upcoming,
                 repeat = music.repeat,
                 outputRoute = outputRoute,
+                call = callUi(),
             )
         }
         Hub.diagnostics.value = Diagnostics(
@@ -1821,7 +2048,9 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             Hub.log("microphone unavailable: service has no microphone type")
             return false
         }
-        if (audioMode.inPhoneCall) {
+        // Our own call state as well as the mode: the mode can lag the ring by up to a second,
+        // and the ring's Lark listen window must not meet a talk (2026-10-02).
+        if (audioMode.inPhoneCall || call.state != CallController.State.IDLE) {
             Hub.log("microphone unavailable: phone call in progress")
             return false
         }
@@ -1859,6 +2088,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
          * `enterCall`; past it the re-open is the backstop, and the live cue's 3.5 s fallback runs.
          */
         private const val CAPTURE_SCO_WAIT_MS = 2_500L
+        /** How often [CallController.tick] runs while the phone rings or is on a call. */
+        private const val CALL_TICK_MS = 250L
         /** 48 kHz stereo 16-bit is 192 kB/s: ~35 min per host-mic talk dump. */
         private const val LARK_DUMP_MAX_BYTES = 400L * 1024 * 1024
     }

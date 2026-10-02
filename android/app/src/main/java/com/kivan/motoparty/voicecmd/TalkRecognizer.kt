@@ -43,6 +43,13 @@ class TalkRecognizer(
     /** One recognised phrase of talk [session]; may arrive shortly after [stop] (the last one). */
     private val onPhrase: (session: Int, text: String) -> Unit,
     private val log: (String) -> Unit,
+    /**
+     * The words to bias toward. The talk's commands by default; the ring's listen window
+     * (2026-10-02) passes "answer" / "decline" and friends.
+     */
+    private val biasing: ArrayList<String> = BIASING,
+    /** The start of every log line, so the ring's recognizer is told apart from the talk's. */
+    private val name: String = "talk recognizer",
 ) {
     private val main = Handler(Looper.getMainLooper())
     /** The talk being listened to; 0 = none. */
@@ -58,7 +65,7 @@ class TalkRecognizer(
         if (this.session == session) return
         stop()
         if (Build.VERSION.SDK_INT < 33) {
-            if (!warnedOld) log("talk recognizer: needs Android 13 (API ${Build.VERSION.SDK_INT}); talks run without spoken commands")
+            if (!warnedOld) log("$name: needs Android 13 (API ${Build.VERSION.SDK_INT}); talks run without spoken commands")
             warnedOld = true
             return
         }
@@ -85,18 +92,18 @@ class TalkRecognizer(
     private fun begin() {
         val onDevice = !useDefault && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
         if (!onDevice && !SpeechRecognizer.isRecognitionAvailable(context)) {
-            log("talk recognizer: no recognition service; talks run without spoken commands")
+            log("$name: no recognition service; talks run without spoken commands")
             return
         }
         val a = try {
             Attempt(session, onDevice)
         } catch (e: Exception) {
-            log("talk recognizer: could not start: $e")
+            log("$name: could not start: $e")
             return
         }
         attempt = a
         attach(a.tee)
-        log("talk recognizer: listening (${if (onDevice) "on-device" else "default service"}, session $session)")
+        log("$name: listening (${if (onDevice) "on-device" else "default service"}, session $session)")
     }
 
     /** [a] ended on its own (an error, or the recognizer closed the session). */
@@ -108,7 +115,7 @@ class TalkRecognizer(
         a.destroy()
         if (a.session != session) return
         if (error != null && a.onDevice && error in FALLBACK_ERRORS) {
-            log("talk recognizer: on-device refused (${errorName(error)}); trying the default service")
+            log("$name: on-device refused (${errorName(error)}); trying the default service")
             useDefault = true
             begin()
             return
@@ -117,7 +124,7 @@ class TalkRecognizer(
         // quick failures is a recognizer that will not work this talk.
         quickFailures = if (SystemClock.elapsedRealtime() - a.startedAtMs >= QUICK_MS) 0 else quickFailures + 1
         if (quickFailures >= MAX_QUICK_FAILURES) {
-            log("talk recognizer: failed $quickFailures times in a row; no spoken commands for this talk")
+            log("$name: failed $quickFailures times in a row; no spoken commands for this talk")
             return
         }
         main.postAtTime({ if (session == a.session && attempt == null) begin() }, RETRY, SystemClock.uptimeMillis() + RETRY_MS)
@@ -164,7 +171,7 @@ class TalkRecognizer(
             tee.close()
             runCatching { recognizer.destroy() }
             runCatching { readEnd.close() }
-            log("talk recognizer: done, $segments phrase(s), ${tee.line()}")
+            log("$name: done, $segments phrase(s), ${tee.line()}")
         }
 
         private fun phrase(results: Bundle?) {
@@ -189,7 +196,7 @@ class TalkRecognizer(
 
         override fun onError(error: Int) {
             if (attempt === this) {
-                log("talk recognizer: ${errorName(error)} ($error)")
+                log("$name: ${errorName(error)} ($error)")
                 ended(this, error)
             } else {
                 destroy()
@@ -217,7 +224,7 @@ class TalkRecognizer(
         putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
         putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, VoiceEngine.RATE)
         putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_AUDIO_SOURCE)
-        putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, BIASING)
+        putStringArrayListExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, biasing)
     }
 
     private fun errorName(error: Int): String = when (error) {
@@ -236,19 +243,21 @@ class TalkRecognizer(
         else -> "error"
     }
 
-    private companion object {
+    companion object {
         /** How long a closed session may take to deliver its last phrase before it is destroyed. */
-        const val GRACE_MS = 3_000L
-        const val RETRY_MS = 500L
-        const val QUICK_MS = 2_000L
-        const val MAX_QUICK_FAILURES = 3
+        private const val GRACE_MS = 3_000L
+        private const val RETRY_MS = 500L
+        private const val QUICK_MS = 2_000L
+        private const val MAX_QUICK_FAILURES = 3
         /** Token for the pending retry, so [stop] can cancel it. */
-        val RETRY = Any()
-        val BIASING = arrayListOf(
+        private val RETRY = Any()
+        private val BIASING = arrayListOf(
             "play", "pause", "resume", "next", "previous", "skip",
             "volume up", "volume down", "over", "end talk", "hang up",
         )
-        val FALLBACK_ERRORS = setOf(
+        /** The ring's listen window: what the rider says to answer or decline (2026-10-02). */
+        val CALL_BIASING = arrayListOf("answer", "decline", "pick up", "reject", "ignore", "yes", "no", "hang up")
+        private val FALLBACK_ERRORS = setOf(
             SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
             SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE,
             SpeechRecognizer.ERROR_CLIENT,
