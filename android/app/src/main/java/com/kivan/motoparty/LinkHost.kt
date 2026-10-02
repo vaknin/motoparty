@@ -46,10 +46,7 @@ import com.kivan.motoparty.core.Message
 import com.kivan.motoparty.core.MusicBrowse
 import com.kivan.motoparty.core.MusicControl
 import com.kivan.motoparty.core.MusicEdit
-import com.kivan.motoparty.core.DownloadItem
-import com.kivan.motoparty.core.DownloadOp
 import com.kivan.motoparty.core.MusicDownload
-import com.kivan.motoparty.core.MusicDownloads
 import com.kivan.motoparty.core.MusicEnqueue
 import com.kivan.motoparty.core.MusicResults
 import com.kivan.motoparty.core.MusicSearch
@@ -57,7 +54,6 @@ import com.kivan.motoparty.core.ResultItem
 import com.kivan.motoparty.core.MusicError
 import com.kivan.motoparty.core.MusicReady
 import com.kivan.motoparty.core.QueueItem
-import com.kivan.motoparty.core.RepeatMode
 import com.kivan.motoparty.core.Role
 import com.kivan.motoparty.core.SearchKind
 import com.kivan.motoparty.core.State
@@ -66,7 +62,10 @@ import com.kivan.motoparty.core.TalkOpen
 import com.kivan.motoparty.core.VoiceAction
 import com.kivan.motoparty.core.toActions
 import com.kivan.motoparty.core.wireType
+import com.kivan.motoparty.link.BusyLine
+import com.kivan.motoparty.link.ClientMusicRequests
 import com.kivan.motoparty.link.ControlServer
+import com.kivan.motoparty.link.DownloadsFeed
 import com.kivan.motoparty.link.Discovery
 import com.kivan.motoparty.link.StateFit
 import com.kivan.motoparty.link.TalkController
@@ -74,7 +73,6 @@ import com.kivan.motoparty.link.onClientJoined
 import com.kivan.motoparty.link.VoiceSocket
 import com.kivan.motoparty.music.Catalog
 import com.kivan.motoparty.music.CollectionDownloads
-import com.kivan.motoparty.music.QueueEdits
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.DownloadPriority
 import com.kivan.motoparty.music.isValidTrackId
@@ -191,15 +189,21 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         ),
     )
     /** The Search tab's album/playlist Download button: whole collections into the active cache. */
-    private val downloads = CollectionDownloads(
+    private val downloads: CollectionDownloads = CollectionDownloads(
         scope,
         ensure = { caches.ensure(it, DownloadPriority.COLLECTION) },
         cached = { caches.cached(it) },
         onProgress = { p ->
             Hub.status.update { it.copy(downloads = p) }
-            pushDownloads()
+            downloadsFeed.push()
         },
         log = Hub::log,
+    )
+    /** `music.downloads` to the client: on its hello, on any progress and after every cache change. */
+    private val downloadsFeed: DownloadsFeed = DownloadsFeed(
+        cached = { caches.active.ids() },
+        downloads = { downloads.current },
+        send = { control.send(it) },
     )
     private val player: Player = Player(
         context, ::onMediaKey, ::onRemoteControl,
@@ -469,37 +473,14 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             // PROTOCOL.md "state": only while the open talk is a host-mic one, so a client that
             // joins mid-talk opens it receive-only too.
             mic = if (larkTalk) Mic.HOST else null,
-            busy = busy,
+            busy = busy.text,
         ),
     )
 
     /** The status line's "Searching …" while a voice command's search runs: on both screens. */
-    private var busy: String? = null
-
-    private fun setBusy(text: String?) {
-        if (text == busy) return
-        busy = text
+    private val busy: BusyLine = BusyLine { text ->
         Hub.status.update { it.copy(busy = text) }
         pushState()
-    }
-
-    /** The last `music.downloads` sent, so an unchanged one is not sent again. */
-    private var lastDownloads: MusicDownloads? = null
-
-    /**
-     * PROTOCOL.md "Browsing" step 6: the cached ids and every collection's progress, to the client
-     * when either changed (or to a client that just said `hello`, with [force]). Main.
-     */
-    private fun pushDownloads(force: Boolean = false) {
-        val m = Codec.fit(
-            MusicDownloads(
-                cached = caches.active.ids().sorted(),
-                downloads = downloads.current.map { (ref, p) -> DownloadItem(ref, p.done, p.total, p.failed, p.running) },
-            ),
-        )
-        if (!force && m == lastDownloads) return
-        lastDownloads = m
-        control.send(m)
     }
 
     /**
@@ -552,7 +533,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                     Hub.status.update { it.copy(commandWindow = false) }
                 }
                 music.onClientConnected()
-                pushDownloads(force = true)
+                downloadsFeed.push(force = true)
             }
             is ControlServer.Event.ClientGone -> {
                 Hub.log("client gone: ${e.reason}")
@@ -572,7 +553,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is TalkClose -> onClientTalkClose(m.reason)
             is MusicReady -> music.onClientReady(m.id)
             is MusicError -> music.onClientError(m.id, m.message)
-            is MusicControl -> onMusicControl(m.action, "client", m.mode)
+            is MusicControl -> requests.control(m.action, "client", m.mode)
             is CommandText -> onClientCommand(m.text)
             is MusicSearch -> onClientSearch(m.id) {
                 if (m.kind == SearchKind.SONGS) {
@@ -589,7 +570,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             }
             is MusicEnqueue -> onClientEnqueue(m)
             is MusicEdit -> onClientEdit(m)
-            is MusicDownload -> onClientDownload(m)
+            is MusicDownload -> requests.download(m)
             is Bye -> Unit // the server closes the connection and reports ClientGone
             else -> Unit // unknown or host-to-client types: ignored per PROTOCOL.md
         }
@@ -1308,15 +1289,9 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
         val searches = (firstSearch until actions.size).filter { actions[it].searches }
         val found = searches.associateWith { i -> scope.async { search(actions[i]) } }
-        if (searches.isNotEmpty()) {
-            setBusy("Searching ${searches.joinToString(", ") { what(actions[it]) }}")
-        }
         scope.launch {
-            try {
-                found.values.forEach { it.join() }
-            } finally {
-                if (searches.isNotEmpty()) setBusy(null)
-            }
+            // Main.immediate: the line is up before execute returns.
+            busy.whileSearching("Searching ${searches.joinToString(", ") { what(actions[it]) }}", found.values)
             // The music and the reply come after the headset is back in media mode.
             closed?.join()
             for (i in actions.indices) {
@@ -1505,22 +1480,17 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
-    /**
-     * [mode] is the `repeat` action's mode (PROTOCOL.md "Repeat by touch"): set like our own
-     * repeat button ([UiAction.Repeat]), so it leaves the voice undo alone.
-     */
-    private fun onMusicControl(action: String, from: String, mode: String? = null) {
-        Hub.log("music control $action${mode?.let { " $it" } ?: ""} from $from")
-        // Values outside this set (and a repeat without a mode) never get here: the codec drops
-        // them as malformed.
-        when (action) {
-            ControlAction.PAUSE -> music.pause()
-            ControlAction.RESUME -> music.resume()
-            ControlAction.NEXT -> music.next()
-            ControlAction.PREVIOUS -> music.previous()
-            ControlAction.REPEAT -> RepeatMode.of(mode)?.let(music::setRepeat)
-        }
-    }
+    /** `music.control` and `music.download`; a `repeat` is set like our own button ([UiAction.Repeat]). */
+    private val requests: ClientMusicRequests = ClientMusicRequests(
+        pause = { music.pause() },
+        resume = { music.resume() },
+        next = { music.next() },
+        previous = { music.previous() },
+        setRepeat = { music.setRepeat(it) },
+        startDownload = { ref, ids -> downloads.start(ref, ids) },
+        cancelDownload = { downloads.cancel(it) },
+        log = Hub::log,
+    )
 
     /**
      * Play/pause/next/previous from an outside controller (KDE Connect, lock screen, watch): a
@@ -1528,7 +1498,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * one spoke.
      */
     private fun onRemoteControl(action: RemoteAction) {
-        onMusicControl(
+        requests.control(
             when (action) {
                 RemoteAction.PAUSE -> ControlAction.PAUSE
                 RemoteAction.RESUME -> ControlAction.RESUME
@@ -1628,7 +1598,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is UiAction.Download -> downloads.start(a.collection.id, a.tracks.map { it.id })
             is UiAction.CancelDownload -> downloads.cancel(a.collectionId)
             is UiAction.Command -> submitCommand(a.text)
-            is UiAction.Control -> onMusicControl(a.action, "ui")
+            is UiAction.Control -> requests.control(a.action, "ui")
             is UiAction.UsbStereoProbe -> when {
                 talk.isOpen -> Hub.log("usb probe: not during a talk")
                 !usbProbe.start() -> Hub.log("usb probe: already running")
@@ -1731,22 +1701,6 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         if (!applied) Hub.log("client edit ${m.op} ${m.index} ignored: the queue changed")
     }
 
-    /**
-     * PROTOCOL.md "Browsing" step 6: the client's Download button, through the same
-     * [CollectionDownloads] as ours, keyed by the collection's ref. Progress and the marks go
-     * back in `music.downloads` ([pushDownloads]).
-     */
-    private fun onClientDownload(m: MusicDownload) {
-        if (!isValidTrackId(m.ref)) return Hub.log("client download: bad ref ignored")
-        when (m.op) {
-            DownloadOp.STOP -> downloads.cancel(m.ref)
-            DownloadOp.START -> {
-                val ids = m.ids.orEmpty().filter(::isValidTrackId).distinct().take(QueueEdits.MAX_UPCOMING)
-                if (ids.isEmpty()) Hub.log("client download ${m.ref}: no valid ids") else downloads.start(m.ref, ids)
-            }
-        }
-    }
-
     // ---- play by touch (PROTOCOL.md "Browsing" step 3) ----
 
     /** An enqueue from either screen; a `now` one is a play by touch, which ends an open talk. */
@@ -1787,7 +1741,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     private fun refreshCached() {
         val ids = caches.active.ids()
         Hub.status.update { if (it.cached == ids) it else it.copy(cached = ids) }
-        pushDownloads()
+        downloadsFeed.push()
     }
 
     /** The cache [refreshCached] last listed: the Opus one until a client cannot decode it. */

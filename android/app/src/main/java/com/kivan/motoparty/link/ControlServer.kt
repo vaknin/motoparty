@@ -14,6 +14,7 @@ import com.kivan.motoparty.core.ProtocolException
 import com.kivan.motoparty.core.Role
 import com.kivan.motoparty.core.UnknownMessage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -140,8 +141,15 @@ class ControlServer(
         @Volatile private var closed = false
         /** Set on its first client `hello`; until then this is a probe. */
         @Volatile private var hello = false
-        private val jobs = mutableListOf<Job>()
-        private lateinit var writer: Job
+        // Created before any of them runs and never changed: a probe that is gone at once is
+        // closed by its reader while [start] is still going, and [close] must see every job
+        // (a growing list here threw ConcurrentModificationException in [close], which then
+        // never closed the socket or logged the probe).
+        private val writer: Job = drain.launch(start = CoroutineStart.LAZY) { writeLoop() }
+        private val jobs: List<Job> = listOf(
+            scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { readLoop() },
+            scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { watchdog() },
+        )
 
         fun start() {
             conns += this
@@ -149,9 +157,8 @@ class ControlServer(
             // CS5 (voice is EF): control and its clock pings go ahead of best-effort traffic on
             // the hotspot's WMM queues. A hint only; a stack that refuses it changes nothing.
             runCatching { socket.trafficClass = TRAFFIC_CLASS }
-            writer = drain.launch { writeLoop() }
-            jobs += scope.launch(Dispatchers.IO) { readLoop() }
-            jobs += scope.launch(Dispatchers.IO) { watchdog() }
+            writer.start()
+            jobs.forEach { it.start() }
             send(hostHello())
             send(stateNow())
         }
