@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import load_fixture
+from motoparty_peer.protocol import PLAY_LEAD_MS, RESUME_LEAD_MS
 
 PEER_DIR = Path(__file__).resolve().parents[1]
 
@@ -106,6 +107,32 @@ def start_pair(tmp_path, track, *client_args, host_extra=()):
     return host, client, (cp, vp, hp)
 
 
+# The client's log line for a music.play: position, the host time, that time on the local clock
+# and how long until then.
+PLAY_LINE = r"music: play \S+ from (\d+) ms at host (\d+) = local ([\d.]+) \(in (\d+) ms\)"
+
+
+def play_wait(m: re.Match, lead_ms: int) -> int:
+    """The wait in a PLAY_LINE match, checked against the lead the host stamped it with. Host and
+    client share one clock, so the host sent it no later than the client's now: the wait is at
+    most `lead_ms`, plus the clock estimate's own error (local - host, a few ms either way, more
+    under load) and the log's rounding. A fixed `<= lead_ms` failed whenever the estimate was a
+    millisecond behind."""
+    wait = int(m.group(4))
+    assert wait <= lead_ms + max(0.0, float(m.group(3)) - int(m.group(2))) + 1, m.group(0)
+    return wait
+
+
+def joined(host: Proc, client: Proc) -> None:
+    """Wait until the host has made `client` *the* client. The `<< hello` the client prints is the
+    host's, sent on connect before the client's own hello has arrived, so a host stdin command
+    sent after it alone can still find no client: a host `talk` then opens a solo talk and the
+    client never sees its talk.open. Client commands need none of this: they follow the client's
+    hello on the same socket."""
+    client.msg("<<", "hello")
+    host.expect(r"client '[^']*' at \S+ is now the client")
+
+
 def _open_talk(client) -> None:
     client.send("talk")
     client.msg("<<", "talk.open")
@@ -173,9 +200,10 @@ def test_full_session(tmp_path, track):
         assert client.msg(">>", "music.ready") == {"t": "music.ready", "id": load["id"]}
         play = client.msg("<<", "music.play")
         assert play["id"] == load["id"] and play["positionMs"] == 0
-        m = client.expect(r"music: play \S+ from 0 ms at host (\d+) = local ([\d.]+) \(in (\d+) ms\)")
-        assert abs(float(m.group(2)) - int(m.group(1))) <= 5  # offset ~ 0 on localhost
-        assert 150 <= int(m.group(3)) <= 300
+        m = client.expect(PLAY_LINE)
+        assert m.group(1) == "0"
+        assert abs(float(m.group(3)) - int(m.group(2))) <= 5  # offset ~ 0 on localhost
+        assert 150 <= play_wait(m, PLAY_LEAD_MS)
         host.expect(r'http: 127\.0\.0\.1 "GET /track/\S+ HTTP/1.1" 200')
         host.expect(r"music: client ready after \d+ ms")
         state = client.msg("<<", "state")
@@ -206,8 +234,7 @@ def test_full_session(tmp_path, track):
         client.msg("<<", "talk.close")
         resume = client.msg("<<", "music.play")
         assert resume["positionMs"] == st["music"]["positionMs"]
-        m = client.expect(r"music: play \S+ from \d+ ms at host \d+ = local [\d.]+ \(in (\d+) ms\)")
-        assert 1300 <= int(m.group(1)) <= 1500
+        assert 1300 <= play_wait(client.expect(PLAY_LINE), RESUME_LEAD_MS)
 
         # music.control from the client
         client.send("pause")
@@ -319,7 +346,7 @@ def test_host_refuses_talk_when_its_mic_is_unavailable(tmp_path):
 def test_client_refuses_talk_when_its_mic_is_unavailable(tmp_path):
     host, client, _ = start_pair(tmp_path, None, "--mic-unavailable")
     try:
-        client.msg("<<", "hello")
+        joined(host, client)
         host.send("talk")  # host-triggered talk; the client cannot open its mic
         assert client.msg("<<", "talk.open") == {"t": "talk.open", "by": "host"}
         client.expect("MIC UNAVAILABLE: refusing talk")
@@ -434,7 +461,7 @@ def test_host_opened_talk(tmp_path):
     """A talk the host opened: the client never commands, the host's own first phrase does."""
     host, client, _ = start_pair(tmp_path, None)
     try:
-        client.msg("<<", "hello")
+        joined(host, client)
         host.send("talk")
         assert client.msg("<<", "talk.open") == {"t": "talk.open", "by": "host"}
         client.send("hear pause")
@@ -545,8 +572,7 @@ def test_spoken_resume_ends_the_talk_and_music_follows(tmp_path, track):
         assert client.msg("<<", "talk.close") == {"t": "talk.close", "by": "client", "reason": "trigger"}
         play = client.msg("<<", "music.play")
         assert play["id"] == load["id"]
-        m = client.expect(r"music: play \S+ from \d+ ms at host \d+ = local [\d.]+ \(in (\d+) ms\)")
-        assert 1300 <= int(m.group(1)) <= 1510  # the clock estimate may be a millisecond off
+        assert 1300 <= play_wait(client.expect(PLAY_LINE), RESUME_LEAD_MS)
         assert client.msg("<<", "state")["talk"] is False
         with pytest.raises(AssertionError):  # the music is the acknowledgement
             client.msg("<<", "announce", timeout=1)
