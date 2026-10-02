@@ -172,6 +172,50 @@
    "error": "No coverage"
   },
   {
+   "t": "music.search",
+   "id": 7,
+   "kind": "artists",
+   "query": "pink floyd"
+  },
+  {
+   "t": "music.browse",
+   "id": 8,
+   "ref": "UCY2qt3dw2TQJxvBrDiYGHdQ",
+   "kind": "artist"
+  },
+  {
+   "t": "music.results",
+   "id": 7,
+   "items": [
+    {
+     "ref": "UCY2qt3dw2TQJxvBrDiYGHdQ",
+     "title": "Pink Floyd",
+     "artist": "",
+     "art": "https://lh3.googleusercontent.com/pf=w544-h544"
+    }
+   ]
+  },
+  {
+   "t": "music.results",
+   "id": 8,
+   "items": [
+    {
+     "ref": "_FrOQC-zEog",
+     "title": "Comfortably Numb",
+     "artist": "Pink Floyd",
+     "durationMs": 382000
+    }
+   ],
+   "albums": [
+    {
+     "ref": "OLAK5uy_nMr9h2VlS-2PULNz3M3XVXQj_P3C2bqaY",
+     "title": "The Dark Side of the Moon",
+     "artist": "Pink Floyd",
+     "count": 10
+    }
+   ]
+  },
+  {
    "t": "music.enqueue",
    "mode": "now",
    "tracks": [

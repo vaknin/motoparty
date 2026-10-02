@@ -89,9 +89,9 @@ catches up.
 | `music.stop`    | H→C   | (nothing) |
 | `music.control` | C→H   | `action`: `"pause"`\|`"resume"`\|`"next"`\|`"previous"`\|`"repeat"` (button presses on the client; volume is local, see Commands), `mode` (required for `"repeat"`, 2026-10-01): `"off"`\|`"track"`\|`"queue"`, the repeat mode to set. See "Repeat by touch" |
 | `command.text`  | C→H   | `text`: the recognised command, the first phrase of a talk the client opened (see Commands), `lang`: BCP-47 tag |
-| `music.search`  | C→H   | `id`: int (request id), `kind`: `"songs"`\|`"albums"`\|`"playlists"`, `query`: string. See Browsing |
-| `music.browse`  | C→H   | `id`: int, `ref`: string — the `ref` of an album or playlist result |
-| `music.results` | H→C   | `id` (echoed), `items`: array of result items, `error` (optional): string to show instead of an empty list |
+| `music.search`  | C→H   | `id`: int (request id), `kind`: `"songs"`\|`"albums"`\|`"playlists"`\|`"artists"` (`"artists"` 2026-10-02), `query`: string. See Browsing |
+| `music.browse`  | C→H   | `id`: int, `ref`: string — the `ref` of an album, playlist or artist result, `kind` (optional, 2026-10-02): `"artist"` for an artist's page; absent = an album or playlist. See Browsing step 2a |
+| `music.results` | H→C   | `id` (echoed), `items`: array of result items, `error` (optional): string to show instead of an empty list, `albums` (optional, 2026-10-02): array of result items, an artist page's albums and singles |
 | `music.enqueue` | C→H   | `mode`: `"now"`\|`"next"`\|`"end"`, `tracks`: array of tracks, `art` (optional): URL for tracks without their own |
 | `music.edit`    | C→H   | `op`: `"jump"`\|`"remove"`\|`"clear"`\|`"move"`, `index` (optional): int, `id` (optional): string, `to` (optional): int, the new index for `"move"` (2026-10-01). See Browsing |
 | `music.download` | C→H  | `op`: `"start"`\|`"stop"`, `ref`: string — the `ref` of an album or playlist result, `ids` (required for `"start"`): array of strings, the collection's track ids in order (2026-10-01). See Browsing step 6 |
@@ -358,6 +358,17 @@ the Music flow: an enqueued track is loaded, readied and played exactly as befor
    items are the collection's songs, in order. `artist` may be empty (a playlist's owner can
    be unknown). Only YouTube ids travel: `[A-Za-z0-9_-]`, 1–64 characters; the host answers a
    `music.browse` with any other `ref` with an `error`.
+2a. **Artists** (2026-10-02). For `kind:"artists"` a result item is `{ref, title, artist, art}`:
+   `ref` is the artist's YouTube channel id (`UC…`), `title` the artist's name, `artist` empty,
+   `art` the artist's picture (optional). The client opens the artist's page with
+   `music.browse{id, ref, kind:"artist"}`; the host answers `music.results{id, items, albums}`:
+   `items` are the artist's top songs (song items as for `kind:"songs"`, at most 20), `albums`
+   the artist's albums and singles (album items as for `kind:"albums"`, at most 50, `ref`s for an
+   ordinary `music.browse`), either possibly empty. One reply holds both, so the page is one
+   request. A `music.browse` `kind` other than `"artist"` is malformed. A host older than this
+   ignores `kind` and answers with an `error` (a channel id is not a playlist); a client older
+   than this ignores `albums`. Size: as step 5, the host drops `art` first, then trailing
+   `albums`, then trailing `items`.
 3. The client sends `music.enqueue{mode, tracks}`. A track is `{id, title, artist,
    durationMs}` plus optional `album` and `art`, built from song results (`id` = the item's
    `ref`, `album` = the collection's title when browsing one). `mode`: `"now"` replaces the

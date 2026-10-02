@@ -53,7 +53,11 @@
   },
   {
    "_doc": "music.search kind outside its set: drop, keep",
-   "json": "{\"t\":\"music.search\",\"id\":1,\"kind\":\"artists\",\"query\":\"x\"}"
+   "json": "{\"t\":\"music.search\",\"id\":1,\"kind\":\"podcasts\",\"query\":\"x\"}"
+  },
+  {
+   "_doc": "music.browse kind outside its set: drop, keep",
+   "json": "{\"t\":\"music.browse\",\"id\":1,\"ref\":\"UCY2qt3dw2TQJxvBrDiYGHdQ\",\"kind\":\"song\"}"
   },
   {
    "_doc": "music.enqueue mode outside its set: drop, keep",
