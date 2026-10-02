@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,26 +48,34 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.kivan.motoparty.ArtistState
 import com.kivan.motoparty.BrowseState
 import com.kivan.motoparty.LinkStatus
 import com.kivan.motoparty.UiAction
 import com.kivan.motoparty.core.EnqueueMode
 import com.kivan.motoparty.core.SearchKind
+import com.kivan.motoparty.music.ArtistItem
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.History
 import com.kivan.motoparty.music.RecentSearch
 import com.kivan.motoparty.music.Track
 
 /**
- * Search YouTube Music; tap a song to play it, open an album or playlist to see its songs first.
- * With the box empty: recent searches and recently played ([History]).
+ * Search YouTube Music; tap a song to play it, open an album, playlist or artist to see what is
+ * in it first. With the box empty: recent searches and recently played ([History]). Open pages
+ * stack over the results ([LinkStatus.browse]): Back closes the top one.
  */
 @Composable
 fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, history: History = History()) {
-    val browse = s.browse
-    if (browse != null) {
+    val page = s.browse.lastOrNull()
+    if (page != null) {
         BackHandler { cb.onAction(UiAction.CloseBrowse) }
-        CollectionScreen(browse, s, cb, modifier)
+        // Where Back goes: the artist an album was opened from, else the results.
+        val back = (s.browse.getOrNull(s.browse.size - 2) as? ArtistState)?.artist?.name ?: "Search"
+        when (page) {
+            is BrowseState -> CollectionScreen(page, s, cb, modifier, back)
+            is ArtistState -> ArtistScreen(page, s, cb, modifier, back)
+        }
         return
     }
     var query by rememberSaveable { mutableStateOf(s.search.query) }
@@ -98,7 +108,8 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { run() }),
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Scrolls sideways when four chips do not fit a narrow screen.
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     for ((k, label) in KINDS) {
                         FilterChip(
                             selected = kind == k,
@@ -148,7 +159,10 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
             shown && kind == SearchKind.SONGS && r.songs.isNotEmpty() -> itemsIndexed(r.songs, key = { i, t -> "s/$i/${t.id}" }) { _, t ->
                 SongRow(t, highlighted = t.id == s.nowPlaying?.id, downloaded = t.id in s.cached, cb)
             }
-            shown && kind != SearchKind.SONGS && r.collections.isNotEmpty() -> itemsIndexed(r.collections, key = { i, c -> "c/$i/${c.id}" }) { _, c ->
+            shown && kind == SearchKind.ARTISTS && r.artists.isNotEmpty() -> itemsIndexed(r.artists, key = { i, a -> "a/$i/${a.id}" }) { _, a ->
+                ArtistRow(a) { cb.onAction(UiAction.BrowseArtist(a)) }
+            }
+            shown && kind != SearchKind.SONGS && kind != SearchKind.ARTISTS && r.collections.isNotEmpty() -> itemsIndexed(r.collections, key = { i, c -> "c/$i/${c.id}" }) { _, c ->
                 TrackRow(
                     c.title,
                     byline(c.artist, c.count?.let { "$it songs" }),
@@ -163,14 +177,25 @@ fun SearchTab(s: LinkStatus, cb: Callbacks, modifier: Modifier = Modifier, histo
                     Icons.Note,
                     "Search YouTube Music",
                     "Tap a song to play it now. The button beside it plays it next or adds it to the queue. " +
-                        "Albums and playlists open first, so you can see what's in them.",
+                        "Albums, playlists and artists open first, so you can see what's in them.",
                 )
             }
         }
     }
 }
 
-private val KINDS = listOf(SearchKind.SONGS to "Songs", SearchKind.ALBUMS to "Albums", SearchKind.PLAYLISTS to "Playlists")
+private val KINDS = listOf(
+    SearchKind.SONGS to "Songs",
+    SearchKind.ARTISTS to "Artists",
+    SearchKind.ALBUMS to "Albums",
+    SearchKind.PLAYLISTS to "Playlists",
+)
+
+/** An artist result (2026-10-02): round picture, opens the artist's page. */
+@Composable
+private fun ArtistRow(a: ArtistItem, onClick: () -> Unit) {
+    TrackRow(a.name, "Artist", a.art, placeholder = Icons.Person, roundArt = true, onClick = onClick)
+}
 
 /** A past search: tap runs it again, with the chip it had. */
 @Composable
@@ -232,16 +257,120 @@ private fun QueueMenu(title: String, onPick: (String) -> Unit) {
     }
 }
 
+/** The page's top line: Back and where it goes ([back]). */
 @Composable
-private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modifier: Modifier) {
-    val c: CollectionItem = b.collection
+private fun BackLine(back: String, cb: Callbacks) {
+    Row(Modifier.padding(start = 4.dp, top = 8.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { cb.onAction(UiAction.CloseBrowse) }, Modifier.size(56.dp)) { Icon(Icons.Back, "Back") }
+        Text(
+            back,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Play and Add to queue for a list of songs, glove-sized. */
+@Composable
+private fun PlayAddButtons(tracks: List<Track>, cb: Callbacks, play: String = "Play") {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val ready = tracks.isNotEmpty()
+        Button(
+            onClick = { cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, tracks)) },
+            enabled = ready,
+            modifier = Modifier.weight(1f).height(56.dp),
+        ) {
+            Icon(Icons.Play, null)
+            Text(play, Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        OutlinedButton(
+            onClick = { cb.onAction(UiAction.Enqueue(EnqueueMode.END, tracks)) },
+            enabled = ready,
+            modifier = Modifier.weight(1f).height(56.dp),
+        ) {
+            Icon(Icons.QueueAdd, null)
+            Text("Add to queue", Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/**
+ * An artist's page (2026-10-02): picture and name, Play top songs and Add to queue, the top
+ * songs (a tap plays from there on, like an album), then the albums and singles, which open as
+ * album pages over this one.
+ */
+@Composable
+private fun ArtistScreen(p: ArtistState, s: LinkStatus, cb: Callbacks, modifier: Modifier, back: String) {
     LazyColumn(modifier.fillMaxSize()) {
+        item { BackLine(back, cb) }
         item {
-            Row(Modifier.padding(start = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { cb.onAction(UiAction.CloseBrowse) }, Modifier.size(56.dp)) { Icon(Icons.Back, "Back") }
-                Text("Search", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Art(p.artist.art, 160.dp, placeholder = Icons.Person, round = true)
+                Text(
+                    p.artist.name,
+                    Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                if (!p.loading && p.error == null) {
+                    Text(
+                        byline(
+                            p.songs.size.takeIf { it > 0 }?.let { "$it top songs" },
+                            p.albums.size.takeIf { it > 0 }?.let { "$it albums and singles" },
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                PlayAddButtons(p.songs, cb, play = "Play top songs")
             }
         }
+        when {
+            p.loading -> item { Loading() }
+            p.error != null -> item { EmptyState(Icons.Person, p.error, "Try again when there is signal.") }
+            p.songs.isEmpty() && p.albums.isEmpty() -> item { EmptyState(Icons.Person, "Nothing by this artist") }
+            else -> {
+                if (p.songs.isNotEmpty()) {
+                    item(key = "h/songs") { Heading("Top songs") }
+                    itemsIndexed(p.songs, key = { i, t -> "as/$i/${t.id}" }) { i, t ->
+                        SongRow(t, highlighted = t.id == s.nowPlaying?.id, downloaded = t.id in s.cached, cb) {
+                            cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, p.songs.drop(i)))
+                        }
+                    }
+                }
+                if (p.albums.isNotEmpty()) {
+                    item(key = "h/albums") { Heading("Albums and singles") }
+                    itemsIndexed(p.albums, key = { i, c -> "aa/$i/${c.id}" }) { _, c ->
+                        TrackRow(
+                            c.title,
+                            byline(c.count?.let { "$it songs" }),
+                            c.art,
+                            placeholder = Icons.Album,
+                            onClick = { cb.onAction(UiAction.Browse(c)) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modifier: Modifier, back: String = "Search") {
+    val c: CollectionItem = b.collection
+    LazyColumn(modifier.fillMaxSize()) {
+        item { BackLine(back, cb) }
         item {
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -263,29 +392,9 @@ private fun CollectionScreen(b: BrowseState, s: LinkStatus, cb: Callbacks, modif
                     byline(c.artist, count?.let { "$it songs" }),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    val ready = b.tracks.isNotEmpty()
-                    Button(
-                        onClick = { cb.onAction(UiAction.Enqueue(EnqueueMode.NOW, b.tracks)) },
-                        enabled = ready,
-                        modifier = Modifier.weight(1f).height(56.dp),
-                    ) {
-                        Icon(Icons.Play, null)
-                        Text("Play", Modifier.padding(start = 8.dp))
-                    }
-                    OutlinedButton(
-                        onClick = { cb.onAction(UiAction.Enqueue(EnqueueMode.END, b.tracks)) },
-                        enabled = ready,
-                        modifier = Modifier.weight(1f).height(56.dp),
-                    ) {
-                        Icon(Icons.QueueAdd, null)
-                        Text("Add to queue", Modifier.padding(start = 8.dp))
-                    }
-                }
-                if (b.tracks.isNotEmpty()) DownloadButton(b, s, cb)
+                PlayAddButtons(b.tracks, cb)
+                // An album opened from the Ride screen has no id until it is found: nothing to download yet.
+                if (b.tracks.isNotEmpty() && b.collection.id.isNotEmpty()) DownloadButton(b, s, cb)
             }
         }
         when {

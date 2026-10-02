@@ -81,6 +81,24 @@ class Catalog(private val http: OkHttpClient) {
     }
 
     /**
+     * The artist a song's [credit] names (2026-10-02, the Ride screen's artist tap): an artist
+     * search for the whole credit, so "Simon & Garfunkel" stays one artist, picked by
+     * [pickArtist]; when no hit is named like it or its names, a second search for the first
+     * name ("Drake feat. Rihanna" → "Drake"), and failing that the top hit. Null when nothing is
+     * found.
+     */
+    suspend fun findArtist(credit: String): ArtistItem? {
+        val hits = searchArtists(credit)
+        pickArtist(hits, credit)?.let { return it }
+        val first = splitArtists(credit).firstOrNull()
+        if (first != null && first != credit.trim()) {
+            val more = searchArtists(first)
+            (pickArtist(more, first) ?: more.firstOrNull())?.let { return it }
+        }
+        return hits.firstOrNull()
+    }
+
+    /**
      * The artist page of channel [id] (PROTOCOL.md "Browsing" step 2a). One request for the
      * channel (its name, when the caller has none, and its picture), then in parallel: the
      * artist's Releases ([artistReleases]) and a song search for the name. The songs are kept to
@@ -183,7 +201,11 @@ class Catalog(private val http: OkHttpClient) {
      * (same id or same title). Null when none does. For "the rest of this album" when the album
      * the interpreter named does not hold the playing track (it guessed from its own knowledge).
      */
-    suspend fun albumContaining(track: Track): Result? = withContext(Dispatchers.IO) {
+    suspend fun albumContaining(track: Track): Result? =
+        albumOf(track)?.let { (album, tracks) -> Result(tracks, "album ${album.title} by ${album.artist}") }
+
+    /** [albumContaining]'s album and its tracks; the Ride screen's album tap opens it as a page (2026-10-02). */
+    suspend fun albumOf(track: Track): Pair<CollectionItem, List<Track>>? = withContext(Dispatchers.IO) {
         val artist = CommandParser.normalize(cleanArtist(track.artist))
         val seen = mutableSetOf<String>()
         var probes = 0
@@ -193,7 +215,7 @@ class Catalog(private val http: OkHttpClient) {
             for (album in albums) {
                 if (probes++ >= ALBUM_PROBES) return@withContext null
                 val tracks = tracksOf(album.id).second
-                if (VoiceQueue.holds(tracks, track)) return@withContext Result(tracks, "album ${album.title} by ${album.artist}")
+                if (VoiceQueue.holds(tracks, track)) return@withContext album to tracks
             }
         }
         null

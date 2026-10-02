@@ -48,6 +48,7 @@ import com.kivan.motoparty.core.MusicControl
 import com.kivan.motoparty.core.MusicEdit
 import com.kivan.motoparty.core.MusicDownload
 import com.kivan.motoparty.core.MusicEnqueue
+import com.kivan.motoparty.core.BrowseKind
 import com.kivan.motoparty.core.MusicResults
 import com.kivan.motoparty.core.MusicSearch
 import com.kivan.motoparty.core.ResultItem
@@ -71,6 +72,8 @@ import com.kivan.motoparty.link.StateFit
 import com.kivan.motoparty.link.TalkController
 import com.kivan.motoparty.link.onClientJoined
 import com.kivan.motoparty.link.VoiceSocket
+import com.kivan.motoparty.music.ArtistItem
+import com.kivan.motoparty.music.ArtistPage
 import com.kivan.motoparty.music.Catalog
 import com.kivan.motoparty.music.CollectionDownloads
 import com.kivan.motoparty.music.CollectionItem
@@ -103,6 +106,7 @@ import com.kivan.motoparty.voicecmd.Interpreter
 import com.kivan.motoparty.voicecmd.TalkRecognizer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -556,17 +560,25 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             is MusicControl -> requests.control(m.action, "client", m.mode)
             is CommandText -> onClientCommand(m.text)
             is MusicSearch -> onClientSearch(m.id) {
-                if (m.kind == SearchKind.SONGS) {
-                    catalog.searchSongs(m.query).also(::preResolveTop).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs, art = it.art) }
-                } else {
-                    catalog.searchCollections(m.kind == SearchKind.ALBUMS, m.query)
-                        .map { ResultItem(it.id, it.title, it.artist, count = it.count, art = it.art) }
+                when (m.kind) {
+                    SearchKind.SONGS -> MusicResults(m.id, catalog.searchSongs(m.query).also(::preResolveTop).map(::songItem))
+                    // PROTOCOL.md "Browsing" step 2a (2026-10-02): ref = channel id, artist empty.
+                    SearchKind.ARTISTS -> MusicResults(m.id, catalog.searchArtists(m.query).map { ResultItem(it.id, it.name, "", art = it.art) })
+                    else -> MusicResults(m.id, catalog.searchCollections(m.kind == SearchKind.ALBUMS, m.query).map(::collectionItem))
                 }
             }
             is MusicBrowse -> onClientSearch(m.id) {
                 if (!isValidTrackId(m.ref)) throw IllegalArgumentException("bad ref")
-                // Per-item art is left out: the client already has the collection's cover.
-                catalog.browse(m.ref).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs) }
+                if (m.kind == BrowseKind.ARTIST) {
+                    // One reply holds the page; Codec.fit drops art, then albums, then songs.
+                    val page = catalog.artistPage(m.ref)
+                    Hub.log("client artist ${m.ref}: ${page.songs.size} songs, ${page.albums.size} albums" +
+                        if (page.releases) " (Releases)" else " (album search)")
+                    MusicResults(m.id, page.songs.map(::songItem), albums = page.albums.map(::collectionItem))
+                } else {
+                    // Per-item art is left out: the client already has the collection's cover.
+                    MusicResults(m.id, catalog.browse(m.ref).map { ResultItem(it.id, it.title, it.artist, durationMs = it.durationMs) })
+                }
             }
             is MusicEnqueue -> onClientEnqueue(m)
             is MusicEdit -> onClientEdit(m)
@@ -1583,9 +1595,16 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         when (a) {
             is UiAction.Search -> uiSearch(a.kind, a.query)
             is UiAction.Browse -> uiBrowse(a.collection)
+            is UiAction.BrowseArtist -> uiArtist(ArtistState(a.artist)) { catalog.artistPage(a.artist.id, a.artist.name) }
+            is UiAction.OpenArtist -> uiArtist(ArtistState(ArtistItem("", a.credit))) {
+                val artist = catalog.findArtist(a.credit) ?: throw Catalog.NotFound(a.credit)
+                catalog.artistPage(artist.id, artist.name)
+            }
+            is UiAction.OpenAlbum -> uiOpenAlbum(a.track)
             is UiAction.CloseBrowse -> {
-                uiBrowseJob?.cancel()
-                Hub.status.update { it.copy(browse = null) }
+                val top = Hub.status.value.browse.lastOrNull()
+                if (top != null) uiBrowseJobs.remove(top)?.cancel()
+                Hub.status.update { st -> st.copy(browse = st.browse.filterNot { it === top }) }
             }
             is UiAction.Enqueue -> enqueue(a.mode, a.tracks, Role.HOST)
             is UiAction.Jump -> jump(a.index, a.id, Role.HOST)
@@ -1617,7 +1636,9 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
     }
 
     private var uiSearchJob: Job? = null
-    private var uiBrowseJob: Job? = null
+
+    /** The loading pages' jobs, by page identity: Back cancels the page it closes, and only that one. */
+    private val uiBrowseJobs = java.util.IdentityHashMap<BrowsePage, Job>()
 
     /** The top song results are the likely taps: have their stream addresses looked up already. */
     private fun preResolveTop(songs: List<Track>) = caches.preResolve(songs.take(PRE_RESOLVE_TOP).map { it.id })
@@ -1628,10 +1649,10 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         Hub.status.update { it.copy(search = SearchState(kind, query, loading = true)) }
         uiSearchJob = scope.launch {
             val done = try {
-                if (kind == SearchKind.SONGS) {
-                    SearchState(kind, query, songs = catalog.searchSongs(query).also(::preResolveTop))
-                } else {
-                    SearchState(kind, query, collections = catalog.searchCollections(kind == SearchKind.ALBUMS, query))
+                when (kind) {
+                    SearchKind.SONGS -> SearchState(kind, query, songs = catalog.searchSongs(query).also(::preResolveTop))
+                    SearchKind.ARTISTS -> SearchState(kind, query, artists = catalog.searchArtists(query))
+                    else -> SearchState(kind, query, collections = catalog.searchCollections(kind == SearchKind.ALBUMS, query))
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1643,20 +1664,61 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         }
     }
 
-    private fun uiBrowse(c: CollectionItem) {
-        uiBrowseJob?.cancel()
-        Hub.status.update { it.copy(browse = BrowseState(c)) }
-        uiBrowseJob = scope.launch {
-            val done = try {
-                BrowseState(c, loading = false, tracks = catalog.browse(c.id).map { it.copy(art = c.art ?: it.art) })
+    private fun uiBrowse(c: CollectionItem) = uiPage(BrowseState(c)) { page ->
+        try {
+            BrowseState(c, loading = false, tracks = catalog.browse(c.id).map { it.copy(art = c.art ?: it.art) })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Hub.log("browse ${c.id} failed: $e")
+            page.copy(loading = false, error = failure(e))
+        }
+    }
+
+    /** An artist page (2026-10-02): [shown] while [load] runs, then its songs and albums. */
+    private fun uiArtist(shown: ArtistState, load: suspend () -> ArtistPage) = uiPage(shown) { page ->
+        try {
+            val p = load()
+            Hub.log("artist ${p.name}: ${p.songs.size} songs, ${p.albums.size} albums" + if (p.releases) " (Releases)" else " (album search)")
+            ArtistState(
+                ArtistItem(page.artist.id, p.name, page.artist.art ?: p.art),
+                loading = false, songs = p.songs, albums = p.albums,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Hub.log("artist ${page.artist.name} failed: $e")
+            page.copy(loading = false, error = if (e is Catalog.NotFound) "No artist found for “${page.artist.name}”" else failure(e))
+        }
+    }
+
+    /** The Ride screen's album tap (2026-10-02): the album that holds [track], as a page. */
+    private fun uiOpenAlbum(track: Track) {
+        val name = track.album ?: return
+        uiPage(BrowseState(CollectionItem("", name, track.artist, art = track.art))) { page ->
+            try {
+                val (album, tracks) = catalog.albumOf(track) ?: throw Catalog.NotFound(name)
+                BrowseState(album, loading = false, tracks = tracks)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Hub.log("browse ${c.id} failed: $e")
-                BrowseState(c, loading = false, error = failure(e))
+                Hub.log("album of ${track.id} failed: $e")
+                page.copy(loading = false, error = if (e is Catalog.NotFound) "Couldn't find the album “$name”" else failure(e))
             }
-            Hub.status.update { it.copy(browse = done) }
         }
+    }
+
+    /** Pushes [shown] on the Search tab's pages and replaces it with what [load] makes of it, if it is still open. */
+    private fun <P : BrowsePage> uiPage(shown: P, load: suspend (P) -> BrowsePage) {
+        Hub.status.update { it.copy(browse = it.browse + shown) }
+        // Lazy, so the job is in the map before it can finish (the scope is Main.immediate).
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            val done = load(shown)
+            uiBrowseJobs.remove(shown)
+            Hub.status.update { st -> st.copy(browse = st.browse.map { if (it === shown) done else it }) }
+        }
+        uiBrowseJobs[shown] = job
+        job.start()
     }
 
     /** Short text for a failed search or browse, for either screen. */
@@ -1666,12 +1728,18 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     private var clientSearchJob: Job? = null
 
-    /** A newer request replaces an older one; the client only shows its newest `id` anyway. */
-    private fun onClientSearch(id: Long, block: suspend () -> List<ResultItem>) {
+    private fun songItem(t: Track) = ResultItem(t.id, t.title, t.artist, durationMs = t.durationMs, art = t.art)
+    private fun collectionItem(c: CollectionItem) = ResultItem(c.id, c.title, c.artist, count = c.count, art = c.art)
+
+    /**
+     * A newer request replaces an older one; the client only shows its newest `id` anyway. An
+     * artist page is one request for that reason (its songs and albums in one reply).
+     */
+    private fun onClientSearch(id: Long, block: suspend () -> MusicResults) {
         clientSearchJob?.cancel()
         clientSearchJob = scope.launch {
             val reply = try {
-                MusicResults(id, block())
+                block()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

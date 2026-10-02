@@ -1217,6 +1217,34 @@ On-screen device checklist (nothing here has been seen on the phone):
 7. Bar is empty at the first instant of the next talk (no stale level), in portrait and landscape.
 8. `talk stats` / `capture:` lines: `slowest encode+send` no worse than before the meter.
 
+### 2026-10-02 artist pages
+
+- **Wire** (PROTOCOL.md "Browsing" 2a): `SearchKind.ARTISTS`, `MusicBrowse.kind` (closed set
+  `BrowseKind.ARTIST`), `MusicResults.albums`. `Codec.fit` drops art, then trailing albums, then
+  trailing songs (`CodecTest`). The client's artist page is one request (one `clientSearchJob`).
+- **Catalog**: `searchArtists` (YouTube Music artist filter; `channelLHFactory.getId` gives
+  `channel/UC…`, only `UC…` travels) and `artistPage(id, name?)`: the channel, then in parallel its
+  Releases tab and a song search. **Network finding**: YouTube Music's artist hits are the
+  "Artist - Topic" channels, which have **no tabs at all**, so the official channel is looked up
+  by name (`channelNames`: "ישי ריבו | Ishay Ribo", "Queen Official", "QueenVEVO") and its
+  Releases tab used: filled for Pink Floyd, Queen, Moby, Ishay Ribo, Radiohead (≤ 50); Omer Adam
+  had none and got the album-search fallback (kept to the artist's names). `ArtistPage.releases`
+  says which, in the log. Songs: the name's song search kept to the artist's names, else
+  unfiltered, ≤ 20. Pure and tested in `ArtistPageTest`: `splitArtists`, `pickArtist`,
+  `artistAlbums`, `artistSongs`, `channelNames`. Live: `CatalogNetworkTest` (`-Pnetwork`).
+- **Host UI**: `LinkStatus.browse` is a stack of `BrowsePage` (`BrowseState` | `ArtistState`);
+  Back pops (and cancels that page's load only). Artists chip (the chip row scrolls sideways),
+  round artist rows, `ArtistScreen` (Play top songs / Add to queue, top songs, albums opening an
+  album page over it; its Back line names the artist).
+- **Ride tap**: in `Titles` the artist line and a new album line (when `track.album` is known)
+  are tappable while the host runs: `UiAction.OpenArtist(credit)` / `OpenAlbum(track)`;
+  `MainScreen` switches to Search (`opensSearch`). The host pushes a loading page at once, then
+  `Catalog.findArtist` (artist search for the whole credit, so "Simon & Garfunkel" stays one;
+  then its first name; else the top hit) or `Catalog.albumOf(track)`; nothing found leaves the
+  page with a "No artist found …" / "Couldn't find the album …" line.
+- **Device-unknown**: whether the Releases tab keeps parsing (NewPipe v0.26.5) and how long a
+  page takes on mobile data (channel + channel search + channel + tab pages + song search).
+
 ## 3. Not done, in priority order
 
 Coordinator spec updates, all implemented: (1) DTX frames not sent, kind-1 = activity,

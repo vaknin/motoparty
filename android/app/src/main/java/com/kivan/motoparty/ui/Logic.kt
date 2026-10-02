@@ -89,6 +89,9 @@ fun micLevel(peak: Int): Float {
 fun meterStep(shown: Float, level: Float, elapsedMs: Long): Float =
     maxOf(level, shown - elapsedMs.coerceAtLeast(0) / METER_FALL_MS).coerceIn(0f, 1f)
 
+/** The actions whose page opens on the Search tab, so the main screen switches to it (2026-10-02). */
+fun opensSearch(action: UiAction): Boolean = action is UiAction.OpenArtist || action is UiAction.OpenAlbum
+
 /** A snackbar after an action: what happened, and the action that takes it back, if one does. */
 data class Confirmation(val text: String, val undo: UiAction? = null)
 

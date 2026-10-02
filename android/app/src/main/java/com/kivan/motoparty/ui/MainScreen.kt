@@ -148,6 +148,8 @@ fun Motoparty(
         callbacks.withAction { action ->
             val said = confirmation(action, current)
             callbacks.onAction(action)
+            // The Ride screen's artist or album tap (2026-10-02): the page opens on the Search tab.
+            if (opensSearch(action)) tab = Tab.SEARCH
             if (said != null) scope.launch {
                 snackbars.currentSnackbarData?.dismiss()
                 val result = snackbars.showSnackbar(

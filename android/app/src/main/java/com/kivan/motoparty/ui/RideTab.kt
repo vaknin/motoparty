@@ -294,6 +294,8 @@ private fun PermissionsList(missing: List<Permission>, onGrant: (Permission) -> 
 @Composable
 private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, modifier: Modifier) {
     val t = s.nowPlaying
+    // The artist and album lines open their pages on the Search tab (2026-10-02); the host searches, so only while it runs.
+    val open = if (s.running) cb.onAction else null
     BoxWithConstraints(modifier) {
         val h = maxHeight
         when {
@@ -308,7 +310,7 @@ private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, mo
                     val size = min(min(maxWidth, maxHeight), 260.dp)
                     Crossfade(t.art to t.id, label = "art") { (art, _) -> Art(art, size) }
                 }
-                Crossfade(t, label = "title") { track -> Titles(track, centred = true) }
+                Crossfade(t, label = "title") { track -> Titles(track, centred = true, open) }
                 StatusLine(s)
                 Timeline(s, t)
                 Transport(s.playing, big = true, s.repeat, { cb.onAction(UiAction.Repeat(s.repeat.toggled())) }) { cb.onAction(UiAction.Control(it)) }
@@ -326,7 +328,7 @@ private fun NowPlaying(s: LinkStatus, cb: Callbacks, onOpenQueue: () -> Unit, mo
                         if (size >= 48.dp) Crossfade(t.art to t.id, label = "art") { (art, _) -> Art(art, size) }
                     }
                     Column(Modifier.weight(1f)) {
-                        Crossfade(t, label = "title") { track -> Titles(track, centred = false) }
+                        Crossfade(t, label = "title") { track -> Titles(track, centred = false, open) }
                         StatusLine(s)
                     }
                 }
@@ -361,8 +363,13 @@ private fun NothingPlaying(s: LinkStatus, compact: Boolean) {
     }
 }
 
+/**
+ * The title, then the artist and (when known) the album. With [open], a tap on the artist or the
+ * album line sends [UiAction.OpenArtist] / [UiAction.OpenAlbum] (2026-10-02): the main screen
+ * switches to the Search tab, where the host opens the page.
+ */
 @Composable
-private fun Titles(t: Track, centred: Boolean) {
+private fun Titles(t: Track, centred: Boolean, open: ((UiAction) -> Unit)? = null) {
     val align = if (centred) TextAlign.Center else TextAlign.Start
     Column(
         if (centred) Modifier.fillMaxWidth() else Modifier,
@@ -385,9 +392,29 @@ private fun Titles(t: Track, centred: Boolean) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = align,
+            modifier = Modifier.openOnTap(open.takeIf { t.artist.isNotBlank() }, "Open artist ${t.artist}") {
+                UiAction.OpenArtist(t.artist)
+            },
         )
+        val album = t.album
+        if (!album.isNullOrBlank()) {
+            Text(
+                album,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = align,
+                modifier = Modifier.openOnTap(open, "Open album $album") { UiAction.OpenAlbum(t) },
+            )
+        }
     }
 }
+
+/** Tappable when [open] is set: [action] goes to [open]; a little padding makes the line easier to hit. */
+private fun Modifier.openOnTap(open: ((UiAction) -> Unit)?, label: String, action: () -> UiAction): Modifier =
+    if (open == null) this
+    else clickable(onClickLabel = label) { open(action()) }.padding(horizontal = 4.dp, vertical = 2.dp)
 
 /**
  * One line under the title for whatever is going on: why the song is not playing yet, a search

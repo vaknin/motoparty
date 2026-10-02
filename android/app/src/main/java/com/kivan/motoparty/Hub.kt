@@ -2,6 +2,7 @@ package com.kivan.motoparty
 
 import com.kivan.motoparty.core.RepeatMode
 import com.kivan.motoparty.core.SearchKind
+import com.kivan.motoparty.music.ArtistItem
 import com.kivan.motoparty.music.CollectionItem
 import com.kivan.motoparty.music.DownloadProgress
 import com.kivan.motoparty.music.MusicPhase
@@ -62,8 +63,11 @@ data class LinkStatus(
     /** Album and playlist downloads (Search tab), by collection id. */
     val downloads: Map<String, DownloadProgress> = emptyMap(),
     val search: SearchState = SearchState(),
-    /** The album or playlist open on the Search tab, or null. */
-    val browse: BrowseState? = null,
+    /**
+     * The pages open on the Search tab over its results, the top one last (2026-10-02): an
+     * artist, then one of their albums, and Back returns to the artist. Empty = the results.
+     */
+    val browse: List<BrowsePage> = emptyList(),
     /**
      * The "Use USB stereo mic (Lark) for talk" setting is on but no usable receiver is there, and
      * why (`no USB input`, `USB input … is mono`); null = nothing to warn about. The Ride tab shows
@@ -127,22 +131,54 @@ data class SearchState(
     val loading: Boolean = false,
     val songs: List<Track> = emptyList(),
     val collections: List<CollectionItem> = emptyList(),
+    /** For [SearchKind.ARTISTS] (2026-10-02). */
+    val artists: List<ArtistItem> = emptyList(),
     val error: String? = null,
 )
 
+/** A page open on the Search tab ([LinkStatus.browse]). */
+sealed interface BrowsePage {
+    val loading: Boolean
+    val error: String?
+}
+
+/** An album or playlist page. */
 @Immutable
 data class BrowseState(
     val collection: CollectionItem,
-    val loading: Boolean = true,
+    override val loading: Boolean = true,
     val tracks: List<Track> = emptyList(),
-    val error: String? = null,
-)
+    override val error: String? = null,
+) : BrowsePage
+
+/**
+ * An artist's page (2026-10-02): top songs, then albums and singles. From the Ride screen the
+ * [artist] is only a name ([ArtistItem.id] empty) until the search for it answers.
+ */
+@Immutable
+data class ArtistState(
+    val artist: ArtistItem,
+    override val loading: Boolean = true,
+    val songs: List<Track> = emptyList(),
+    val albums: List<CollectionItem> = emptyList(),
+    override val error: String? = null,
+) : BrowsePage
 
 /** Requests from the UI to the running service. */
 sealed interface UiAction {
     /** [kind] is a [SearchKind]. */
     data class Search(val kind: String, val query: String) : UiAction
     data class Browse(val collection: CollectionItem) : UiAction
+    /** Open [artist]'s page over the current one (2026-10-02). */
+    data class BrowseArtist(val artist: ArtistItem) : UiAction
+    /**
+     * The Ride screen's artist line was tapped: find the artist named [credit] and open their
+     * page on the Search tab ([com.kivan.motoparty.music.Catalog.pickArtist]).
+     */
+    data class OpenArtist(val credit: String) : UiAction
+    /** The Ride screen's album line was tapped: open the album that holds [track]. */
+    data class OpenAlbum(val track: Track) : UiAction
+    /** Back on the Search tab: closes the top page. */
     data object CloseBrowse : UiAction
     /** [mode] is an [com.kivan.motoparty.core.EnqueueMode]. */
     data class Enqueue(val mode: String, val tracks: List<Track>) : UiAction

@@ -25,6 +25,8 @@ class HistoryTest {
         val h = History()
         assertSame(h, h.searched(SearchKind.SONGS, "   "))
         assertSame(h, h.searched("videos", "x"))
+        // Artists (2026-10-02) are a kind like the others.
+        assertEquals(SearchKind.ARTISTS, h.searched(SearchKind.ARTISTS, "queen").searches.single().kind)
         assertEquals("a b", h.searched(SearchKind.SONGS, " a \n b ").searches.single().query)
     }
 

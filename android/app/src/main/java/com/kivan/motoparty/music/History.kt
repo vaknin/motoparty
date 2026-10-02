@@ -37,7 +37,7 @@ data class History(
     companion object {
         const val MAX_SEARCHES = 10
         const val MAX_PLAYED = 20
-        private val KINDS = setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS)
+        private val KINDS = setOf(SearchKind.SONGS, SearchKind.ALBUMS, SearchKind.PLAYLISTS, SearchKind.ARTISTS)
         private val WHITESPACE = Regex("\\s+")
         private val json = Json { ignoreUnknownKeys = true }
 
