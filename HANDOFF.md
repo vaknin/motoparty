@@ -11,7 +11,21 @@ was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Andro
 F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
 and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
-## Latest (2026-10-01): full voice control built
+## Latest (2026-10-02): iPhone at parity with the Pixel, waiting for a device session
+
+The Swift compiles again (`51c7c9b`) and the iPhone now has everything the Pixel's screens have:
+repeat button, queue Undo (remove and clear) and drag-in-place (`QueueEdits`), enqueue toasts,
+the command card during a talk, smart-command hints (also on the Pixel), album Download with
+"downloaded" marks, the "Searching …" line, per-output sync offsets, keep screen on, a live beep
+(on by default on iOS: haptics are muted while recording), mini-player progress, the ambient
+tint, wired/USB headset talk (`TalkRoute`) and announcements gated until A2DP is back
+(`AnnounceGate`). The Pixel got queue drag auto-scroll at the edges, and the ControlServer probe
+race behind the flaky test (a leaked socket) is fixed. Tests at the merge of the flake fixes: iOS 292, Android 563
+(7 skipped), peer 582 (1 skipped). **Nothing of this has run on a phone.** Next: release builds
+on both phones, then the checklists in `ios/README.md` "What only a real iPhone can answer"
+(2026-10-01 blocks) and the Pixel drag/auto-scroll check.
+
+## 2026-10-01: full voice control built
 
 `VOICE-ACTIONS.md` is the plan and its "Build notes" the state: Gemini answers with up to four
 typed actions (remove, move, clear, jump incl. played tracks, seek, restart, repeat, tell, undo,
@@ -57,7 +71,7 @@ user approved implementing it, in rounds or in parallel. **State on 2026-09-30, 
   `AUDIT.md` Status "Leftovers done" and "Command rules changed". Reports:
   `~/.cache/claude-handoff/motoparty-leftovers/`. Open: on-screen checks on the Pixel, everything
   on the iPhone (incl. whether the widget extension installs on the free account), two
-  timing-flaky Android tests, and iOS announces arriving during the route switch may be clipped
+  timing-flaky Android tests (2026-10-02: fixed, `db7a05d` was a real ControlServer probe race), and iOS announces arriving during the route switch may be clipped
   (2026-10-01: gated, `MotopartyCore.AnnounceGate`, the iOS `MediaCue`; settle time to measure,
   `ios/README.md` "What only a real iPhone can answer", 2026-10-01 block).
 - 2026-09-30, smart commands (Gemini understands first phrases the grammar does not parse):
