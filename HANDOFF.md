@@ -11,7 +11,33 @@ was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Andro
 F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
 and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
-## Latest (2026-10-02): iPhone at parity with the Pixel, waiting for a device session
+## Latest (2026-10-02, afternoon): artist pages and phone calls, waiting for a device session
+
+Built on both phones, all device-unverified:
+- **Artist pages** (PROTOCOL.md "Browsing" 2a, `f07c51f`): an Artists search kind, an artist page
+  (top songs + albums and singles, one `music.browse{kind:"artist"}` request), album → back to
+  the artist, and tapping the playing song's artist or album on Ride opens its page. The host's
+  catalog finds the official channel's Releases tab (Topic channels have none) and falls back to
+  an album search kept to the artist (`android/HANDOFF.md` "2026-10-02 artist pages"). The tap
+  rule on both phones: the whole credit first, then the first name, else the top hit.
+- **Phone calls, rider** (`android/HANDOFF.md` "Phone calls (2026-10-02)"): on a ring the Pixel
+  mutes only its own music (volume 0, the timeline goes on, so the passenger keeps listening and
+  the rider is back at the live position after), closes a talk, says "Call from <contact>" only
+  on its own headset (8 s repeat), and listens on the Lark for "answer"/"decline"; the Ride
+  screen has big Answer/Decline and End buttons. Four new runtime permissions (phone state, call
+  log, contacts, answer calls). Nothing goes on the wire.
+- **Phone calls, passenger**: the iPhone holds its own music during the call (`MusicHold`), a
+  `state` mid-call no longer restarts it, and it rejoins live afterwards. iOS gives apps no
+  caller name and no answer API: the passenger can turn on Auto-Answer Calls (`ios/README.md`).
+- **Not possible**: the Lark as a cellular call's mic (Android pairs call input with output: the
+  call uses the AirPods mic); a voice hang-up (apps' capture is silenced during a call).
+
+Tests: iOS 302, Android 612 (9 skipped), peer 592 (1 skipped); release builds of both. Next: a
+device session — the earlier checklists below plus `ios/README.md` 2026-10-02 block and the
+`android/HANDOFF.md` phone-call checklist (is the name audible over the AirPods' ring? does the
+Lark record during a ring? do acceptRingingCall/endCall work on the Pixel's Android?).
+
+## 2026-10-02 morning: iPhone at parity with the Pixel, waiting for a device session
 
 The Swift compiles again (`51c7c9b`) and the iPhone now has everything the Pixel's screens have:
 repeat button, queue Undo (remove and clear) and drag-in-place (`QueueEdits`), enqueue toasts,

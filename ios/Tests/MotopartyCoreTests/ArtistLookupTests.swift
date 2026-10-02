@@ -35,13 +35,20 @@ final class ArtistLookupTests: XCTestCase {
     func testArtistQueryAndPick() {
         let lookup = RideLookup.artist(credit: "Queen & David Bowie")
         XCTAssertEqual(lookup.kind, .artists)
-        XCTAssertEqual(lookup.query, "Queen")
-        // The exact name wins over a higher hit.
+        XCTAssertEqual(lookup.query, "Queen & David Bowie")
+        // The first artist's exact name wins over a higher hit.
         let hits = [artist("Queen Naija", "UCa"), artist("QUEEN", "UCb"), artist("Queen", "UCc")]
         XCTAssertEqual(lookup.pick(hits), .artist(hits[1]))
         // No exact name: the top hit.
         XCTAssertEqual(lookup.pick([artist("Queens of the Stone Age", "UCq")]), .artist(artist("Queens of the Stone Age", "UCq")))
         XCTAssertNil(lookup.pick([]))
+    }
+
+    /// A duo is one artist: the whole credit wins over its first name.
+    func testWholeCreditWinsOverFirstName() {
+        let lookup = RideLookup.artist(credit: "Simon & Garfunkel")
+        let hits = [artist("Simon", "UCs"), artist("Simon & Garfunkel", "UCg")]
+        XCTAssertEqual(lookup.pick(hits), .artist(hits[1]))
     }
 
     func testAlbumQueryAndPick() {

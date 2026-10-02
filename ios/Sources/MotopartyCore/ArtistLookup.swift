@@ -24,12 +24,15 @@ public enum RideLookup: Equatable, Sendable {
         }
     }
 
-    /// The words searched: the first artist's name, or that name and the
-    /// album's title (the name narrows a common title such as "Greatest Hits").
+    /// The words searched: the whole credit, so a duo such as "Simon &
+    /// Garfunkel" is found as itself (the host's `Catalog.findArtist` also
+    /// starts with the whole credit, 2026-10-02); for an album, the first
+    /// artist's name and the album's title (the name narrows a common title
+    /// such as "Greatest Hits").
     public var query: String {
         switch self {
         case .artist(let credit):
-            return ArtistNames.first(credit)
+            return credit.trimmingCharacters(in: .whitespacesAndNewlines)
         case .album(let title, let credit):
             let name = ArtistNames.first(credit)
             return name.isEmpty ? title : "\(name) \(title)"
@@ -37,8 +40,9 @@ public enum RideLookup: Equatable, Sendable {
     }
 
     /// The hit to open, nil with no hits.
-    /// - Artist: the first hit whose name equals the first artist's
-    ///   (`ArtistNames.normalized`), else the top hit.
+    /// - Artist: the first hit whose name equals the whole credit, else the
+    ///   first whose name equals the first artist's (`ArtistNames.normalized`),
+    ///   else the top hit.
     /// - Album: the first hit whose title equals the album's and whose
     ///   (first) artist equals the track's, else the first whose title
     ///   equals, else the top hit.
@@ -46,8 +50,10 @@ public enum RideLookup: Equatable, Sendable {
         guard let top = hits.first else { return nil }
         switch self {
         case .artist(let credit):
+            let whole = ArtistNames.normalized(credit)
             let name = ArtistNames.normalized(ArtistNames.first(credit))
-            let hit = hits.first { ArtistNames.normalized($0.title) == name } ?? top
+            let hit = hits.first { ArtistNames.normalized($0.title) == whole }
+                ?? hits.first { ArtistNames.normalized($0.title) == name } ?? top
             return .artist(hit)
         case .album(let title, let credit):
             let album = ArtistNames.normalized(title)
