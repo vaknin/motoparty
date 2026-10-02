@@ -1282,6 +1282,71 @@ Device checklist (call the Pixel while music plays and the iPhone is linked):
 8. An outgoing call mutes too; a missed call unmutes; a second call ringing during a call changes
    nothing.
 
+### Lark as the call mic and voice hang-up (2026-10-02 evening): research, nothing built
+
+The user rejected "not possible" ("we must make it work"). Research by three subagents (AOSP
+`main` source plus a read-only `dumpsys media.audio_policy` on the Pixel, which runs Android 17).
+**Waiting on the user** to choose and to have the Pixel for test 1. Options, best first:
+
+1. **Lark as the call mic via the capture preset. Promising, $0.** In
+   `AudioPolicyManager::updateCallRoutingInternal` the call's TX device is
+   `getInputDeviceForAttributes({source=VOICE_COMMUNICATION})`, and `Engine.cpp` checks the
+   preferred device for that preset **before** the BT SCO rule. Setting it needs
+   `MODIFY_AUDIO_ROUTING` (signature|privileged|role, so `pm grant` fails), which the **shell uid
+   holds** (`frameworks/base/packages/Shell/AndroidManifest.xml`). So adb or Shizuku can set it.
+   The Pixel's dumpsys shows a `usb-device-microphones → telephony-tx` route. Call downlink can't
+   go to A2DP, so the caller is still heard over AirPods HFP; only the mic changes.
+   **Test 1 (no code):** Lark plugged in, then
+   `adb -s 192.168.1.100:5555 shell cmd audio set-preferred-input-device VOICE_COMMUNICATION USB_DEVICE`
+   (this Android 17 build has the command; try `USB_HEADSET` if the Lark enumerates that way),
+   place a call with the AirPods connected, and ask whether the caller hears the Lark. During the
+   call, `dumpsys media.audio_policy` should show a USB mic → telephony-tx patch. Set it before
+   the call (it doesn't reroute live). Check `get-preferred-input-device` after a reboot.
+   - **Conflicting reading:** another agent saw the primary module as `halVersion="2.0"` with USB
+     inside the AoC module. It read that as `updateCallRoutingInternal` taking the legacy branch,
+     where the closed HAL picks the uplink from the output device. That would ignore the preset.
+     Only test 1 settles it.
+   - If it works, the plan is a Shizuku toggle (about a day): call
+     `IAudioService.setPreferredDevicesForCapturePreset` on ride start and clear it at the end.
+     The catch: Shizuku has to be restarted after each reboot (wireless debugging).
+   - WhatsApp records with VOICE_COMMUNICATION, so it may get the Lark too. Verify.
+2. **Voice hang-up during the call: an accessibility service. Likely, $0, needs a device check.**
+   `AudioPolicyService::updateUidStates_l` silences every capture during IN_CALL, except an
+   enabled AccessibilityService UID whose process state is TOP..BOUND_FOREGROUND_SERVICE (our FGS
+   qualifies) recording with source **VOICE_RECOGNITION** (or HOTWORD). The dialer, assistant and
+   call-screening roles get no exemption.
+   - Plan: add an AccessibilityService, reopen the Lark listen window as VOICE_RECOGNITION +
+     `setPreferredDevice(usb)` after off-hook, and on "hang up" call `endCall()`.
+   - Sideloaded app: the user has to enable "Allow restricted settings" once.
+   - Verify on the device: setting up the call TX path runs `closeActiveClients` on inputs in the
+     same module, so the capture may be closed and have to be reopened after connect. Check that
+     it isn't silenced (dumpsys), that it still works with the screen locked, and that it doesn't
+     mute the call's uplink. About a day.
+3. **Hang-up from the handlebar switch box** (`~/Projects/Honda`). Calls `endCall()`, reliable,
+   needs that hardware first.
+4. **Fallback if test 1 fails: forward calls to a VoIP number the app answers.**
+   - Shizuku can toggle forwarding with `TelephonyManager.setCallForwarding` (shell holds
+     MODIFY_PHONE_STATE), or dial MMI codes `*21*N#` / `*61*N#`.
+   - Don't use a self-managed ConnectionService: Telecom would force HFP. Use a plain VoIP app:
+     USAGE_MEDIA to A2DP, MIC from USB.
+   - Stacks: baresip v4.12.0 (BSD), pjproject 2.17 (GPL), linphone-sdk 5.5.29 (AGPL),
+     Twilio Voice Android 6.10.4.
+   - Numbers: Zadarma Tel Aviv $3/month, Twilio IL $5.50/month plus per-minute.
+   - About 1–2 weeks of work. Quality depends on mobile data. Caller ID through forwarding is
+     unverified.
+5. **Hardware.** Nothing routes the Lark into a call while you still hear the caller in the
+   AirPods.
+   - The Lark A1 receiver is USB-only, with no 3.5 mm out and no monitor jack.
+   - ESP-IDF can't run HFP-HF and AG at once, and the classic ESP32 has no USB host.
+   - The only hardware fix is a boom-mic helmet headset replacing the AirPods, e.g. EJEAS V6 Pro+
+     (~$23 on AliExpress).
+
+Dead ends (high confidence):
+- VOICE_UPLINK/DOWNLINK/CALL capture needs CALL_AUDIO_INTERCEPTION.
+- AudioPlaybackCapture doesn't see call audio.
+- `InCallService.setAudioRoute` / `requestCallEndpointChange` only pick outputs.
+- AirPods Pro 2 have no LE Audio on Android.
+
 ### 2026-10-02 artist pages
 
 - **Wire** (PROTOCOL.md "Browsing" 2a): `SearchKind.ARTISTS`, `MusicBrowse.kind` (closed set

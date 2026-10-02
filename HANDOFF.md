@@ -29,8 +29,12 @@ Built on both phones, all device-unverified:
 - **Phone calls, passenger**: the iPhone holds its own music during the call (`MusicHold`), a
   `state` mid-call no longer restarts it, and it rejoins live afterwards. iOS gives apps no
   caller name and no answer API: the passenger can turn on Auto-Answer Calls (`ios/README.md`).
-- **Not possible**: the Lark as a cellular call's mic (Android pairs call input with output: the
-  call uses the AirPods mic); a voice hang-up (apps' capture is silenced during a call).
+- **Lark as the call mic and voice hang-up: reopened, not impossible** (evening research,
+  `android/HANDOFF.md` "Lark as the call mic and voice hang-up"):
+  - The call's mic follows the VOICE_COMMUNICATION capture preset, which adb or Shizuku can set.
+    First, a one-line adb test on the Pixel.
+  - Voice hang-up mid-call via an accessibility-service exemption (VOICE_RECOGNITION).
+  - **Waiting on the user** to pick and to have the phone.
 
 Tests: iOS 302, Android 612 (9 skipped), peer 592 (1 skipped); release builds of both. Next: a
 device session — the earlier checklists below plus `ios/README.md` 2026-10-02 block and the
