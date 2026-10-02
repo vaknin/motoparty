@@ -76,6 +76,11 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
         if (Build.VERSION.SDK_INT >= 37) add(ACCESS_LOCAL_NETWORK)
+        // Phone calls while riding (2026-10-02); see audio/CallWatch.kt for what each one adds.
+        add(Manifest.permission.READ_PHONE_STATE)
+        add(Manifest.permission.READ_CALL_LOG)
+        add(Manifest.permission.READ_CONTACTS)
+        add(Manifest.permission.ANSWER_PHONE_CALLS)
     }
 
     private fun granted(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
@@ -89,6 +94,10 @@ class MainActivity : ComponentActivity() {
         Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
         Manifest.permission.BLUETOOTH_CONNECT -> "Nearby devices (Bluetooth)"
         ACCESS_LOCAL_NETWORK -> "Local network"
+        Manifest.permission.READ_PHONE_STATE -> "Phone (mute music for calls)"
+        Manifest.permission.READ_CALL_LOG -> "Call log (caller's number)"
+        Manifest.permission.READ_CONTACTS -> "Contacts (caller's name)"
+        Manifest.permission.ANSWER_PHONE_CALLS -> "Answer calls from the Ride screen"
         else -> p.substringAfterLast('.')
     }
 

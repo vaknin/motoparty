@@ -17,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.kivan.motoparty.BrowseState
+import com.kivan.motoparty.CallUi
 import com.kivan.motoparty.Diagnostics
 import com.kivan.motoparty.PlaybackAnchor
 import com.kivan.motoparty.music.MusicPhase
@@ -291,6 +292,46 @@ class ScreensTest {
     fun rideLarkMissingInTalk() = shoot(
         "2d-ride-lark-missing-talk",
         playing.copy(larkMissing = "no USB input", talkOpen = true, talkLive = true, talkOnEarbudsFallback = true, playing = false),
+        Tab.RIDE,
+    )
+
+    // ---- the rider's cellular call (2026-10-02) ----
+
+    private val ringing = playing.copy(
+        musicPhase = MusicPhase.ON_CALL,
+        call = CallUi(onCall = false, name = "Dana Levi", canAnswer = true, voice = CallUi.Voice.LISTENING),
+    )
+
+    /** It rings: the name, "say answer", and Decline / Answer for a gloved thumb. */
+    @Test
+    fun rideCallRinging() = shoot("2e-ride-call-ringing", ringing, Tab.RIDE)
+
+    /** The handlebar mount: the card is shorter, the buttons are not. */
+    @Test
+    @Config(qualifiers = "w915dp-h412dp-land-420dpi")
+    fun rideCallRingingLandscape() = shoot("2f-ride-call-ringing-landscape", ringing, Tab.RIDE)
+
+    /** No Lark: the buttons only, and the card says why "answer" is not heard. A Hebrew name. */
+    @Test
+    fun rideCallRingingNoLark() = shoot(
+        "2g-ride-call-no-lark",
+        ringing.copy(call = CallUi(onCall = false, name = "אמא", canAnswer = true, voice = CallUi.Voice.NO_LARK)),
+        Tab.RIDE,
+    )
+
+    /** Answered: "On a call" and one big End. */
+    @Test
+    fun rideOnCall() = shoot(
+        "2h-ride-on-call",
+        ringing.copy(call = CallUi(onCall = true, name = "Dana Levi", canAnswer = true, voice = CallUi.Voice.OFF)),
+        Tab.RIDE,
+    )
+
+    /** "Answer calls" not granted: no buttons that would do nothing. */
+    @Test
+    fun rideCallNoAnswerPermission() = shoot(
+        "2i-ride-call-no-permission",
+        ringing.copy(call = CallUi(onCall = false, name = "+972 50-123-4567", canAnswer = false, voice = CallUi.Voice.LISTENING)),
         Tab.RIDE,
     )
 

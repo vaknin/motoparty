@@ -113,9 +113,16 @@ fun RideTab(
 
     val link: @Composable () -> Unit = { LinkHeader(s, onLongPress = { if (s.running) confirmStop = true }) }
     val middle: @Composable (Modifier) -> Unit = { m ->
-        if (showCommands) CommandsCard(solo = s.clientName == null, modifier = m) else NowPlaying(s, cb, onOpenQueue, m)
+        // The rider's cellular call takes the middle while it rings and lasts (2026-10-02).
+        val call = s.call
+        when {
+            call != null -> CallCard(call, s.clientName, cb.onAction, m)
+            showCommands -> CommandsCard(solo = s.clientName == null, modifier = m)
+            else -> NowPlaying(s, cb, onOpenQueue, m)
+        }
     }
-    val hint: @Composable () -> Unit = { SayLine(s.heard.takeIf { s.talkOpen }) { commandsSheet = true } }
+    // No command list under a call card: nothing said during a call is a command.
+    val hint: @Composable () -> Unit = { if (s.call == null) SayLine(s.heard.takeIf { s.talkOpen }) { commandsSheet = true } }
     val talk: @Composable (Modifier) -> Unit = { m ->
         if (s.running) TalkButton(phase, m) { cb.onTrigger(TriggerKind.TALK) } else StartButton(m, cb.onStart)
     }

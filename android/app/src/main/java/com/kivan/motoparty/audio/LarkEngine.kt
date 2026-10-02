@@ -63,8 +63,15 @@ class LarkEngine(
     /** The lines the device run reads (`lark: …`, `lark stats: …`); from any thread. */
     private val log: (String) -> Unit = { Log.i(TAG, it) },
 ) {
-    /** What to capture from; set on Main before the talk's audio is brought up, read at [start]. */
-    data class Config(val deviceId: Int, val name: String, val swap: Boolean)
+    /**
+     * What to capture from; set before the session's audio is brought up, read at [start].
+     *
+     * [listenOnly] (2026-10-02): the host-only listen window while the rider's phone rings — the
+     * rider's channel goes to the recognizer's [tee] and nowhere else. No passenger playback, no
+     * Opus, nothing sent, no dump, no live beep and no [onCaptureUp] (that is the talk's). It
+     * never takes call mode, like every session of this engine.
+     */
+    data class Config(val deviceId: Int, val name: String, val swap: Boolean, val listenOnly: Boolean = false)
 
     private class Session(val onFailed: (what: String, e: Throwable) -> Unit)
 
@@ -117,11 +124,11 @@ class LarkEngine(
         captureUpAtMs = null
         clientAudio.set(0)
         clientAudioLogged.set(false)
-        MicLevel.peak = 0
+        if (!cfg.listenOnly) MicLevel.peak = 0
         val s = Session(onFailed)
         session.set(s)
         // L9: a host-mic talk's "live" beep plays on the media route; see VoiceEngine.start.
-        Earcons.prepare(Earcons.Kind.LIVE, call = false)
+        if (!cfg.listenOnly) Earcons.prepare(Earcons.Kind.LIVE, call = false)
         captureThread = thread(name = "lark-capture") { runCatching { captureLoop(s, cfg) }.onFailure { fail(s, it) } }
     }
 
@@ -147,6 +154,7 @@ class LarkEngine(
         val am = context.getSystemService(AudioManager::class.java)
         val usb = am.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.id == cfg.deviceId }
             ?: error("receiver #${cfg.deviceId} is gone")
+        val listen = cfg.listenOnly
         val pipeline = LarkPipeline(cfg.swap)
         val frameSamples = pipeline.frameSamples
         val format = AudioFormat.Builder()
@@ -179,8 +187,8 @@ class LarkEngine(
         var partialWrites = 0L
         var playbackLine: (() -> String)? = null
         try {
-            val out = passengerTrack().also { track = it }
-            val enc = OpusEncoder().also { encoder = it }
+            val out = if (listen) null else passengerTrack().also { track = it }
+            val enc = if (listen) null else OpusEncoder().also { encoder = it }
             val preferred = record.setPreferredDevice(usb)
             routeThread.start()
             val routeHandler = Handler(routeThread.looper)
@@ -192,8 +200,8 @@ class LarkEngine(
                 routeHandler,
             )
             t.step("AudioRecord")
-            dump = runCatching { openDump() }.onFailure { log("lark: capture dump refused: $it") }.getOrNull()
-            out.play()
+            if (!listen) dump = runCatching { openDump() }.onFailure { log("lark: capture dump refused: $it") }.getOrNull()
+            out?.play()
             record.startRecording()
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "AudioRecord did not start" }
             startedAtMs = SystemClock.elapsedRealtime()
@@ -203,11 +211,11 @@ class LarkEngine(
             var frames = 0L
             // L3/L4: how full the passenger's track is decides what happens to each chunk.
             val chunk = pipeline.passenger48.size
-            val bufferFrames = out.bufferSizeInFrames
+            val bufferFrames = out?.bufferSizeInFrames ?: chunk
             val gate = PassengerFill(chunk, bufferFrames, chunk * PLAYBACK_HOLD_FRAMES)
             // Start playing at the hold plus one chunk instead of a full buffer (API 31+; without
             // it the track starts full and is trimmed down a chunk per second).
-            val threshold = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val threshold = if (out != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 runCatching {
                     out.setStartThresholdInFrames(minOf(bufferFrames, chunk * (PLAYBACK_HOLD_FRAMES + 1)))
                 }.onFailure { log("lark: start threshold refused: $it") }.getOrDefault(-1)
@@ -219,7 +227,7 @@ class LarkEngine(
             // `lark playback: mode none, buffer 5768 of 5768 frames, start threshold 2880, hold 40 ms
             // (grew 0x), underruns 0 (0 at start-up), fill min 20 mean 61 max 120 ms, dropped full 0,
             // trimmed 3, partial 0, unknown fill 0`: what the device gave, for L3/L4.
-            playbackLine = {
+            if (out != null) playbackLine = {
                 fun ms(samples: Int) = samples * 1000L / LarkPipeline.RATE_IN
                 "lark playback: mode ${VoiceEngine.performanceMode(out.performanceMode)}, " +
                     "buffer $bufferFrames of ${out.bufferCapacityInFrames} frames, start threshold $threshold, " +
@@ -247,16 +255,19 @@ class LarkEngine(
                 val atMs = SystemClock.elapsedRealtime()
                 dump?.offer(raw)
                 levels.add(raw, frameSamples / 2)
-                val passengerAsr = asrPassenger
+                // Listening for "answer" / "decline" is always the rider's channel.
+                val passengerAsr = asrPassenger && !listen
                 val tee = tee
                 pipeline.process(raw, passengerDown16 = passengerAsr && tee != null)
                 tee?.offer(if (passengerAsr) pipeline.passenger16 else pipeline.rider16)
                 // The rider's own channel, as it is sent: the Ride tab's meter reads it.
-                MicLevel.peak = MicLevel.peakOf(pipeline.rider16)
+                if (!listen) MicLevel.peak = MicLevel.peakOf(pipeline.rider16)
                 // The passenger into the rider's ears: never wait for the output, and never write
                 // part of a chunk (L4: the head of one followed by the next is a click). The play
                 // position is read from memory shared with the mixer, no binder call.
-                if (gate.admit(PassengerFill.fill(written, out.playbackHeadPosition)) == PassengerFill.Verdict.WRITE) {
+                if (out == null) {
+                    // Listen-only: the passenger is not played to the rider.
+                } else if (gate.admit(PassengerFill.fill(written, out.playbackHeadPosition)) == PassengerFill.Verdict.WRITE) {
                     val w = out.write(pipeline.passenger48, 0, chunk, AudioTrack.WRITE_NON_BLOCKING)
                     if (w > 0) written += w
                     if (w == chunk) {
@@ -273,7 +284,7 @@ class LarkEngine(
                 } else {
                     framesDropped++
                 }
-                if (frames % UNDERRUN_CHECK_FRAMES == UNDERRUN_CHECK_FRAMES - 1) {
+                if (out != null && frames % UNDERRUN_CHECK_FRAMES == UNDERRUN_CHECK_FRAMES - 1) {
                     val count = out.underrunCount
                     if (frames < UNDERRUN_CHECK_FRAMES) {
                         // The track starting on an empty buffer is not a hold too low.
@@ -300,15 +311,19 @@ class LarkEngine(
                 if (frames == 0L) {
                     t.step("first frame")
                     Log.i(TAG, t.line("capture up"))
-                    captureUpAtMs = atMs
-                    runCatching { onCaptureUp(atMs) }.onFailure { Log.w(TAG, "onCaptureUp failed: $it") }
+                    if (!listen) {
+                        captureUpAtMs = atMs
+                        runCatching { onCaptureUp(atMs) }.onFailure { Log.w(TAG, "onCaptureUp failed: $it") }
+                    }
                     // Binder calls: on the routing thread, never on this one.
                     routeHandler.post { runCatching { log(routedLine(am, record, out, preferred)) } }
                 }
-                val packetLen = enc.encode(pipeline.rider16)
-                if (!enc.inDtx && packetLen > 2) {
-                    send.send(ts, enc.packet, packetLen)
-                    framesSent++
+                if (enc != null) {
+                    val packetLen = enc.encode(pipeline.rider16)
+                    if (!enc.inDtx && packetLen > 2) {
+                        send.send(ts, enc.packet, packetLen)
+                        framesSent++
+                    }
                 }
                 ts = (ts + VoicePacket.FRAME_SAMPLES) and 0xffffffffL
                 frames++
@@ -322,7 +337,7 @@ class LarkEngine(
             if (startedAtMs != 0L) playbackLine?.let { line -> runCatching(line).onSuccess(log) }
             track?.let { runCatching { it.stop() }; it.release() }
             encoder?.close()
-            MicLevel.peak = 0
+            if (!listen) MicLevel.peak = 0
             if (startedAtMs != 0L) {
                 log(levels.line(LarkPipeline.RATE_IN, framesSent, framesPlayed, framesDropped, clientAudio.get()))
                 levels.silentLines(LarkPipeline.RATE_IN, cfg.swap).forEach(log)
@@ -357,7 +372,7 @@ class LarkEngine(
      * `lark: routed usb_device#27 "Lark A1" (preferred accepted=true) format 48000 Hz 2 ch, mode 0,
      * media out [bt_a2dp], passenger out bt_a2dp`.
      */
-    private fun routedLine(am: AudioManager, record: AudioRecord, track: AudioTrack, preferred: Boolean): String {
+    private fun routedLine(am: AudioManager, record: AudioRecord, track: AudioTrack?, preferred: Boolean): String {
         val f = record.format
         val media = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build()
@@ -367,7 +382,7 @@ class LarkEngine(
         }
         return "lark: routed ${record.routedDevice?.let(::name) ?: "none"} (preferred accepted=$preferred) " +
             "format ${f.sampleRate} Hz ${f.channelCount} ch, mode ${am.mode}, media out [$media], " +
-            "passenger out ${ScoRule.describe(track.routedDevice?.type)}"
+            "passenger out ${track?.let { ScoRule.describe(it.routedDevice?.type) } ?: "none (listen only)"}"
     }
 
     private fun name(d: AudioDeviceInfo) = "${ScoRule.describe(d.type)}#${d.id} \"${d.productName}\""

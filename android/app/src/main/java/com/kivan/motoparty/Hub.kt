@@ -81,7 +81,34 @@ data class LinkStatus(
      * notification's Talk claims it again. Written by [LinkService].
      */
     val micOff: Boolean = false,
+    /** The rider's cellular call, ringing or answered; null when there is none (2026-10-02). */
+    val call: CallUi? = null,
 )
+
+/**
+ * The Ride screen's call card ([com.kivan.motoparty.link.CallController]). Host-only: none of it
+ * goes on the wire, the passenger never learns of the rider's call.
+ */
+@Immutable
+data class CallUi(
+    /** False: ringing (Answer / Decline); true: off-hook (End). */
+    val onCall: Boolean,
+    /** The contact, the number, or a plain label; null on an outgoing call. */
+    val name: String?,
+    /** `ANSWER_PHONE_CALLS` is granted: the buttons can act. Without it the phone's own UI must. */
+    val canAnswer: Boolean,
+    /** Can "answer" / "decline" be said into the Lark while it rings? */
+    val voice: Voice,
+) {
+    enum class Voice {
+        /** The Lark listen window is open. */
+        LISTENING,
+        /** No Lark receiver: buttons only. */
+        NO_LARK,
+        /** Not now (answered, failed capture, no recognizer): buttons only. */
+        OFF,
+    }
+}
 
 /**
  * The music's position as a fixed point: [positionMs] at [atMs] on `SystemClock.elapsedRealtime`,
@@ -168,6 +195,10 @@ sealed interface UiAction {
     data object UsbStereoProbe : UiAction
     /** Debug: start a long Lark recording, or stop the one running. */
     data object LongRecording : UiAction
+    /** The call card's buttons (2026-10-02). */
+    data object AnswerCall : UiAction
+    data object DeclineCall : UiAction
+    data object EndCall : UiAction
 }
 
 /** Process-wide state shared between the service, the overlay and the activity. */
