@@ -6,7 +6,7 @@ final class MessageFixtureTests: XCTestCase {
     func testEveryFixtureMessageRoundTrips() throws {
         let fixture = try Fixtures.json("control/messages.json")
         let messages = try XCTUnwrap(fixture["messages"] as? [[String: Any]])
-        XCTAssertEqual(messages.count, 48)
+        XCTAssertEqual(messages.count, 52)
 
         var seenTypes = Set<String>()
         for original in messages {
@@ -171,6 +171,25 @@ final class MessageFixtureTests: XCTestCase {
         let search = try ControlCodec.decode(Data(#"{"t":"music.search","id":7,"kind":"songs","query":"money"}"#.utf8))
         XCTAssertEqual(search, .musicSearch(MusicSearch(id: 7, kind: .songs, query: "money")))
 
+        // Artists (2026-10-02): the search kind, the browse kind and the page's albums.
+        let artists = try ControlCodec.decode(Data(#"{"t":"music.search","id":7,"kind":"artists","query":"pink floyd"}"#.utf8))
+        XCTAssertEqual(artists, .musicSearch(MusicSearch(id: 7, kind: .artists, query: "pink floyd")))
+        let page = try ControlCodec.decode(Data(#"{"t":"music.browse","id":8,"ref":"UCY2qt3dw2TQJxvBrDiYGHdQ","kind":"artist"}"#.utf8))
+        XCTAssertEqual(page, .musicBrowse(MusicBrowse(id: 8, ref: "UCY2qt3dw2TQJxvBrDiYGHdQ", kind: .artist)))
+        let album = try ControlCodec.decode(Data(#"{"t":"music.browse","id":9,"ref":"OLAK5uy_x"}"#.utf8))
+        XCTAssertEqual(album, .musicBrowse(MusicBrowse(id: 9, ref: "OLAK5uy_x")))
+        let artistPage = try ControlCodec.decode(Data(#"{"t":"music.results","id":8,"items":[{"ref":"_FrOQC-zEog","title":"Comfortably Numb","artist":"Pink Floyd","durationMs":382000}],"albums":[{"ref":"OLAK5uy_x","title":"The Dark Side of the Moon","artist":"Pink Floyd","count":10}]}"#.utf8))
+        guard case .musicResults(let r) = artistPage else { return XCTFail("\(artistPage)") }
+        XCTAssertEqual(r.items.first?.durationMs, 382000)
+        XCTAssertEqual(r.albums?.first?.title, "The Dark Side of the Moon")
+        XCTAssertEqual(r.albums?.first?.count, 10)
+        let plainResults = try ControlCodec.decode(Data(#"{"t":"music.results","id":7,"items":[]}"#.utf8))
+        guard case .musicResults(let pr) = plainResults else { return XCTFail("\(plainResults)") }
+        XCTAssertNil(pr.albums)
+        // An absent kind is omitted on the wire, not null.
+        let plainBrowse = try ControlCodec.encode(.musicBrowse(MusicBrowse(id: 9, ref: "x")))
+        XCTAssertEqual(try Fixtures.canonical(jsonData: plainBrowse), #"{"id":9,"ref":"x","t":"music.browse"}"#)
+
         let edit = try ControlCodec.decode(Data(#"{"t":"music.edit","op":"remove","index":0,"id":"a"}"#.utf8))
         XCTAssertEqual(edit, .musicEdit(MusicEdit(op: .remove, index: 0, id: "a")))
 
@@ -309,7 +328,7 @@ final class FramingFixtureTests: XCTestCase {
     func testMalformedMessagesAreDroppedNotFatal() throws {
         let fixture = try Fixtures.json("control/framing.json")
         let malformed = try XCTUnwrap(fixture["malformed"] as? [[String: Any]])
-        XCTAssertEqual(malformed.count, 27, "every malformed vector must be exercised")
+        XCTAssertEqual(malformed.count, 28, "every malformed vector must be exercised")
         for m in malformed {
             let json = try XCTUnwrap(m["json"] as? String)
             // Framed and received like any other frame…

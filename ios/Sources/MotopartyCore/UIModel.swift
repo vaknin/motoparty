@@ -441,7 +441,7 @@ extension EnqueueTrack {
 public enum SearchWording {
     public static let prompt = "Songs, albums, artists"
     public static let emptyTitle = "Search YouTube Music"
-    public static let emptyDetail = "Tap a song to play it. Albums and playlists open."
+    public static let emptyDetail = "Tap a song to play it. Albums, playlists and artists open."
 
     public static func nothingFound(_ query: String) -> String {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -460,6 +460,12 @@ public enum SearchWording {
     /// Under a failed search or album: what to do about it.
     public static let retryHint = "Try again when there is signal."
     public static let emptyCollection = "No songs in this one"
+
+    /// The artist page (2026-10-02): its two sections, and an answer with
+    /// neither songs nor albums.
+    public static let topSongs = "Top songs"
+    public static let albumsAndSingles = "Albums and singles"
+    public static let emptyArtist = "Nothing found for this artist"
 }
 
 // MARK: - Settings

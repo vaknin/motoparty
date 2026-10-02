@@ -27,6 +27,8 @@ enum LinkStatus: Equatable {
 /// request for this list, or that request still in flight.
 struct ResultList: Equatable {
     var items: [ResultItem] = []
+    /// An artist page's albums and singles (2026-10-02); empty elsewhere.
+    var albums: [ResultItem] = []
     var loading = false
     var error: String?
     /// Request id whose answer this list is waiting for (or showing).
@@ -34,6 +36,15 @@ struct ResultList: Equatable {
 
     /// A request was made (so an empty list means "no results", not "not yet").
     var requested: Bool { requestId != nil }
+    /// Answered with nothing at all.
+    var isEmpty: Bool { items.isEmpty && albums.isEmpty }
+}
+
+/// A search the app ran for the user (a Ride tap), for the Search tab's box.
+struct SearchBoxFill: Equatable {
+    let kind: SearchKind
+    let query: String
+    let serial: Int
 }
 
 /// Numbers only Settings → Diagnostics reads, kept out of `AppModel` so that a
@@ -111,6 +122,11 @@ final class AppModel: ObservableObject {
     /// music silent (never the pocket loudspeaker) until a headset is back or
     /// the passenger presses Play here. The host's music is not touched.
     @Published private(set) var musicHeldForRoute = false
+    /// An audio-session interruption (the passenger's phone call) is on
+    /// (2026-10-02): this phone's music stays silent until it ends, even if a
+    /// `state` or `music.play` says play; the host and the rider play on.
+    /// Then the player rejoins the host's live position (`MusicHold`).
+    @Published private(set) var musicHeldForCall = false
     /// The app volume level (`AppVolume`, 0...`maxLevel`): what talk, music
     /// and cues play at while linked, and where the next link starts. The
     /// system volume reads 15/16 while linked, so this is the only true one.
@@ -124,6 +140,20 @@ final class AppModel: ObservableObject {
     /// Songs of the album or playlist being browsed, and which one it is.
     @Published private(set) var collectionResults = ResultList()
     @Published private(set) var browsedCollection: ResultItem?
+    /// The artist page being browsed: top songs in `items`, albums and
+    /// singles in `albums` (PROTOCOL.md "Browsing" step 2a, 2026-10-02). A
+    /// list of its own, so the artist is still there on Back from one of its
+    /// albums.
+    @Published private(set) var artistResults = ResultList()
+    @Published private(set) var browsedArtist: ResultItem?
+    /// The Search tab's pushed pages. Here rather than in the view so the
+    /// Ride screen's artist and album taps can push one (2026-10-02).
+    @Published var searchPath: [BrowseTarget] = []
+    /// The selected tab, here so Ride can switch to Search.
+    @Published var tab: AppTab = .ride
+    /// Words and kind for the Search tab's box, set by a Ride tap: the box
+    /// then shows what was searched (`serial` tells taps apart).
+    @Published private(set) var searchBoxFill: SearchBoxFill?
     /// The host's cached tracks (the song rows' marks) and its album and
     /// playlist downloads (PROTOCOL.md "Browsing" step 6).
     @Published private(set) var hostDownloads = HostDownloads()
@@ -187,6 +217,14 @@ final class AppModel: ObservableObject {
     /// re-sends music.load and state names the track too, and every answer
     /// makes the host re-send the anchor (a fresh A2DP seek), so answer once.
     private var readySent: Set<String> = []
+    /// A Ride tap's search in flight: its answer pushes the best hit.
+    private var rideLookup: (id: Int, lookup: RideLookup)?
+    /// The holds that keep this phone's music silent, for `MusicHold`'s rule.
+    private var musicHold: MusicHold { MusicHold(route: musicHeldForRoute, call: musicHeldForCall) }
+    /// The host plays and so does this phone (no hold): Play/Pause glyphs.
+    var playingHere: Bool { musicHold.playingHere(hostPlaying: musicPlaying) }
+    /// The Ride line for a hold, nil without one.
+    var musicHoldLine: String? { musicHold.line }
     /// The host's current play anchor (from music.play or state), if playing.
     private var currentPlay: MusicPlay?
     private var started = false
@@ -443,6 +481,7 @@ final class AppModel: ObservableObject {
         // An answer can no longer arrive for a request in flight.
         failPending(&searchResults, "Link lost")
         failPending(&collectionResults, "Link lost")
+        failPending(&artistResults, "Link lost")
         // Music keeps playing locally along the last anchor (the host does the same).
         link = .searching
         let lastAddress = lastLinkedAddress
@@ -676,7 +715,9 @@ final class AppModel: ObservableObject {
         // Held for the route: only a headset (or Play on this phone) ends it.
         // Asked here too, in case no route change announced the headset.
         if musicHeldForRoute, session.hasHeadphones { musicHeldForRoute = false }
-        guard !musicHeldForRoute else { return updateNowPlaying() }
+        // Held for the route or for a call: the host's state and music.play
+        // keep `currentPlay` current, and the end of the hold starts from it.
+        guard musicHold.mayPlay(talkOpen: talkOpen) else { return updateNowPlaying() }
         guard cache.isCached(play.id) else {
             if let load = loads[play.id] { prefetch(load) }
             return
@@ -700,7 +741,7 @@ final class AppModel: ObservableObject {
 
     /// False when the player has nothing playing or starting to queue behind.
     private func queueNext(_ next: MusicNext) -> Bool {
-        let ready = !talkOpen && !musicHeldForRoute && cache.isCached(next.id)
+        let ready = musicHold.mayPlay(talkOpen: talkOpen) && cache.isCached(next.id)
         return player.queueNext(next, url: ready ? cache.localURL(for: next.id) : nil,
                                 durationMs: loads[next.id]?.durationMs)
     }
@@ -740,7 +781,7 @@ final class AppModel: ObservableObject {
         let art = hostState?.music.flatMap { $0.id == track?.id ? $0.art : nil }
         nowPlayingCenter.update(LockScreenInfo(track: track, art: art, talking: talkOpen, riderName: hostName,
                                                positionMs: trackPositionMs() ?? 0,
-                                               playing: musicPlaying && !musicHeldForRoute))
+                                               playing: playingHere))
         updateLiveActivity()
     }
 
@@ -748,7 +789,7 @@ final class AppModel: ObservableObject {
     /// ActivityKit about a state that differs from the one that is up.
     private func updateLiveActivity() {
         let linked: LiveActivityState.Link = link.isConnected ? .linked : everLinked && link != .idle ? .lost : .none
-        liveActivity.show(LiveActivityState(track: nowPlaying, playing: musicPlaying && !musicHeldForRoute,
+        liveActivity.show(LiveActivityState(track: nowPlaying, playing: playingHere,
                                             talkOpen: talkOpen, talkLive: talkLive, talkLiveSince: talkLiveSince,
                                             riderName: link.isConnected ? hostName : lastHostName ?? "",
                                             link: linked))
@@ -763,9 +804,10 @@ final class AppModel: ObservableObject {
     }
 
     /// Rejoins the host's timeline after a local suspend (interruption,
-    /// media reset, trim change), unless talk or the route holds the music.
+    /// media reset, trim change), unless talk, the route or a call holds the
+    /// music.
     private func resumeMusic() {
-        guard currentPlay != nil, !talkOpen, !musicHeldForRoute else { return }
+        guard currentPlay != nil, musicHold.mayPlay(talkOpen: talkOpen) else { return }
         player.resume()
     }
 
@@ -779,7 +821,19 @@ final class AppModel: ObservableObject {
 
     /// The Ride screen's play/pause button. While the route holds the music
     /// it is a Play for this phone only; the host keeps playing as it was.
+    ///
+    /// Held for a call, Play ends the hold here too: iOS does not promise an
+    /// interruption's end (Apple: a begin may have no matching end), so the
+    /// passenger is never stuck in silence. During a live call the session
+    /// cannot play anyway, and the next interruption sets the hold again.
     func playPauseButton() {
+        if musicHeldForCall, musicPlaying {
+            Log.audio.info("music: call hold released by the user")
+            musicHeldForCall = false
+            musicHeldForRoute = false
+            startMusicIfPossible()
+            return updateNowPlaying()
+        }
         if musicHeldForRoute, musicPlaying { return releaseRouteHold() }
         musicControl(musicPlaying ? .pause : .resume)
     }
@@ -1275,18 +1329,47 @@ final class AppModel: ObservableObject {
 
     /// Asks the host to search. Only the newest search's answer is shown.
     func search(_ kind: SearchKind, query: String) {
+        rideLookup = nil
+        runSearch(kind, query: query, remember: true)
+    }
+
+    /// The request id, nil for empty words.
+    @discardableResult
+    private func runSearch(_ kind: SearchKind, query: String, remember: Bool) -> Int? {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
+        guard !query.isEmpty else { return nil }
         searchedKind = kind
         searchedQuery = query
-        if link.isConnected { history.searched(kind, query: query) }
-        request(&searchResults, .musicSearch(MusicSearch(id: nextRequestId(), kind: kind, query: query)))
+        if remember, link.isConnected { history.searched(kind, query: query) }
+        let id = nextRequestId()
+        request(&searchResults, .musicSearch(MusicSearch(id: id, kind: kind, query: query)))
+        return id
     }
 
     /// Asks the host for the songs of an album or playlist result.
     func browse(_ collection: ResultItem) {
         browsedCollection = collection
         request(&collectionResults, .musicBrowse(MusicBrowse(id: nextRequestId(), ref: collection.ref)))
+    }
+
+    /// Asks the host for an artist's page: top songs, albums and singles in
+    /// one answer (PROTOCOL.md "Browsing" step 2a).
+    func browseArtist(_ artist: ResultItem) {
+        browsedArtist = artist
+        request(&artistResults, .musicBrowse(MusicBrowse(id: nextRequestId(), ref: artist.ref, kind: .artist)))
+    }
+
+    /// A tap on the playing song's artist or album on Ride (2026-10-02): the
+    /// Search tab, its box showing the search, and the best hit pushed once
+    /// the host answers (`RideLookup.pick`). Nothing found: the search list
+    /// says so ("Nothing found for …"). The tap is not a recent search.
+    func openFromRide(_ lookup: RideLookup) {
+        let query = lookup.query
+        guard !query.isEmpty else { return }
+        searchPath = []
+        tab = .search
+        searchBoxFill = SearchBoxFill(kind: lookup.kind, query: query, serial: (searchBoxFill?.serial ?? 0) + 1)
+        rideLookup = runSearch(lookup.kind, query: query, remember: false).map { ($0, lookup) }
     }
 
     /// Queues song results. From a collection, the tracks name it as their
@@ -1378,6 +1461,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             if self.searchResults.requestId == id { self.failPending(&self.searchResults, "The host did not answer") }
             if self.collectionResults.requestId == id { self.failPending(&self.collectionResults, "The host did not answer") }
+            if self.artistResults.requestId == id { self.failPending(&self.artistResults, "The host did not answer") }
         }
     }
 
@@ -1385,11 +1469,22 @@ final class AppModel: ObservableObject {
     private func receive(_ results: MusicResults) {
         func fill(_ list: inout ResultList) {
             list.items = results.items
-            list.error = results.items.isEmpty ? results.error : nil
+            list.albums = results.albums ?? []
+            list.error = list.isEmpty ? results.error : nil
             list.loading = false
         }
-        if searchResults.requestId == results.id { fill(&searchResults) }
-        else if collectionResults.requestId == results.id { fill(&collectionResults) }
+        if searchResults.requestId == results.id {
+            fill(&searchResults)
+            if let pending = rideLookup, pending.id == results.id {
+                rideLookup = nil
+                // Unless the passenger opened something meanwhile.
+                if searchPath.isEmpty, let target = pending.lookup.pick(results.items) { searchPath = [target] }
+            }
+        } else if collectionResults.requestId == results.id {
+            fill(&collectionResults)
+        } else if artistResults.requestId == results.id {
+            fill(&artistResults)
+        }
     }
 
     private func failPending(_ list: inout ResultList, _ why: String) {
@@ -1405,6 +1500,10 @@ final class AppModel: ObservableObject {
         // silent engine included: stop it for real, so that the end of the
         // interruption starts it again (a locked phone is suspended without).
         player.suspend()
+        // Until it ends, no state or music.play starts the player again: the
+        // passenger is on the phone, the rider listens on (2026-10-02).
+        if !musicHeldForCall { Log.audio.info("music: held for an interruption (a call)") }
+        musicHeldForCall = true
         if talkOpen {
             // The mic is gone after talk opened (PROTOCOL.md "Talk flow" step 4).
             requestTalkClose(.unavailable)
@@ -1419,19 +1518,30 @@ final class AppModel: ObservableObject {
         }
         // After the talk teardown, which starts it.
         keepAlive.stop()
+        updateNowPlaying()
     }
 
+    /// `shouldResume` is not asked (2026-10-02): the music here is the host's,
+    /// which played on through the call, so the passenger rejoins its live
+    /// position (`currentPlay`) whatever iOS suggests.
     private func interruptionEnded(_ shouldResume: Bool) {
+        // Cleared first, in every branch: a talk open now holds the music on
+        // its own, and its end brings the host's music.play.
+        if musicHeldForCall { Log.audio.info("music: interruption over (resume hint \(shouldResume)), hold ended") }
+        musicHeldForCall = false
         // interruptionBegan ended talk, so unless one has started since, the
         // session belongs in media mode — not in the route last activated
         // (.talk when switching back failed during the call).
         if talkOpen {
             session.reactivate()
-            return
+            return updateNowPlaying()
         }
         micUnavailable = false
         restoreMediaRoute()
-        if shouldResume { resumeMusic() }
+        // Waits for the media route if a switch is still held
+        // (`musicWaitsForMediaRoute`); a no-op with nothing playing.
+        startMusicIfPossible()
+        updateNowPlaying()
     }
 
     private func routeChanged(_ reason: AVAudioSession.RouteChangeReason) {

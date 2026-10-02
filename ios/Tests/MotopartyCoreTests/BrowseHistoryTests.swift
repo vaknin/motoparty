@@ -54,6 +54,13 @@ final class BrowseHistoryTests: XCTestCase {
                                                     durationMs: 212_000, art: "http://x/a.jpg"))
     }
 
+    func testUnknownSearchKindDropsOnlyThatEntry() {
+        let json = #"{"searches":[{"kind":"podcasts","query":"a"},{"kind":"artists","query":"Queen"},{"kind":"songs","query":"b"}],"played":[{"id":"x","title":"T","artist":"A","durationMs":1000}]}"#
+        let h = BrowseHistory.decoded(Data(json.utf8))
+        XCTAssertEqual(h.searches, [.init(kind: .artists, query: "Queen"), .init(kind: .songs, query: "b")])
+        XCTAssertEqual(h.played.map(\.id), ["x"])
+    }
+
     func testPersistenceRoundTrip() throws {
         var h = BrowseHistory()
         h.searched(.albums, query: "Thriller")

@@ -290,7 +290,7 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   shows; off by default), "Beep when the mic is live" (on by default, unlike Android: iOS mutes haptics while recording), the
   music sync offset of the output in use now (below), link status, version, Diagnostics. See
   "2026-09-30 audit round 3" below.
-  **Search** sends `music.search` (Songs / Albums / Playlists); a song tap is
+  **Search** sends `music.search` (Songs / Albums / Playlists / Artists); a song tap is
   `music.enqueue{mode:"now"}` with that track, its ⋯ menu (or a swipe) is Play next / Add to
   queue. An album or playlist opens a detail screen (`music.browse`) with Play / Add to queue;
   a track tap enqueues `now` the tracks from that one to the end. Tracks carry the collection
@@ -304,7 +304,25 @@ variadic `opus_*_ctl` calls, because Swift cannot call C varargs.
   next: X", "Added to queue: X", "Added N songs"; nothing while nothing is loaded, since the
   host then plays it at once): `Toast` in MotopartyCore, fed from `AppModel.enqueue`, drawn
   with the Queue tab's banner. Once the box is edited after a search, "Results for “x”" heads
-  the results. **Queue** shows `state.queue` under the current song (artist · album, as on
+  the results. An artist (2026-10-02, PROTOCOL.md "Browsing" step 2a) opens its page with one
+  `music.browse{kind:"artist"}`: round picture and name, Play / Add to queue of the top songs,
+  "Top songs" (a tap plays from that song on), "Albums and singles" (each opens the album
+  page). The pushed pages are `BrowseTarget`s in `AppModel.searchPath`, and the artist page has
+  its own result list (`artistResults`), so Back from an album shows the artist again (asked
+  again only if another artist took the list). On Ride the artist line, and the album line
+  when `music.load` named one, are buttons: a tap opens Search with the box showing an
+  Artists (first artist of the credit) or Albums ("<artist> <album>") search and pushes the
+  best hit (`RideLookup` in MotopartyCore: the exact normalized name, else the top hit; the
+  album by title and artist, else title, else top). Nothing found: the list says so. Such a
+  tap is not a recent search. **Phone calls:** an audio-session interruption sets
+  `musicHeldForCall` (`MusicHold`): the passenger's music stops, no `state` or `music.play`
+  restarts it, Ride says "Music held during your call"; at the interruption's end (whatever
+  iOS's resume hint says, and also when a talk is open then) the hold ends and the player
+  rejoins the host's live position. The rider hears nothing different. Play on this phone
+  also ends the hold, as iOS does not promise an end for every interruption. iOS gives apps
+  neither the caller's name nor a way to answer: for hands-free answering the passenger can
+  turn on Settings › Accessibility › Touch › Call Audio Routing › **Auto-Answer Calls**.
+  **Queue** shows `state.queue` under the current song (artist · album, as on
   the Pixel): tap =
   `music.edit jump`, swipe or ✕ = `remove`, drag = `move`, Clear (confirmed) = `clear`. Every
   edit shows at once (`QueueEdits`). A removal or a clear brings a banner with Undo for 10 s,
@@ -914,6 +932,38 @@ the open questions, in the order a ride needs them:
     `route n/a, spoke +~200 ms (released)`, nothing cut.
   - *Clarifying question in a talk* ("play Moby" → "Which Moby album?"): still spoken at once
     in the talk, no `announce gate:` line, and the reply is heard.
+- **2026-10-02 artist pages and the call hold (built on Linux only; needs a host with artist
+  support).**
+  - *Artist search:* Search → scope Artists, "pink floyd": round pictures, "Artist" under
+    each name; the recent-search entry says Artists. A tap opens the page: picture, name,
+    Play / Add to queue, "Top songs" (downloaded marks, the playing one tinted), "Albums and
+    singles". Play plays the top songs; a song tap plays from it; ⋯ queues one. An artist
+    with no albums or no songs shows only the other section.
+  - *Album from the artist:* tap an album: the album page loads (`music.browse` without
+    `kind`). Back: the artist page is there at once, no spinner, same scroll position; Back
+    again: the artist results. Go Search → another artist → back to the first via the
+    results: it reloads (one spinner), right artist.
+  - *Ride taps:* with a track playing, tap the artist line on Ride: the Search tab opens, the
+    box says the first artist (`Queen` for "Queen & David Bowie"), scope Artists, and the page
+    of the exact-name artist is pushed after the answer (not "Queen Naija"). With an album on
+    the track (started from an album page), the album line shows under the artist; a tap opens
+    that album's page (the right edition when several share the title). Back shows the search
+    results. A name with no hit: "Nothing found for …", nothing pushed. Tap while the link is
+    down: "Not connected to the host". VoiceOver: title, artist (button), album (button) read
+    separately.
+  - *Call hold:* music playing on both phones, call the iPhone. When it rings / is answered:
+    the iPhone's music stops (`music: held for an interruption (a call)`), the Pixel rider's
+    keeps playing and hears no change; Ride shows "Music held during your call" with a phone
+    glyph; the lock screen and the Live Activity show paused. Let the Pixel skip a track
+    mid-call: the iPhone stays silent. Hang up: `interruption over (resume hint …), hold
+    ended`, the music comes back at the rider's live position (not where it stopped), within
+    a second or two; the line goes. Decline the call instead: the same. Repeat with a talk
+    open at the call (it closes `unavailable`) and with a talk started from the Pixel during
+    the call: after the talk ends, the music returns with the host's `music.play`. If a call
+    ends with no `interruption over` line (iOS does not always send one), Play on Ride brings
+    the music back (`call hold released by the user`).
+  - *Auto-Answer:* Settings › Accessibility › Touch › Call Audio Routing › Auto-Answer Calls
+    on: an incoming call is answered after the set seconds and the hold works as above.
 - The rest listed above: the AirPods mute gesture (Spike 2), `LocalVolume`'s hidden slider,
   the AirPods A2DP ↔ HFP switch time.
 

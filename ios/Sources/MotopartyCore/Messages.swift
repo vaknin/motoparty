@@ -82,8 +82,14 @@ public enum MusicAction: String, Codable, Sendable, CaseIterable {
 
 public enum Earcon: String, Codable, Sendable { case ok, error }
 
-/// What a `music.search` looks for (PROTOCOL.md "Browsing").
-public enum SearchKind: String, Codable, Sendable, CaseIterable { case songs, albums, playlists }
+/// What a `music.search` looks for (PROTOCOL.md "Browsing"). `artists`
+/// (2026-10-02, step 2a): items are artists, `ref` a channel id.
+public enum SearchKind: String, Codable, Sendable, CaseIterable { case songs, albums, playlists, artists }
+
+/// What a `music.browse` opens when it is not an album or playlist
+/// (PROTOCOL.md "Browsing" step 2a, 2026-10-02). A closed set: any other
+/// value makes the message malformed, like every other enum field.
+public enum BrowseKind: String, Codable, Sendable { case artist }
 
 /// Where `music.enqueue` puts its tracks.
 public enum EnqueueMode: String, Codable, Sendable { case now, next, end }
@@ -273,9 +279,11 @@ public struct MusicSearch: Codable, Equatable, Sendable {
 
 public struct MusicBrowse: Codable, Equatable, Sendable {
     public var id: Int
-    /// The `ref` of an album or playlist result.
+    /// The `ref` of an album, playlist or artist result.
     public var ref: String
-    public init(id: Int, ref: String) { self.id = id; self.ref = ref }
+    /// `.artist` for an artist's page (2026-10-02); nil is an album or playlist.
+    public var kind: BrowseKind?
+    public init(id: Int, ref: String, kind: BrowseKind? = nil) { self.id = id; self.ref = ref; self.kind = kind }
 }
 
 /// One search or browse result. Songs carry `durationMs` and their YouTube id
@@ -299,7 +307,13 @@ public struct MusicResults: Codable, Equatable, Sendable {
     public var items: [ResultItem]
     /// Short text to show instead of an empty list.
     public var error: String?
-    public init(id: Int, items: [ResultItem], error: String? = nil) { self.id = id; self.items = items; self.error = error }
+    /// An artist page's albums and singles (2026-10-02, "Browsing" step 2a);
+    /// `items` are then its top songs. One reply holds both, so the page is
+    /// one request.
+    public var albums: [ResultItem]?
+    public init(id: Int, items: [ResultItem], error: String? = nil, albums: [ResultItem]? = nil) {
+        self.id = id; self.items = items; self.error = error; self.albums = albums
+    }
 }
 
 public struct EnqueueTrack: Codable, Equatable, Sendable {

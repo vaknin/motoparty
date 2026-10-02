@@ -404,10 +404,17 @@ private struct NowPlayingCard: View {
                 Text(track.title)
                     .font(centered ? .title2.bold() : .headline)
                     .lineLimit(2)
-                Text(track.artist)
-                    .font(centered ? .body : .subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                // The artist, and the album when the host named one, open
+                // their page on the Search tab (2026-10-02).
+                link(track.artist, font: centered ? .body : .subheadline,
+                     hint: "Opens the artist's page") {
+                    model.openFromRide(.artist(credit: track.artist))
+                }
+                if let album = track.album, !album.isEmpty {
+                    link(album, font: centered ? .subheadline : .footnote, hint: "Opens the album") {
+                        model.openFromRide(.album(title: album, credit: track.artist))
+                    }
+                }
             } else {
                 Text("Nothing playing")
                     .font(centered ? .title2.bold() : .headline)
@@ -419,7 +426,28 @@ private struct NowPlayingCard: View {
         }
         .multilineTextAlignment(centered ? .center : .leading)
         .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
-        .accessibilityElement(children: .combine)
+        // Not combined: the artist and album are buttons of their own.
+        .accessibilityElement(children: .contain)
+    }
+
+    /// A line that reads as text and opens a page: no tint, a chevron, and a
+    /// taller tap area than the text.
+    private func link(_ text: String, font: Font, hint: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(text).lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .font(font)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(text.isEmpty)
+        .accessibilityHint(hint)
     }
 }
 
@@ -484,9 +512,9 @@ private struct TransportControls: View {
     @EnvironmentObject private var model: AppModel
     @State private var pressed = 0
 
-    /// Not while the music is held because the headset went away: the button
-    /// is then Play, for this phone's speaker.
-    private var playingHere: Bool { model.musicPlaying && !model.musicHeldForRoute }
+    /// Not while the music is held because the headset went away (the button
+    /// is then Play, for this phone's speaker) or for a call.
+    private var playingHere: Bool { model.playingHere }
 
     /// The repeat button's side, and the empty slot's.
     private static let repeatSize: CGFloat = 44
@@ -577,7 +605,8 @@ private struct StatusLines: View {
     var body: some View {
         let heard = model.lastHeard
         let said = model.lastAnnouncement
-        if heard != nil || said != nil || model.musicHeldForRoute {
+        let held = model.musicHoldLine
+        if heard != nil || said != nil || held != nil {
             VStack(alignment: .leading, spacing: 4) {
                 if let heard {
                     Label("Heard: “\(heard)”", systemImage: "ear").lineLimit(1)
@@ -585,9 +614,8 @@ private struct StatusLines: View {
                 if let said {
                     Label("“\(said)”", systemImage: "speaker.wave.2").lineLimit(2)
                 }
-                if model.musicHeldForRoute {
-                    Label("Headset disconnected: music is silent on this phone. Press Play to use the speaker.",
-                          systemImage: "headphones")
+                if let held {
+                    Label(held, systemImage: model.musicHeldForCall ? "phone.fill" : "headphones")
                 }
             }
             .font(.footnote)

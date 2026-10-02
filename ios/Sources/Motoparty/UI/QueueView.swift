@@ -185,7 +185,7 @@ private struct NowPlayingRow: View {
     let track: MusicLoad
     let pressed: () -> Void
 
-    private var playingHere: Bool { model.musicPlaying && !model.musicHeldForRoute }
+    private var playingHere: Bool { model.playingHere }
 
     var body: some View {
         HStack(spacing: 12) {

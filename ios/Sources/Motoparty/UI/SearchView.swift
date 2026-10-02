@@ -3,28 +3,53 @@ import MotopartyCore
 import SwiftUI
 
 /// Search the host's catalog: songs play (or queue), albums and playlists
-/// open a track list (PROTOCOL.md "Browsing"). The system's search field and
-/// scope bar; with an empty field, the recent searches and recently played.
+/// open a track list, artists their page (PROTOCOL.md "Browsing"). The
+/// system's search field and scope bar; with an empty field, the recent
+/// searches and recently played. The pushed pages live in
+/// `AppModel.searchPath`, so a Ride tap can open one (2026-10-02).
 struct SearchView: View {
     @EnvironmentObject private var model: AppModel
     @State private var query = ""
     @State private var kind: SearchKind = .songs
+    /// The last `AppModel.searchBoxFill` put in the box.
+    @State private var filledSerial = 0
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $model.searchPath) {
             results
                 .navigationTitle("Search")
                 .navigationBarTitleDisplayMode(.inline)
-                .navigationDestination(for: ResultItem.self) { CollectionView(collection: $0) }
+                .navigationDestination(for: BrowseTarget.self) { target in
+                    switch target {
+                    case .collection(let collection): CollectionView(collection: collection)
+                    case .artist(let artist): ArtistView(artist: artist)
+                    }
+                }
                 .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                             prompt: Text(SearchWording.prompt))
                 .searchScopes($kind, activation: .onSearchPresentation) {
                     ForEach(SearchKind.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .onSubmit(of: .search) { model.search(kind, query: query) }
-                .onChange(of: kind) { _, newKind in model.search(newKind, query: query) }
+                .onChange(of: kind) { _, newKind in
+                    // Not for a kind a Ride tap set along with its search.
+                    if newKind != model.searchedKind || query != model.searchedQuery {
+                        model.search(newKind, query: query)
+                    }
+                }
+                // On appear too: the tab may first show because of the tap.
+                .task(id: model.searchBoxFill) { fillBox() }
                 .autocorrectionDisabled()
         }
+    }
+
+    /// A Ride tap searched: the box shows its words and kind (once per tap,
+    /// so coming back to the tab keeps what the passenger typed since).
+    private func fillBox() {
+        guard let fill = model.searchBoxFill, fill.serial != filledSerial else { return }
+        filledSerial = fill.serial
+        query = fill.query
+        kind = fill.kind
     }
 
     private var connected: Bool { model.link.isConnected }
@@ -76,13 +101,16 @@ struct SearchView: View {
                 }
                 ForEach(Array(list.items.enumerated()), id: \.offset) { _, item in
                     Group {
-                        if model.searchedKind == .songs {
+                        switch model.searchedKind {
+                        case .songs:
                             SongRow(item: item, isCurrent: item.ref == model.nowPlaying?.id,
                                     downloaded: model.hostDownloads.isCached(item.ref),
                                     onPlay: { model.enqueue(.now, songs: [item]) },
                                     onEnqueue: { model.enqueue($0, songs: [item]) })
-                        } else {
-                            NavigationLink(value: item) {
+                        case .artists:
+                            NavigationLink(value: BrowseTarget.artist(item)) { ArtistRow(item: item) }
+                        case .albums, .playlists:
+                            NavigationLink(value: BrowseTarget.collection(item)) {
                                 ResultRow(item: item,
                                           subtitle: TrackTime.joined([item.artist, item.count.map(QueueText.songs)]))
                             }
@@ -233,7 +261,7 @@ private struct EnqueueMenu: View {
 }
 
 /// Art thumbnail, title and one line of detail.
-private struct ResultRow: View {
+struct ResultRow: View {
     let item: ResultItem
     let subtitle: String
     var fallbackArt: String?
@@ -272,7 +300,7 @@ private struct ResultRow: View {
 
 /// A song: tap plays, the trailing menu (or a swipe) queues. The menu is
 /// always visible because swipes are hard with gloves.
-private struct SongRow: View {
+struct SongRow: View {
     let item: ResultItem
     var fallbackArt: String?
     var isCurrent = false

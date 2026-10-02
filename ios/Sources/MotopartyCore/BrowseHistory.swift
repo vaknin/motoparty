@@ -44,6 +44,22 @@ public struct BrowseHistory: Codable, Equatable, Sendable {
 
     public init() {}
 
+    private enum CodingKeys: String, CodingKey { case searches, played }
+
+    /// A search whose kind this build does not know (one a newer build saved
+    /// before a downgrade, 2026-10-02) is dropped on its own; the rest of the
+    /// history stays.
+    private struct StoredSearch: Decodable {
+        let search: Search?
+        init(from decoder: any Decoder) throws { search = try? Search(from: decoder) }
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        searches = try c.decode([StoredSearch].self, forKey: .searches).compactMap(\.search)
+        played = try c.decode([Track].self, forKey: .played)
+    }
+
     /// A search was sent. Returns whether anything changed.
     @discardableResult
     public mutating func searched(_ kind: SearchKind, query: String) -> Bool {

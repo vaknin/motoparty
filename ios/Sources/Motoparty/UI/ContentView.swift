@@ -16,10 +16,15 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.scenePhase) private var scenePhase
-    @State private var tab: AppTab = .ride
+
+    /// In `AppModel` (2026-10-02): a Ride tap on the artist or album opens Search.
+    private var tab: AppTab {
+        get { model.tab }
+        nonmutating set { model.tab = newValue }
+    }
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: $model.tab) {
             // No toast on Ride: it would cover TALK, and nothing there enqueues.
             RideView()
                 .tabItem { Label("Ride", systemImage: "dot.radiowaves.left.and.right") }
@@ -132,6 +137,7 @@ extension SearchKind {
         case .songs: "Songs"
         case .albums: "Albums"
         case .playlists: "Playlists"
+        case .artists: "Artists"
         }
     }
 }
@@ -158,7 +164,7 @@ struct MiniPlayer: View {
         model.nowPlaying != nil || model.talkOpen
     }
 
-    private var playingHere: Bool { model.musicPlaying && !model.musicHeldForRoute }
+    private var playingHere: Bool { model.playingHere }
 
     var body: some View {
         if Self.hasContent(model) {
