@@ -11,7 +11,34 @@ was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Andro
 F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
 and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
-## Latest (2026-10-02, evening): synced lyrics with word-by-word highlight, device-unverified
+## Latest (2026-10-06): ride prep with the Lark, stopped before the ride
+
+Pixel 0.2.0 (versionCode 2) release-installed over the 2026-10-02 build; iPhone release build
+installed with `xtool dev -c release` (signing runs out about 2026-10-13). Android 640 tests / 0
+fail / 10 skipped, iOS `swift test` 313 / 0 fail. A fresh worktree needs the git-ignored
+`android/{keystore.properties,local.properties,motoparty-release.jks}` and
+`android/app/src/main/cpp/opus` from the main checkout (symlinks work). Pixel `logcat -b main`
+was raised to 16 MB for the ride (back to 256 KB on reboot). Found on the devices, no ride yet:
+
+- **Lark Stereo didn't stick.** In the 18:06 talk L and R were identical and near-silent (Mono).
+  The user fixed it in LarkSound; on 2026-09-28 Stereo held after: set Stereo, force-stop the
+  app, unplug the RX, power-cycle both TXs, replug. Mind the RX clicks (manual): 1 = ENC, 2 = mute
+  TX1, **3 = mute TX2**; pairing is a 3 s hold. With Stereo fixed, the 21:07 talk read L −36 /
+  R −40 dBFS, both peaking at full scale (gain may be too hot again).
+- **iPhone silent = app level 0.** `voice engine started: receive only …, app gain muted (mixer
+  0.000)`: the remembered app level (`AppSettings.appVolumeLevel`) was 0, so music and talk were
+  silent on the iPhone while the Pixel side worked. Fix on the device: single volume-up presses.
+  **To fix in code:** level 0 is total silence with no warning and pocket presses reach it: floor
+  it at 1 while linked, or show a muted warning.
+- **iPhone link resets.** `client gone: read failed: Connection reset` then a reconnect within
+  seconds, every 15–60 min (18:35, 18:37, 19:52, 20:07, 21:07, 21:08, 21:11). Cause not looked at.
+- `talk closed (by client, unavailable)` / `client microphone unavailable` at 21:08 in a host-mic
+  talk the iPhone opened; why the iPhone sent it is not known.
+- Still open: the "never `sudo`" lines under "Running a device session" and "Environment facts"
+  are wrong (the user's rule: run sudo yourself, one command, password popup), and `~/AGENTS.md`
+  there is now `~/.config/system-notes.md`; an agent's edit of them was blocked, the user fixes it.
+
+## 2026-10-02, evening: synced lyrics with word-by-word highlight, device-unverified
 
 Idea 8df40ce6 ("lyrics, karaoke too"). The user chose: karaoke = **words lighting up as they're sung**
 (no vocal removal, no mics over music, so "music and talk never together" stands), on **both
