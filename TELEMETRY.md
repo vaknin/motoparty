@@ -1,8 +1,8 @@
 # Handlebar controls and key-on start: Motoparty + the NX500 node
 
 Agreed 2026-09-22. **Nothing here is built or bought.** The NX500 telemetry node lives in
-`~/Work/Honda` (ESP32-S3 + CAN transceiver polling the engine ECU, BLE to the phone; source of
-truth `~/Work/Honda/BASELINE.md`, parts in `~/Work/Honda/HARDWARE.md`). Same rider, same bike,
+`~/Projects/Honda` (ESP32-S3 + CAN transceiver polling the engine ECU, BLE to the phone; source of
+truth `~/Projects/Honda/BASELINE.md`, parts in `~/Projects/Honda/HARDWARE.md`). Same rider, same bike,
 same Pixel 8 host, so the node's phone side is a module of this host app, not a second app.
 
 ## What was agreed
@@ -38,7 +38,7 @@ same Pixel 8 host, so the node's phone side is a module of this host app, not a 
 
 ## Node hardware, kept minimal
 
-Per `~/Work/Honda/HARDWARE.md`, with these simplifications:
+Per `~/Projects/Honda/HARDWARE.md`, with these simplifications:
 
 - Soldering is fine (user confirmed): standard SN65HVD230 board with R2 removed, Cat5e conductors
   soldered to the dev board or a small perfboard, encoder pins soldered.
@@ -70,7 +70,7 @@ Per `~/Work/Honda/HARDWARE.md`, with these simplifications:
   under 400 B/s, but the talk bench only just holds with Bluetooth on. One bench measurement before
   relying on it.
 - Toggle semantics: two positions (talk / music) or three (plus off).
-- Whether to import `~/Work/Honda` into this repo (as a `telemetry/` directory with its own
+- Whether to import `~/Projects/Honda` into this repo (as a `telemetry/` directory with its own
   handoff) or keep two folders. Not decided. If imported: after the uncommitted F9b and Stage A
   work is committed, in its own commit, without the `__pycache__`.
 
@@ -79,4 +79,4 @@ Per `~/Work/Honda/HARDWARE.md`, with these simplifications:
 - Agreed direction only. No parts ordered, no firmware, no app code.
 - Precondition unchanged: the ride recording in `HANDOFF.md` "Do now" still comes first.
 - Next concrete step when wanted: one AliExpress order list for the node plus the control box,
-  written against `~/Work/Honda/HARDWARE.md` so nothing is ordered twice.
+  written against `~/Projects/Honda/HARDWARE.md` so nothing is ordered twice.

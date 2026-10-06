@@ -1715,7 +1715,7 @@ section 2. What is left:
   Album names come back as "Album – X"; the prefix is stripped. googlevideo downloads need the
   UA of the client in the URL's `c=` param (`TrackCache.userAgentFor`).
 - AGP 9 has Kotlin built in; the Kotlin version comes from the buildscript classpath (copied
-  from ~/Work/Pronounce). `compileSdk 37` + `compileSdkMinor 2`. Kotlin needed explicit types
+  from ~/Projects/Pronounce). `compileSdk 37` + `compileSdkMinor 2`. Kotlin needed explicit types
   on `LinkHost`'s mutually referencing properties ("recursive problem").
 - `./gradlew test --tests X` fails ("Unknown command-line option"); use
   `./gradlew :app:testDebugUnitTest --tests X`. Network tests need `-Pnetwork`.

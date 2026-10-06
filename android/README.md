@@ -3,7 +3,7 @@
 The Pixel side of Motoparty: hotspot host, Bonjour advert, control/voice/track servers, talk
 authority, shared-music player and voice-command executor. Wire contract: `../PROTOCOL.md`.
 
-Hand-written Gradle project (no Android Studio), mirroring `~/Work/Pronounce`: AGP 9.4.0,
+Hand-written Gradle project (no Android Studio), mirroring `~/Projects/Pronounce`: AGP 9.4.0,
 Kotlin 2.4.10, Gradle 9.6.1 wrapper, compileSdk 37.2, minSdk 29, target 37, arm64-v8a only.
 
 ## One-time setup

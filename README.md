@@ -15,7 +15,7 @@ is good enough for talk; numbers in `HANDOFF.md`, "Hotspot").
 | `tools/peer/` | Python peer: fake client or fake host for bench tests — see `tools/peer/README.md` |
 | `tools/bench/` | Device bench scripts (adb + the peer) with a short summary per run — see `tools/bench/README.md` |
 | `AUDIT.md` | 2026-09-30 audit: bugs, latency, music and UI/UX findings with IDs, and the implementation plan |
-| `TELEMETRY.md` | Agreed with the NX500 telemetry node (`~/Work/Honda`): wired handlebar control box, key-on session start |
+| `TELEMETRY.md` | Agreed with the NX500 telemetry node (`~/Projects/Honda`): wired handlebar control box, key-on session start |
 | `research/` | Hardware research held in reserve, read only if the microphone question reopens — see `research/README.md` |
 
 ## Ride setup (once)
