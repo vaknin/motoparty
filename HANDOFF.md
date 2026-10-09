@@ -17,8 +17,8 @@ and is the place to put component detail. Raw bench evidence is under `tools/ben
 their own headset, sent to the dibs phone app after 3 s of silence ("cancel" drops it), and
 dibs's short lines are spoken between songs, only to the rider. Pixel only, nothing on the wire,
 no PROTOCOL.md change. **The dibs side (its ride service) is not built**, so on the phone today
-"dibs …" answers "dibs isn't on this phone". Media keys are now logged with their device, to see
-whether the Lark receiver's button reaches the phone. Code: `core/DibsPhrase.kt`,
+"dibs …" answers "dibs isn't on this phone". A talk starts only from the app's Talk button (the
+user: no handlebar box or helmet button for this). Code: `core/DibsPhrase.kt`,
 `core/RideSpeech.kt`, `voicecmd/DibsLink.kt`, the dibs part of `LinkHost.kt`, `Announcer`'s
 queued speech and utterance count.
 

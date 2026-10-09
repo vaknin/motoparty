@@ -213,9 +213,6 @@ class Player(
                 val key = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
                 if (key.action != KeyEvent.ACTION_DOWN) return true
                 if (key.repeatCount > 0) return true
-                // Which device sent it (DIBS.md "Starting a talk": does a press on the Lark receiver
-                // reach the phone as a key?). A key from no input device came from a controller.
-                Log.i(TAG, "media key: ${KeyEvent.keyCodeToString(key.keyCode)} from ${key.device?.name ?: "a controller"}")
                 return onMediaKey(key.keyCode)
             }
         })

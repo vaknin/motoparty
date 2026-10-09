@@ -100,9 +100,8 @@ and a new "dibs …" with the whole message replaces it.
 
 ## Starting a talk
 
-Talks start as they always have (the Ride screen, the floating TALK button). The Lark
-transmitter's buttons are out: it sits inside the helmet (the user, 2026-10-09). The receiver's
-button has its own jobs (one press noise cancelling, two mutes mic 1, three mutes mic 2, hold to
-pair); whether a press also reaches the phone as a key is unknown, so every media key is now
-logged with its device (`media key: KEYCODE_… from <device>` in logcat, tag Player). If none
-arrives, the button is the handlebar box's voice-command button (TELEMETRY.md).
+**Only the app's own Talk button** (the Ride screen, the floating TALK button), as for every
+other command: the user's call, 2026-10-09. No handlebar box button, no Lark button (the
+transmitter sits inside the helmet), no wake word. A talk whose first phrase starts with "dibs"
+is the whole way in: the link to dibs is bound while the app's service runs, and binding starts
+dibs's ride service if it isn't running.
