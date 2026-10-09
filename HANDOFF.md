@@ -11,7 +11,18 @@ was cut on 2026-09-20 and lives in git: `git show dd084d6:HANDOFF.md`. The Andro
 F-section with its evidence and its verify list — is in `android/HANDOFF.md`, which was **not** cut
 and is the place to put component detail. Raw bench evidence is under `tools/bench/results/`.
 
-## Latest (2026-10-02, evening): synced lyrics with word-by-word highlight, device-unverified
+## Latest (2026-10-09): "dibs …" voice messages to the user's coding assistant, device-unverified
+
+`DIBS.md` is the spec and the state. The rider's phrase that starts with "dibs" is read back in
+their own headset, sent to the dibs phone app after 3 s of silence ("cancel" drops it), and
+dibs's short lines are spoken between songs, only to the rider. Pixel only, nothing on the wire,
+no PROTOCOL.md change. **The dibs side (its ride service) is not built**, so on the phone today
+"dibs …" answers "dibs isn't on this phone". Media keys are now logged with their device, to see
+whether the Lark receiver's button reaches the phone. Code: `core/DibsPhrase.kt`,
+`core/RideSpeech.kt`, `voicecmd/DibsLink.kt`, the dibs part of `LinkHost.kt`, `Announcer`'s
+queued speech and utterance count.
+
+## 2026-10-02, evening: synced lyrics with word-by-word highlight, device-unverified
 
 Idea 8df40ce6 ("lyrics, karaoke too"). The user chose: karaoke = **words lighting up as they're sung**
 (no vocal removal, no mics over music, so "music and talk never together" stands), on **both

@@ -42,6 +42,10 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
+        <!-- The dibs phone app's ride service (DIBS.md "The link"). -->
+        <intent>
+            <action android:name="com.kivan.dibs.action.RIDE" />
+        </intent>
     </queries>
 
     <application

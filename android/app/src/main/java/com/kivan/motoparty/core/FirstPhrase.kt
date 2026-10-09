@@ -70,7 +70,8 @@ class FirstPhraseGate(private val windowMs: Long = FIRST_PHRASE_MS, private val 
                 }
                 if (isSpent(nowMs)) return null
                 used = true
-                plain.takeIf { interpret || CommandParser.parse(it) != Command.Unknown }
+                // "dibs …" is a command too (DIBS.md "Saying it"), with or without the interpreter.
+                plain.takeIf { interpret || CommandParser.parse(it) != Command.Unknown || DibsPhrase.parse(it) != null }
             }
         }
     }

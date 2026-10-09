@@ -35,19 +35,29 @@ class Announcer(
                 speaking = true
             }
 
-            override fun onDone(utteranceId: String?) = done()
+            override fun onDone(utteranceId: String?) = done(utteranceId)
 
             @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) = done()
+            override fun onError(utteranceId: String?) = done(utteranceId)
 
-            override fun onStop(utteranceId: String?, interrupted: Boolean) = done()
+            override fun onStop(utteranceId: String?, interrupted: Boolean) = done(utteranceId)
 
-            private fun done() {
+            private fun done(utteranceId: String?) {
                 speaking = false
                 lastDoneAtMs = SystemClock.elapsedRealtime()
+                utteranceId?.removePrefix(UTTERANCE)?.toLongOrNull()?.let { n -> if (n > lastDoneSeq) lastDoneSeq = n }
             }
         })
     }
+
+    /** How many utterances were asked for so far; the next one is `issued + 1`. Main only. */
+    var issued = 0L
+        private set
+    /** The newest utterance that finished, was stopped or failed (they play in order). */
+    @Volatile private var lastDoneSeq = 0L
+
+    /** Has an utterance asked for after the first [after] ended (DIBS.md: the read-back was heard)? */
+    fun doneAfter(after: Long): Boolean = lastDoneSeq > after
 
     /**
      * Is this phone talking, or did it stop less than [ms] ago? In a solo talk every phrase is a
@@ -57,11 +67,17 @@ class Announcer(
 
     /**
      * [call]: speak inside a talk, on the call route the headset is in (voice-communication usage);
-     * otherwise on the media route as an assistant reply.
+     * otherwise on the media route as an assistant reply. [queue]: after what is being said, not
+     * instead of it (dibs's lines, DIBS.md).
      */
-    fun announce(text: String, earcon: Earcons.Kind?, language: String, call: Boolean = false) {
+    fun announce(text: String, earcon: Earcons.Kind?, language: String, call: Boolean = false, queue: Boolean = false) {
+        val seq = ++issued
         earcon?.let { earconPlayer(it, call) }
-        if (!ready) return
+        if (!ready) {
+            // Nothing will be said, so nothing is waited for.
+            if (seq > lastDoneSeq) lastDoneSeq = seq
+            return
+        }
         runCatching { tts.language = Locale.forLanguageTag(language) }
         tts.setAudioAttributes(
             AudioAttributes.Builder()
@@ -70,8 +86,9 @@ class Announcer(
                 .build(),
         )
         // Leave room for the earcon before the voice starts.
-        if (earcon != null) tts.playSilentUtterance(250, TextToSpeech.QUEUE_FLUSH, null)
-        tts.speak(text, if (earcon != null) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH, null, "announce")
+        val mode = if (queue) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
+        if (earcon != null) tts.playSilentUtterance(250, mode, null)
+        tts.speak(text, if (earcon != null) TextToSpeech.QUEUE_ADD else mode, null, "$UTTERANCE$seq")
     }
 
     fun release() {
@@ -80,5 +97,6 @@ class Announcer(
 
     companion object {
         private const val TAG = "Announcer"
+        private const val UTTERANCE = "announce-"
     }
 }

@@ -254,6 +254,8 @@ class TalkRecognizer(
         private val BIASING = arrayListOf(
             "play", "pause", "resume", "next", "previous", "skip",
             "volume up", "volume down", "over", "end talk", "hang up",
+            // DIBS.md "Saying it": the word that sends the rest to dibs, and the one that drops it.
+            "dibs", "cancel",
         )
         /** The ring's listen window: what the rider says to answer or decline (2026-10-02). */
         val CALL_BIASING = arrayListOf("answer", "decline", "pick up", "reject", "ignore", "yes", "no", "hang up")

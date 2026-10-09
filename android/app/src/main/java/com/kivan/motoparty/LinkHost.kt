@@ -28,6 +28,8 @@ import com.kivan.motoparty.core.Announce
 import com.kivan.motoparty.core.Bye
 import com.kivan.motoparty.core.Command
 import com.kivan.motoparty.core.CommandEffect
+import com.kivan.motoparty.core.DibsPhrase
+import com.kivan.motoparty.core.RideSpeech
 import com.kivan.motoparty.core.CommandParser
 import com.kivan.motoparty.core.CommandText
 import com.kivan.motoparty.core.Codec
@@ -106,6 +108,7 @@ import com.kivan.motoparty.trigger.TriggerSource
 import com.kivan.motoparty.trigger.Triggers
 import com.kivan.motoparty.voicecmd.Announcer
 import com.kivan.motoparty.voicecmd.CloudGemini
+import com.kivan.motoparty.voicecmd.DibsLink
 import com.kivan.motoparty.voicecmd.FirstAnswer
 import com.kivan.motoparty.voicecmd.RateGuard
 import com.kivan.motoparty.voicecmd.Interpreter
@@ -119,6 +122,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.io.File
 import java.io.IOException
@@ -336,6 +340,21 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
 
     /** The one question of the open talk, asked or answered; null = none yet. Main only. */
     private var question: Question? = null
+
+    // ---- dibs (DIBS.md) ----
+
+    /** The rider's message to dibs, read back and waiting out its cancel window (DIBS.md "Saying it"). */
+    private class DibsPending(val session: Int, val text: String) {
+        /** Sent, dropped or replaced: nothing more happens to it. */
+        var done = false
+    }
+
+    /** The message in its cancel window; null = none. Main only. */
+    private var dibsPending: DibsPending? = null
+    /** When dibs's lines are spoken in the helmet (DIBS.md "What dibs says"). Main only. */
+    private val rideSpeech = RideSpeech()
+    /** The dibs phone app on this phone; absent until it has the ride service. */
+    private val dibs = DibsLink(context, Hub::log, onLine = ::onDibsLine)
     /**
      * The microphone of the current (or last) talk, chosen at its open and fixed for it
      * (PROTOCOL.md "Host-mic talk"). Main only.
@@ -356,7 +375,15 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         onError = { announce(it, Earcon.ERROR) },
         log = Hub::log,
         // "Recently played" on the Search tab: whoever queued it, once it really started.
-        onStarted = { t -> history.update { it.played(t) } },
+        onStarted = { t ->
+            history.update { it.played(t) }
+            // Between two songs is where dibs's waiting lines are said (DIBS.md "What dibs says"),
+            // after the "Playing …" a spoken `play` gets, which would cut them off.
+            if (rideSpeech.holding) scope.launch {
+                delay(DIBS_AFTER_SONG_START_MS)
+                sayDibs(rideSpeech.onSongStart(dibsBusy || announcer.spokeWithin(0)))
+            }
+        },
         online = { network.online },
     )
     private val audioManager = context.getSystemService(AudioManager::class.java)
@@ -467,6 +494,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         callWatch.ensureStarted()
         sco.start()
         devices.start()
+        dibsLookedAtMs = clock()
+        dibs.start()
         Hub.log("host up as \"$deviceName\"")
         refreshCached()
         scope.launch {
@@ -493,6 +522,13 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 refreshStatus()
                 // A phone permission granted mid-ride starts the call watch.
                 callWatch.ensureStarted()
+                // dibs's lines that waited: a question once the phone is free, the rest when the music stops.
+                if (rideSpeech.holding) sayDibs(rideSpeech.tick(clock(), music.isPlaying, dibsBusy))
+                // dibs installed (or given its ride service) mid-ride is found within a minute.
+                if (dibs.state.value == DibsLink.State.ABSENT && clock() - dibsLookedAtMs >= DIBS_RETRY_MS) {
+                    dibsLookedAtMs = clock()
+                    dibs.start()
+                }
                 delay(1000)
             }
         }
@@ -511,6 +547,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         callRecognizer.stop()
         callTicker?.cancel()
         callWatch.stop()
+        dibs.stop()
         // Behind whatever talk teardown is still queued, then the thread retires. exitAll: a
         // route-back still queued behind the shutdown would be dropped, so do it here.
         audio.post("shutdown") {
@@ -807,6 +844,7 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
                 }
             }
             is TalkController.Action.Close -> {
+                dibsQuietUntilMs = clock() + DIBS_AFTER_TALK_MS
                 control.send(TalkClose(action.by, action.reason))
                 pushState()
                 // A talk that closed before its microphone was live never gets its go-beep.
@@ -891,6 +929,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             Hub.log("heard: \"$text\" (after the talk, ignored)")
             return
         }
+        // A message to dibs is waiting out its cancel window: only "cancel" or a new "dibs …"
+        // count, and the read-back heard back is neither (DIBS.md "Saying it").
+        dibsPending?.takeIf { !it.done && it.session == session && !passengerAsr }?.let { p ->
+            onDibsWindowPhrase(p, text)
+            return
+        }
         // With no client every phrase is a command, so a reply of ours that the talk microphone
         // hears back ("Next: …" → "Didn't catch that" → …) must not become the next one.
         val solo = phrases.role == FirstPhraseGate.Role.SOLO
@@ -910,6 +954,8 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         // Before the command: a `play` closes the talk, and with it this check's reason to run.
         stopRecognizerIfSpent(session)
         if (command == null) return
+        // The rider's own words, as recognised (not normalised), go to dibs; never the passenger's.
+        if (!passengerAsr) DibsPhrase.parse(text)?.let { return onDibs(it) }
         if (passengerAsr) onPassengerCommand(command) else submitCommand(command)
     }
 
@@ -1399,6 +1445,12 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
      * question of the talk ([ask]), and the phrase after it its reply.
      */
     private fun submitCommand(text: String, fromClient: Boolean = false) {
+        // dibs takes the rider's words only (DIBS.md "Only the rider"); typed on this phone counts.
+        DibsPhrase.parse(text)?.let { said ->
+            if (!fromClient) return onDibs(said)
+            Hub.log("dibs: \"$text\" from the passenger, ignored: dibs takes only the rider's words")
+            return
+        }
         val interpreter = interpreter
         // The reply to our question is always interpreted, with the question as its context.
         val reply = question?.takeIf { awaitsReply(fromClient) }
@@ -1491,6 +1543,127 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
             Hub.log("ask: no reply to \"${q.text}\"${if (q.fallback.isEmpty()) ", nothing to fall back on" else ", the fallback: ${VoiceAction.describe(q.fallback)}"}")
             if (q.fallback.isNotEmpty()) execute(q.fallback, q.fromClient, VoiceSnapshot.EMPTY, q.phrase)
         }
+    }
+
+    /** The phone is in the middle of something dibs must not talk over: a talk, a call, a read-back. */
+    private val dibsBusy: Boolean
+        get() = talk.isOpen || inCall || dibsPending?.done == false || clock() < dibsQuietUntilMs
+
+    /** Not before this (host clock): the seconds after a talk, while its music comes back. Main only. */
+    private var dibsQuietUntilMs = 0L
+    /** When the dibs app was last looked for (host clock). Main only. */
+    private var dibsLookedAtMs = 0L
+
+    /** The rider said "dibs …" (DIBS.md "Saying it"). Only ever the rider's words reach here. */
+    private fun onDibs(said: DibsPhrase.Said) {
+        when (said) {
+            DibsPhrase.Said.Quiet -> {
+                closeTalkForDibs()
+                speakDibs(rideSpeech.quiet(), inTalk = false)
+            }
+            DibsPhrase.Said.Talk -> {
+                closeTalkForDibs()
+                speakDibs(rideSpeech.talk(), inTalk = false)
+            }
+            is DibsPhrase.Said.Message -> readBackToDibs(said.text)
+        }
+    }
+
+    /**
+     * Read [text] back to the rider and send it to dibs once [DIBS_CANCEL_MS] of silence followed
+     * the read-back; "cancel" in that window drops it, a new "dibs …" replaces it. No dibs link
+     * (not installed, not allowed yet): the rider hears why at once and nothing waits.
+     */
+    private fun readBackToDibs(text: String) {
+        val why = when (dibs.state.value) {
+            DibsLink.State.READY -> null
+            DibsLink.State.NOT_ALLOWED -> "dibs hasn't allowed this app yet. Look at the dibs app at your next stop."
+            DibsLink.State.CONNECTING -> "Can't reach dibs right now. Say it again later."
+            DibsLink.State.ABSENT -> "dibs isn't on this phone."
+        }
+        if (why != null) {
+            Hub.log("dibs: \"$text\" not sent: link ${dibs.state.value}")
+            closeTalkForDibs()
+            speakDibs(why, inTalk = false, Earcons.Kind.ERROR)
+            return
+        }
+        // A new message replaces the one of the same talk; one from an earlier talk still goes.
+        dibsPending?.takeIf { it.session == talkSession }?.done = true
+        val inTalk = talk.isOpen
+        val p = DibsPending(talkSession, text)
+        dibsPending = p
+        Hub.log("dibs: \"$text\" read back, ${DIBS_CANCEL_MS} ms to cancel")
+        if (inTalk) {
+            // Listen on for "cancel": the gate lets the next phrase through, as for our question.
+            phrases.ask(clock())
+            startRecognizer(p.session)
+            Hub.status.update { it.copy(commandWindow = true) }
+        }
+        val before = announcer.issued
+        speakDibs(DibsPhrase.readBack(text), inTalk)
+        scope.launch {
+            // The window starts once the read-back has been heard, however long it took to start
+            // (a media cue can hold it ~2 s) and to say.
+            withTimeoutOrNull(DIBS_READ_BACK_MAX_MS) { while (!announcer.doneAfter(before)) delay(100) }
+            delay(DIBS_CANCEL_MS)
+            if (p.done) return@launch
+            p.done = true
+            if (dibsPending === p) dibsPending = null
+            if (talk.isOpen && talkSession == p.session) closeTalkForDibs()
+            val result = dibs.say(p.text)
+            Hub.log("dibs: \"${p.text}\" → $result")
+            when (result) {
+                DibsLink.Result.Sent -> mediaSound(MediaCue.Kind.OK) { earcon(Earcons.Kind.OK) }
+                is DibsLink.Result.Refused -> speakDibs("dibs didn't take it: ${result.why}.", inTalk = false, Earcons.Kind.ERROR)
+                DibsLink.Result.Unreachable -> speakDibs("Couldn't reach dibs. Say it again later.", inTalk = false, Earcons.Kind.ERROR)
+            }
+        }
+    }
+
+    /** A phrase while [p] waits out its window: "cancel" drops it, a new "dibs …" replaces it. */
+    private fun onDibsWindowPhrase(p: DibsPending, text: String) {
+        val again = DibsPhrase.parse(text) as? DibsPhrase.Said.Message
+        when {
+            DibsPhrase.isCancel(text) -> {
+                Hub.log("heard: \"$text\" (dibs: dropped \"${p.text}\")")
+                p.done = true
+                dibsPending = null
+                closeTalkForDibs()
+                speakDibs("Dropped.", inTalk = false)
+            }
+            again != null -> {
+                Hub.log("heard: \"$text\" (dibs: replaces \"${p.text}\")")
+                readBackToDibs(again.text)
+            }
+            else -> Hub.log("heard: \"$text\" (dibs cancel window, ignored)")
+        }
+    }
+
+    /** A dibs command ends the talk it was said in, like every command (CommandEffect). */
+    private fun closeTalkForDibs() {
+        talk.onCommandClose(Role.HOST)?.let(::applyTalk)
+    }
+
+    /** A new line from dibs (on Main, from [DibsLink]). */
+    private fun onDibsLine(line: RideSpeech.Line) {
+        Hub.log("dibs line ${line.id}${if (line.question) " (question)" else ""}: ${line.speak}")
+        sayDibs(rideSpeech.onLine(line, clock(), music.isPlaying, dibsBusy))
+    }
+
+    /** What [RideSpeech] says is due, if anything. */
+    private fun sayDibs(text: String?) {
+        if (text != null) speakDibs(text, inTalk = false)
+    }
+
+    /**
+     * dibs is heard only in the rider's own headset (DIBS.md "Only the rider"): never `announce`,
+     * which tells the passenger too. [inTalk]: spoken in the open talk, as [announce] does.
+     */
+    private fun speakDibs(text: String, inTalk: Boolean, earcon: Earcons.Kind? = null) {
+        // Queued: dibs never cuts off a reply that is being said.
+        if (inTalk && !larkTalk) announcer.announce(text, earcon, DIBS_LANGUAGE, call = true, queue = true)
+        else mediaSound(MediaCue.Kind.ANNOUNCE) { announcer.announce(text, earcon, DIBS_LANGUAGE, queue = true) }
+        Hub.log("dibs says (local only): $text")
     }
 
     /** What the last voice list changed, for the window's `lastVoice`, and when (host clock). Main only. */
@@ -2182,6 +2355,18 @@ class LinkHost(private val context: Context, private val scope: CoroutineScope) 
         private const val ECHO_MS = 2_000L
         /** Shorter than any spoken reply takes to be recognised after our question ends. */
         private const val ASK_ECHO_MS = 500L
+        /** DIBS.md "Saying it": silence after the read-back that sends the message. */
+        private const val DIBS_CANCEL_MS = 3_000L
+        /** After a song starts, before dibs's waiting lines: room for the command's own reply. */
+        private const val DIBS_AFTER_SONG_START_MS = 2_500L
+        /** After a talk closes: its music comes back before dibs says anything. */
+        private const val DIBS_AFTER_TALK_MS = 4_000L
+        /** How often a missing dibs app is looked for again (it may be installed mid-ride). */
+        private const val DIBS_RETRY_MS = 60_000L
+        /** A read-back that never ends (TTS stuck) does not hold the message for ever. */
+        private const val DIBS_READ_BACK_MAX_MS = 20_000L
+        /** dibs speaks English whatever the recogniser's language. */
+        private const val DIBS_LANGUAGE = "en-US"
         /** How long a spoken reply stays on the Ride tab. */
         private const val ANNOUNCE_SHOWN_MS = 6_000L
         /**
